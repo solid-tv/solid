@@ -118,5 +118,8 @@
     "README.md",
     "docs/AI_CODING_GUIDELINES.md"
   ],
-  "packageManager": "pnpm@10.8.0"
+  "packageManager": "pnpm@10.8.0",
+  "publishConfig": {
+    "access": "public"
+  }
 }
