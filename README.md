@@ -1,10 +1,10 @@
 <p>
-  <img src="https://assets.solidjs.com/banner?project=Library&type=@solidtv/solid" alt="SolidJS Lightning" />
+  <img src="https://assets.solidjs.com/banner?project=Library&type=@solidtv/solid" alt="SolidTV" />
 </p>
 
-# SolidJS for LightningJS
+# SolidTV
 
-Is a UI framework for [LightningJS 3 Renderer](https://lightningjs.io/) built with [SolidJS](https://www.solidjs.com/) Universal Renderer. It allows you to declaratively construct lightning nodes with reactive primitives, with incredible performance.
+SolidTV is a UI framework for building high-performance TV applications. It allows you to declaratively construct UI nodes with reactive primitives, providing incredible performance on even the most constrained hardware.
 
 ## Used by companies worldwide
 
@@ -14,19 +14,19 @@ Is a UI framework for [LightningJS 3 Renderer](https://lightningjs.io/) built wi
 
 ## Need Support?
 
-[ConnectedTV Dev](https://lightningtv.dev/)
+[SolidTV Docs](https://solid-tv.github.io/solid/)
 
-Join the [SolidJS Discord](https://discord.com/invite/solidjs) - #Lightning TV channel and message chiefcll
+Join the [SolidTV Discord](https://discord.com/invite/solidjs) - #SolidTV channel and message chiefcll
 
 ## Documentation
 
-[SolidJS Lightning Docs](https://lightning-tv.github.io/solid/)
+[SolidTV Docs](https://solid-tv.github.io/solid/)
 
 [AI Coding Guidelines](docs/AI_CODING_GUIDELINES.md)
 
 ## Demo App
 
-[Solid TMDB Demo App](https://github.com/lightning-tv/solid-demo-app)
+[SolidTV TMDB Demo App](https://github.com/solid-tv/solid-demo-app)
 
 Tested and working on Chrome < 38 and could go earlier
 
@@ -39,7 +39,7 @@ Tested and working on Chrome < 38 and could go earlier
 Clone starter template:
 
 ```sh
-> npx degit lightning-tv/solid-starter-template my-app
+> npx degit solid-tv/solid-starter-template my-app
 > cd my-app
 > npm i # or yarn or pnpm
 > npm start # or yarn or pnpm
@@ -88,7 +88,6 @@ If you don't want to find and replace you can use alias
 ```js
 resolve: {
     alias: {
-      theme: "@lightningjs/l3-ui-theme-base",
       "@solidtv/solid": "@solidtv/solid",
       "@solidtv/solid-primitives": "@solidtv/solid/primitives",
     },

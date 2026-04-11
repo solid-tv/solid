@@ -1,8 +1,8 @@
-# Migration Guide: Lightning 3 v2.x to v3.0
+# Migration Guide: SolidTV v2.x to v3.0
 
-This guide helps you migrate from Lightning 3 version 2.x to the new 3.0 release. The 3.0 version introduces several breaking changes to improve performance and the Solid integration has done a lot of under the hood changes to improve performance and reduce the amount of code you need to update.
+This guide helps you migrate from SolidTV version 2.x to the new 3.0 release. The 3.0 version introduces several breaking changes to improve performance and the SolidTV integration has done a lot of under the hood changes to improve performance and reduce the amount of code you need to update.
 
-To get the full list of changes from the renderer you can check the [changelog](https://github.com/lightning-tv/renderer/blob/main/CHANGELOG.md).
+To get the full list of changes from the renderer you can check the [changelog](https://github.com/solid-tv/renderer/blob/main/CHANGELOG.md).
 
 ## Overview of Steps
 
@@ -66,7 +66,7 @@ set fontWeight(v) {
 
 #### Enhanced Font Metrics
 
-Lightning 3.0 provides better font metrics support:
+SolidTV.0 provides better font metrics support:
 
 ```typescript
 // Recommended: Always provide font metrics for optimal rendering
@@ -84,7 +84,7 @@ await stage.loadFont('canvas', {
 
 ### Width/Height Property Changes
 
-The `width` and `height` properties were changed in favor of shorter `w` and `h` properties for by the Lightning team.
+The `width` and `height` properties were changed in favor of shorter `w` and `h` properties for by the SolidTV team.
 
 Width and height are still available but are now polyfilled by Solid. Note that in some places like Shaders you may need to use `w` and `h` instead of `width` and `height`.
 

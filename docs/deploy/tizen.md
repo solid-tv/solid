@@ -40,17 +40,17 @@ A recommended approach is a **hosted TV app**, where your entire application is 
 
 ### Deployed TV App
 
-For a fully deployed app, we're going to build our Lightning app and then put it into the tizen folder. Here is the vite build script I use for tizen
+For a fully deployed app, we're going to build our SolidTV app and then put it into the tizen folder. Here is the vite build script I use for tizen
 `"build:tizen": "vite build --sourcemap=false --base=./ --outDir tizen --emptyOutDir false",`
 
-This will build all the files and place them in the tizen folder (which should be a subfolder of your Lightning project). Once your app is built via vite, you can package your app using the Tizen tools. Right click on the tizen folder and select `Tizen: Run Project` which should package and run the application on your target TV device.
+This will build all the files and place them in the tizen folder (which should be a subfolder of your SolidTV project). Once your app is built via vite, you can package your app using the Tizen tools. Right click on the tizen folder and select `Tizen: Run Project` which should package and run the application on your target TV device.
 
 Here is a sample config.xml
 
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>
 <widget xmlns="http://www.w3.org/ns/widgets" xmlns:tizen="http://tizen.org/ns/widgets" id="http://yourdomain/Template01" version="0.2.1" viewmodes="maximized">
-   <name>Solid Demo App</name>
+   <name>SolidTV Demo App</name>
    <icon src="icon.png"></icon>
    <content src="index.html"></content>
    <feature name="http://tizen.org/feature/screen.size.normal.1080.1920"></feature>

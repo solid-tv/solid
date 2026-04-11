@@ -1,6 +1,6 @@
 # Theming
 
-In many projects, it's common to apply different themes, such as dark/light mode or brand-specific color schemes. However, since the `style` property in SolidJS is designed to be read-only (to enable reusability across multiple components), dynamic theming can seem tricky. Fortunately, there are a few effective approaches to achieve this.
+In many projects, it's common to apply different themes, such as dark/light mode or brand-specific color schemes. However, since the `style` property in SolidTV is designed to be read-only (to enable reusability across multiple components), dynamic theming can seem tricky. Fortunately, there are a few effective approaches to achieve this.
 
 ## Spreading Styles
 

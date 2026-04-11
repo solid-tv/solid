@@ -1,15 +1,15 @@
 ## Component Lifecycle (onMount, onCleanup)
 
-SolidJS offers two primary lifecycle hooks to manage component behavior:
+SolidTV offers two primary lifecycle hooks to manage component behavior:
 
 - **[onMount](https://www.solidjs.com/docs/latest/api#onmount)**: Executes a function when the component is first inserted.
 - **[onCleanup](https://www.solidjs.com/docs/latest/api#oncleanup)**: Executes a function to clean up resources when the component is removed.
 
-For detailed information, refer to the [SolidJS Lifecycle documentation](https://docs.solidjs.com/references/api-reference/lifecycles/onMount).
+For detailed information, refer to the [SolidTV Lifecycle documentation](https://docs.solidjs.com/references/api-reference/lifecycles/onMount).
 
 ## Built-in Events
 
-The SolidJS integration provides built-in events that can be utilized within your components:
+The SolidTV integration provides built-in events that can be utilized within your components:
 
 ```jsx
   onCreate: (this: ElementNode, target: ElementNode);
@@ -21,7 +21,7 @@ Learn more about using [onDestroy](/flow/ondestroy) and the [layout events](/flo
 
 ## Renderer Events
 
-In addition to the lifecycle events from SolidJS, the Lightning Renderer offers additional custom events for you to tie into using the `onEvent` object. These events provide information about element visibility and state within the renderer.
+In addition to the lifecycle events from SolidTV, the SolidTV Renderer offers additional custom events for you to tie into using the `onEvent` object. These events provide information about element visibility and state within the renderer.
 
 ### Example Usage:
 
@@ -60,7 +60,7 @@ In addition to the lifecycle events from SolidJS, the Lightning Renderer offers 
 - **`inViewport`**: Fired when the element enters the viewport (the portion of the screen where content is visible).
 - **`outOfViewport`**: Fired when the element leaves the viewport.
 
-These additional events provide control over element state and position within the Lightning Renderer, allowing you to react to changes such as visibility or load state with custom logic.
+These additional events provide control over element state and position within the SolidTV Renderer, allowing you to react to changes such as visibility or load state with custom logic.
 
 ## Emitting Custom Events with `emit`
 

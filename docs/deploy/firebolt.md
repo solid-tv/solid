@@ -6,7 +6,7 @@ Firebolt is a standardized API framework for **RDK-based** devices, providing ac
 npm install @firebolt-js/sdk
 ```
 
-Firebolt provides multiple APIs like **Lifecycle, Device, Account, and Localization**. You can call these APIs inside SolidJS reactive components.
+Firebolt provides multiple APIs like **Lifecycle, Device, Account, and Localization**. You can call these APIs inside SolidTV reactive components.
 
 **Example: Fetching Device Information**
 
@@ -123,8 +123,8 @@ export default function LocationInfo() {
 
 ## Additional Resources
 
-- 🔗 **Solid Firebolt Demo**: [SolidJS Firebolt Demo](https://lightning-tv.github.io/solid-demo-app/#/firebolt)
+- 🔗 **SolidTV Firebolt Demo**: [SolidTV Firebolt Demo](https://solid-tv.github.io/solid-demo-app/#/firebolt)
 - 🔗 **Firebolt API Docs**: [RDK Firebolt API](https://rdkcentral.github.io/firebolt/apis/)
 - 🔗 **Firebolt on GitHub**: [Firebolt SDK](https://github.com/rdkcentral/firebolt)
 
-🚀 **Now you’re ready to build high-performance TV apps with Firebolt & Solid Lightning!** 🎉
+🚀 **Now you’re ready to build high-performance TV apps with Firebolt & SolidTV Lightning!** 🎉

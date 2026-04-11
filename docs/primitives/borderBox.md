@@ -1,6 +1,6 @@
 # `borderBox`
 
-A SolidJS directive that adds a visual border component to an element when it receives focus.
+A SolidTV directive that adds a visual border component to an element when it receives focus.
 
 ### Usage
 

@@ -21,9 +21,9 @@ import {
 */
 declare global {
   /** Whether the DOM renderer should be used instead of `@solidtv/renderer` */
-  var LIGHTNING_DOM_RENDERING: boolean | undefined;
+  var SOLIDTV_DOM_RENDERING: boolean | undefined;
   /** Whether element shaders should be disabled */
-  var LIGHTNING_DISABLE_SHADERS: boolean | undefined;
+  var SOLIDTV_DISABLE_SHADERS: boolean | undefined;
 
   /** Could be set by vite or other bundler */
   interface ImportMetaEnv {
@@ -38,11 +38,11 @@ export const isDev = !!(import.meta.env && import.meta.env.DEV);
 
 /** Whether the DOM renderer is used instead of `@solidtv/renderer` */
 export const DOM_RENDERING =
-  typeof LIGHTNING_DOM_RENDERING === 'boolean' && LIGHTNING_DOM_RENDERING;
+  typeof SOLIDTV_DOM_RENDERING === 'boolean' && SOLIDTV_DOM_RENDERING;
 
 /** Whether element shaders are enabled */
 export const SHADERS_ENABLED = !(
-  typeof LIGHTNING_DISABLE_SHADERS === 'boolean' && LIGHTNING_DISABLE_SHADERS
+  typeof SOLIDTV_DISABLE_SHADERS === 'boolean' && SOLIDTV_DISABLE_SHADERS
 );
 
 /**

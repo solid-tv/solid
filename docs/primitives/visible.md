@@ -1,6 +1,6 @@
 ## `Visible` Component
 
-The `Visible` component in SolidJS provides conditional rendering of its child elements based on the `when` prop. When `when` is `true`, the children are rendered and displayed; when `false`, they are hidden (alpha set to 0) from view but remain in the Lightning tree, allowing for efficient toggling of visibility unlike the `<Show>` component which destroys and recreates elements.
+The `Visible` component in SolidTV provides conditional rendering of its child elements based on the `when` prop. When `when` is `true`, the children are rendered and displayed; when `false`, they are hidden (alpha set to 0) from view but remain in the SolidTV tree, allowing for efficient toggling of visibility unlike the `<Show>` component which destroys and recreates elements.
 
 ### Usage
 

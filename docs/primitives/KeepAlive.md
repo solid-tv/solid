@@ -34,7 +34,7 @@ In the example above, the `Browse` component's state will be preserved. When you
 
 ### Suspending Effects for Cached Routes
 
-When a route is cached and hidden (unmounted from view but kept in memory), its reactive SolidJS context remains active. This means any `createEffect` blocks that depend on global signals or stores will continue to run in the background.
+When a route is cached and hidden (unmounted from view but kept in memory), its reactive SolidTV context remains active. This means any `createEffect` blocks that depend on global signals or stores will continue to run in the background.
 
 To prevent background effects from running when the page is inactive, `KeepAliveRoute` injects an `isAlive` accessor into your component's props. You should use `isAlive()` to halt effects early.
 

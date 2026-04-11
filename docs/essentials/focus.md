@@ -4,7 +4,7 @@ Focus happens very differently than you're used to with HTML / CSS. Since everyt
 
 ## `activeElement`
 
-At any time, only one element can have focus: the `activeElement`. `activeElement` is a global Solid signal that points to the element with focus. You can set focus on any element by adding an `autofocus` attribute or imperatively with `elm.setFocus()` method. However, calling setFocus on each element would be painful, so you'd want to use components like Row and Column from [solid-ui](https://github.com/rdkcentral/solid-ui).
+At any time, only one element can have focus: the `activeElement`. `activeElement` is a global SolidTV signal that points to the element with focus. You can set focus on any element by adding an `autofocus` attribute or imperatively with `elm.setFocus()` method. However, calling setFocus on each element would be painful, so you'd want to use components like Row and Column from [solid-ui](https://github.com/rdkcentral/solid-ui).
 
 ## Keyhandling with useFocusManager
 

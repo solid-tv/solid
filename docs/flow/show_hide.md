@@ -1,6 +1,6 @@
 # `<Show>` Component
 
-SolidJS provides a [`<Show>`](https://docs.solidjs.com/reference/components/show) control component that you can use to conditionally render elements. It's important to note that `<Show>` is useful for preventing nodes from being created and will destroy them when its condition is false. In most cases, if you want the nodes to exist but just be hidden, you should use a different approach.
+SolidTV provides a [`<Show>`](https://docs.solidjs.com/reference/components/show) control component that you can use to conditionally render elements. It's important to note that `<Show>` is useful for preventing nodes from being created and will destroy them when its condition is false. In most cases, if you want the nodes to exist but just be hidden, you should use a different approach.
 
 ## Hidden (visibility)
 

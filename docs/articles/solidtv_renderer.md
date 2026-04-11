@@ -1,6 +1,6 @@
 # SolidTV Renderer
 
-The SolidTV Renderer is a fork of the official Lightning Renderer optimized to be 50% faster during render loop. It is designed to be easily swapped with the standard LightningJS version to provide an immediate performance boost for your applications.
+The SolidTV Renderer is a fork of the official SolidTV Renderer optimized to be 50% faster during render loop. It is designed to be easily swapped with the standard SolidTV version to provide an immediate performance boost for your applications.
 
 ## Installation
 
@@ -55,7 +55,7 @@ Enables batching for text rendering. When enabled, the renderer batches text dra
 
 **Type:** `boolean` | **Default:** `false`
 
-Enables automatic size calculations for elements based on their content. Turning this on can have a performance cost, so it defaults to `false`. Images will still work with autosize. This shouldn't be needed as Solid has flex which can calculate sizes.
+Enables automatic size calculations for elements based on their content. Turning this on can have a performance cost, so it defaults to `false`. Images will still work with autosize. This shouldn't be needed as SolidTV has flex which can calculate sizes.
 
 ### `__enableCompressedTextures__`
 

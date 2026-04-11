@@ -1,6 +1,6 @@
 # createTag
 
-`createTag` is a primitive that allows you to render a Lightning node structure into a texture using the RTT (Render To Texture) feature. This is useful for creating complex UI elements that are static or updated infrequently, improving performance by reducing the number of active nodes in the render tree. The resulting tag can be used as a component multiple times.
+`createTag` is a primitive that allows you to render a SolidTV node structure into a texture using the RTT (Render To Texture) feature. This is useful for creating complex UI elements that are static or updated infrequently, improving performance by reducing the number of active nodes in the render tree. The resulting tag can be used as a component multiple times.
 
 ## Usage
 
@@ -59,10 +59,10 @@ Creates a tag component from the provided children.
 
 - **Parameters**:
 
-  - `children`: The SolidJS/Lightning elements to render into the texture.
+  - `children`: The SolidTV/SolidTV elements to render into the texture.
 
 - **Returns**:
-  - A SolidJS component that renders the generated texture.
+  - A SolidTV component that renders the generated texture.
   - The component has a static `destroy()` method.
 
 ### `TagComponent.destroy()`

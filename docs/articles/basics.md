@@ -1,41 +1,41 @@
-# LightningJS 3: The Basics of SolidJS
+# SolidTV: The Basics
 
-[SolidJS](https://www.solidjs.com/) is the fastest, full-featured frontend framework available today. It’s often compared to React, the most popular framework, because of their similarities, but SolidJS stands out with its superior performance. This can be a game-changer, especially when developing for low-power devices. That’s why choosing the [SolidJS integration layer](https://github.com/lightning-tv/solid) with the [LightningJS renderer](https://www.lightningjs.io/), is an excellent choice for building high-performance TV apps.
+SolidTV is the fastest, full-featured frontend framework for building TV applications available today. It stands out with its superior performance, which is a game-changer when developing for low-power devices. That’s why choosing SolidTV is an excellent choice for building high-performance TV apps.
 
-![Solid & Lightning](../images/basics/solid-lightning.svg)
+![SolidTV](../images/basics/solid-lightning.svg)
 
 ## Quick Start
 
-To kick things off, let’s set up a SolidJS app with a starter template built specifically for Lightning.
+To kick things off, let’s set up a SolidTV app with a starter template built specifically for TV.
 
 ```sh
-> npx degit lightning-tv/solid-starter-template my-app
+> npx degit solid-tv/solid-starter-template my-app
 > cd my-app
 > npm i # or yarn or pnpm
 > npm start # or yarn or pnpm
 ```
 
-This will clone the starter template, which gets you up and running with a basic “Hello World” app in no time. If you want something more fleshed out, check out the demo app: https://github.com/lightning-tv/solid-demo-app.
+This will clone the starter template, which gets you up and running with a basic “Hello World” app in no time. If you want something more fleshed out, check out the demo app: https://github.com/solid-tv/solid-demo-app.
 
-![Solid Demo App](../images/basics/SolidDemoApp.png)
+![SolidTV Demo App](../images/basics/SolidDemoApp.png)
 
 Once inside the starter template, you’ll notice a few key files:
 
-- **index.tsx**: The entry point of your app. It contains the configuration for both the LightningJS renderer and the Solid Router.
+- **index.tsx**: The entry point of your app. It contains the configuration for both the SolidTV renderer and the SolidTV Router.
 - **App.tsx**: Your main app wrapper. It’s like the outer shell for your app — think navigation bars, backgrounds, and global layouts.
 
 You’ll also see that we’re using TypeScript by default (hence `.ts` and `.tsx` file extensions). If you’re using VS Code, you’ll enjoy the sweet auto-completion for most of the code, making it even easier to get going!
 
 ## Configuring the Renderer
 
-Let’s take a peek inside `index.tsx` to see some of the Lightning-specific configurations.
+Let’s take a peek inside `index.tsx` to see some of the SolidTV-specific configurations.
 
 ```jsx
 // Default font settings for all <Text> nodes
 Config.fontSettings.fontFamily = 'Roboto';
 Config.fontSettings.color = 0xffffffff;
 
-// Settings for Lightning 3 Renderer passed in for starting application
+// Settings for SolidTV Renderer passed in for starting application
 Config.rendererOptions = {
   numImageWorkers: 2,
   fontEngines: [SdfTextRenderer],
@@ -51,11 +51,11 @@ Config.rendererOptions = {
 Here, we’re setting up a few important things:
 
 - We’re defaulting font settings for all `<Text>` nodes.
-- The `rendererOptions` allow us to pass options to the Lightning renderer, including the number of image workers, font engines, and pixel ratios.
+- The `rendererOptions` allow us to pass options to the SolidTV renderer, including the number of image workers, font engines, and pixel ratios.
 
-## Routing with SolidJS Router
+## Routing with SolidTV Router
 
-Routing in SolidJS is handled with the popular [SolidJS Router](https://github.com/solidjs/solid-router), why write your own? It’s robust, fast, and flexible.
+Routing in SolidTV is handled with the popular [SolidTV Router](https://github.com/solidjs/solid-router), why write your own? It’s robust, fast, and flexible.
 
 ```jsx
 // Lazy load routes easily with lazy
@@ -75,7 +75,7 @@ render(() => (
 ));
 ```
 
-Lazy-loading routes? Oh yeah! This helps reduce the initial bundle size and lets your app boot up super fast. The cool thing about SolidJS Router is the ability to preload data for routes before they fully load. By following the “render as you fetch” pattern, we can make API calls while a component is being rendered, giving us that super snappy feel.
+Lazy-loading routes? Oh yeah! This helps reduce the initial bundle size and lets your app boot up super fast. The cool thing about SolidTV Router is the ability to preload data for routes before they fully load. By following the “render as you fetch” pattern, we can make API calls while a component is being rendered, giving us that super snappy feel.
 
 If you need different sections of your app with varying layouts (say, some with a sidebar and some without), you can easily structure it like this:
 
@@ -96,7 +96,7 @@ Here, any route under `/main` will include a left-side navigation bar, but route
 
 ## Focus Management and Accessibility
 
-In `App.jsx`, we start seeing the power of SolidJS and Lightning’s ecosystem working together. Take a look at this:
+In `App.jsx`, we start seeing the power of SolidTV and SolidTV’s ecosystem working together. Take a look at this:
 
 ```jsx
 const App = (props) => {
@@ -120,15 +120,15 @@ const App = (props) => {
   // ...
 ```
 
-The `useFocusManager` is the go-to for handling key events, like those from remote controls or keyboards. For instance, pressing "t" will trigger an `onText` callback. You can dive into all the details on focus management in the [SolidJS Lightning docs](https://lightning-tv.github.io/solid/#/essentials/focus?id=focus-key-handling-or-remotes).
+The `useFocusManager` is the go-to for handling key events, like those from remote controls or keyboards. For instance, pressing "t" will trigger an `onText` callback. You can dive into all the details on focus management in the [SolidTV docs](https://solid-tv.github.io/solid/#/essentials/focus?id=focus-key-handling-or-remotes).
 
 `useMouse` adds support for remote controls like the LG Magic Mouse, while `useAnnouncer` integrates accessibility features, like screen reader voice-out for focused elements. All this out of the box.
 
-There are also a ton of [Solid Primitives](https://github.com/solidjs-community/solid-primitives) available that will help you with localstorage, debouncing, and other common app problems.
+There are also a ton of [SolidTV Primitives](https://github.com/solidjs-community/solid-primitives) available that will help you with localstorage, debouncing, and other common app problems.
 
 ## The Power of JSX
 
-SolidJS embraces JSX for templating, which makes the development process feel super natural and fluid. JSX is well supported in editors and has been widely adopted thanks to React. Why change a good thing...
+SolidTV embraces JSX for templating, which makes the development process feel super natural and fluid. JSX is well supported in editors and has been widely adopted thanks to React. Why change a good thing...
 
 ```jsx
 return (
@@ -149,7 +149,7 @@ Here, our `<View>` is handling all sorts of actions, like toggling the announcer
 
 ## Page Components
 
-Pages in SolidJS are nothing more than components themselves—simple functions that take in props. You can import any components you need and simply return them as part of your page. No need to register pages in any special way; it's all just components under the hood.
+Pages in SolidTV are nothing more than components themselves—simple functions that take in props. You can import any components you need and simply return them as part of your page. No need to register pages in any special way; it's all just components under the hood.
 
 ```jsx
 const HelloWorld = (props) => {
@@ -159,11 +159,11 @@ const HelloWorld = (props) => {
 export default HelloWorld;
 ```
 
-See how simple that is? The `HelloWorld` page is just a function that receives `props` (an object with key-value pairs) to pass around. There’s no need to define what those props are ahead of time; just treat them like a dynamic object. And the best part? There’s no performance overhead for calling these functions. You can create as many components as you want and use them freely without worrying about extra resource consumption. SolidJS’s reactivity engine ensures everything is blazing fast.
+See how simple that is? The `HelloWorld` page is just a function that receives `props` (an object with key-value pairs) to pass around. There’s no need to define what those props are ahead of time; just treat them like a dynamic object. And the best part? There’s no performance overhead for calling these functions. You can create as many components as you want and use them freely without worrying about extra resource consumption. SolidTV’s reactivity engine ensures everything is blazing fast.
 
 ## Core Components: `<View>` and `<Text>`
 
-There are two key components that you’ll rely on when building apps in Solid with Lightning: `<View>` and `<Text>`. These correspond to the core Lightning renderer primitives (everything's a node or text in the renderer). Let's build a simple button:
+There are two key components that you’ll rely on when building apps in SolidTV: `<View>` and `<Text>`. These correspond to the core SolidTV renderer primitives (everything's a node or text in the renderer). Let's build a simple button:
 
 ```jsx
 <View width={300} height={150} color="#4169e1" borderRadius={24}>
@@ -173,7 +173,7 @@ There are two key components that you’ll rely on when building apps in Solid w
 </View>
 ```
 
-Each attribute gets passed straight through to the Lightning renderer. And remember, since Lightning is rendering to a canvas, every element is positioned like `position: absolute` would be in HTML/CSS, giving you precise control over layout. Everything has an `x` and a `y` position which default to 0,0 if not present. We've made a simple button:
+Each attribute gets passed straight through to the SolidTV renderer. And remember, since SolidTV is rendering to a canvas, every element is positioned like `position: absolute` would be in HTML/CSS, giving you precise control over layout. Everything has an `x` and a `y` position which default to 0,0 if not present. We've made a simple button:
 
 ![Button](../images/basics/Button1.png)
 
@@ -244,7 +244,7 @@ One problem we have no is all the buttons are a set size... let's fix that.
 
 ## Layout with Flex
 
-Flex is a fundamental tool for building layouts. By using [flex implementation](https://lightning-tv.github.io/solid/#/flow/layout?id=flex) for Solid, we can create layouts that are responsive and easy to manage. Let’s make a button that resizes based on the size of it's text:
+Flex is a fundamental tool for building layouts. By using [flex implementation](https://solid-tv.github.io/solid/#/flow/layout?id=flex) for Solid, we can create layouts that are responsive and easy to manage. Let’s make a button that resizes based on the size of it's text:
 
 ```jsx
 import { View, Text } from '@solidtv/solid';
@@ -273,7 +273,7 @@ export function Button(props) {
 
 With `display: flex`, it’s easy to create dynamic layouts where content automatically adjusts based on the size of the text or other items (and using margin for a bit of padding).
 
-![SolidJS Is Awesome](../images/basics/SolidJSIsAwesomeButton.png)
+![SolidTV Is Awesome](../images/basics/SolidTVIsAwesomeButton.png)
 
 This is especially important with dynamically loaded content or switching user languages or putting images in between text. Check out this example:
 
@@ -302,9 +302,9 @@ Pretty powerful stuff. Could you imagine doing this without flex? Using callback
 
 With flex, everything just lays out how you'd expect.
 
-## SolidJS Signals: Reactivity Made Simple
+## SolidTV Signals: Reactivity Made Simple
 
-One of the killer features of SolidJS is its fine-grained reactivity system, which lets you manage state effortlessly.
+One of the killer features of SolidTV is its fine-grained reactivity system, which lets you manage state effortlessly.
 
 ```jsx
 import { createSignal } from 'solid-js';
@@ -360,7 +360,7 @@ Now, when the button is focused, it’ll smoothly scale up and increase in opaci
 
 ## Dynamic Content with `<For>`
 
-Let’s say you want to dynamically generate buttons based on a list of items. SolidJS provides the `<For>` directive to handle this easily.
+Let’s say you want to dynamically generate buttons based on a list of items. SolidTV provides the `<For>` directive to handle this easily.
 
 ```jsx
 import { createSignal, For } from 'solid-js';
@@ -375,13 +375,13 @@ const HelloWorld = () => {
       color: 0x1e90ffff,
     },
     {
-      label: 'SolidJS',
-      action: () => console.log('SolidJS clicked'),
+      label: 'SolidTV',
+      action: () => console.log('SolidTV clicked'),
       color: 0x4682b4ff,
     },
     {
-      label: 'Lightning',
-      action: () => console.log('Lightning clicked'),
+      label: 'SolidTV',
+      action: () => console.log('SolidTV clicked'),
       color: 0x556b2fff,
     },
     {
@@ -409,14 +409,14 @@ export default HelloWorld;
 
 ![Row of Buttons](../images/basics/row_buttons.gif)
 
-With SolidJS’s robust framework, generating dynamic content like this is a breeze. We’re also using the Row component from [RDK’s Solid-UI Library](https://github.com/rdkcentral/solid-ui). This is simple flex container which handles setting focus between it’s children using Right and Left keypresses. You can checkout all the available UI components to help you quickly build your own app:
+With SolidTV’s robust framework, generating dynamic content like this is a breeze. We’re also using the Row component from [RDK’s Solid-UI Library](https://github.com/rdkcentral/solid-ui). This is simple flex container which handles setting focus between it’s children using Right and Left keypresses. You can checkout all the available UI components to help you quickly build your own app:
 https://rdkcentral.github.io/solid-ui/?path=/docs/components-row — docs
 
 ---
 
-That’s just scratching the surface of what you can do with **SolidJS** and **Lightning 3**. To dive deeper, check out the resources below:
+That’s just scratching the surface of what you can do with **SolidTV** and **SolidTV**. To dive deeper, check out the resources below:
 
-- **Official Website**: [lightningtv.dev](https://lightningtv.dev)
-- **GitHub Repository**: [github.com/lightning-tv/solid](https://github.com/lightning-tv/solid)
+- **Official Website**: [solid-tv.github.io/solid/](https://solid-tv.github.io/solid/)
+- **GitHub Repository**: [github.com/solid-tv/solid](https://github.com/solid-tv/solid)
 - **Join the Community**: [Discord](https://discord.gg/HEqckxcB)
 - **Connect with me**: [Chris Lorenzo on LinkedIn](https://www.linkedin.com/in/chris-lorenzo/)

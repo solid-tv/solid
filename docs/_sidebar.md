@@ -48,8 +48,8 @@
   - [Screen Resolution](/essentials/screen_resolution.md)
   - [AI Context](/essentials/ai_context.md)
   - [Real World Performance](/articles/realworldperformance.md)
-  - [Boosting LightningJS Performance by 50%](/articles/boostingperf.md)
-  - [Solid / Blits Framework Comparison](/articles/solidvsblits.md)
+  - [Boosting SolidTV Performance by 50%](/articles/boostingperf.md)
+  - [SolidTV / Blits Framework Comparison](/articles/solidvsblits.md)
   - [DOM Renderer](/articles/domrenderer.md)
   - [SolidTV Renderer](/articles/solidtv_renderer.md)
 - Build & Deploy
@@ -58,4 +58,4 @@
   - [WebOs/LG](/deploy/lg.md)
   - [Legacy Devices](/deploy/legacy.md)
 - Tooling
-  - [Solid Devtools](/tools/solid_devtools.md)
+  - [SolidTV Devtools](/tools/solid_devtools.md)

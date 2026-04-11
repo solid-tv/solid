@@ -1,6 +1,6 @@
 # Displaying Images
 
-It's very easy to display images in your Solid App:
+It's very easy to display images in your SolidTV App:
 
 ```jsx
 <View width={200} height={200} src={imgSrc} />
@@ -12,7 +12,7 @@ Just give any `View` tag a src to an image. Be sure to also give it a width and 
 
 ## Sizing and Scaling and Autosize
 
-The Lightning renderer will scale the image to fit the width and height dimensions provided. If you don't know the size of the image you can use `autosize` attribute for the Renderer to set the image size when it loads.
+The SolidTV renderer will scale the image to fit the width and height dimensions provided. If you don't know the size of the image you can use `autosize` attribute for the Renderer to set the image size when it loads.
 
 For the best performance, it's important to keep your source images as small as possible. If you're displaying an image at `200px x 200px`, make sure the image is exactly that size or _smaller_. The latter option may lead to some quality loss, but can positively impact the overall performance of your App.
 

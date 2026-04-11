@@ -9,18 +9,18 @@
   }
 </style>
 
-# Evaluating Lightning 3 Frameworks
+# Evaluating SolidTV Frameworks
 
-Lightning 3 provides the flexibility to choose between bringing your own framework (SolidJS, Vue, or React) or utilizing the official Blits framework developed from scratch by the Lightning team. How should you make this decision?
+SolidTV provides the flexibility to choose between bringing your own framework (SolidTV, Vue, or React) or utilizing the official Blits framework developed from scratch by the SolidTV team. How should you make this decision?
 
 ## Performance Considerations
 
-Performance is paramount, especially on low-end devices. SolidJS boasts approximately 2 to 3 times faster performance compared to Blits, and it also offers a smaller JavaScript footprint (~10kb gzipped), leading to quicker startup times.
+Performance is paramount, especially on low-end devices. SolidTV boasts approximately 2 to 3 times faster performance compared to Blits, and it also offers a smaller JavaScript footprint (~10kb gzipped), leading to quicker startup times.
 
 <div style="display: flex; justify-content: center; gap: 30px">
   <figure>
-    <figcaption>Solid Random Node Creation (26ms)</figcaption>
-    <img src="images/Solid-RandomNodes.png" alt="Solid Random Node Creation">
+    <figcaption>SolidTV Random Node Creation (26ms)</figcaption>
+    <img src="images/Solid-RandomNodes.png" alt="SolidTV Random Node Creation">
   </figure>
 
   <figure>
@@ -33,8 +33,8 @@ Performance is paramount, especially on low-end devices. SolidJS boasts approxim
 
 <div style="display: flex; justify-content: center; gap: 30px">
   <figure>
-    <figcaption>Solid Bundle Size (55k)</figcaption>
-    <img src="images/Solid-bundleSize.png" alt="Solid Bundle Size">
+    <figcaption>SolidTV Bundle Size (55k)</figcaption>
+    <img src="images/Solid-bundleSize.png" alt="SolidTV Bundle Size">
   </figure>
 
   <figure>
@@ -45,13 +45,13 @@ Performance is paramount, especially on low-end devices. SolidJS boasts approxim
 
 ## Device Compatibility
 
-SolidJS has been tested and confirmed working as far back as Chrome 38. It can go back to even older browsers. This will get you same device coverage as Blits.
+SolidTV has been tested and confirmed working as far back as Chrome 38. It can go back to even older browsers. This will get you same device coverage as Blits.
 
-<img src="images/Chrome38.jpeg" alt="Solid Demo App on Chrome 38">
+<img src="images/Chrome38.jpeg" alt="SolidTV Demo App on Chrome 38">
 
 ## Established vs. New
 
-Opting for a framework with a long track record means leveraging a solution that has addressed numerous challenges, enjoys robust community support, and offers extensive code samples. Typically, it's advisable to select an established framework unless the newcomer offers a fundamentally different solution, which isn't the case with Blits. Furthermore, opting for an open-source framework allows you to apply your expertise to various web projects beyond just Lightning-specific ones. SolidJS is a well-established framework with ample tooling and developer resources, facilitating quick adoption. SolidJS is already operational with multiple production applications in progress, while Blits is still developing features that SolidJS already offers (Flex??).
+Opting for a framework with a long track record means leveraging a solution that has addressed numerous challenges, enjoys robust community support, and offers extensive code samples. Typically, it's advisable to select an established framework unless the newcomer offers a fundamentally different solution, which isn't the case with Blits. Furthermore, opting for an open-source framework allows you to apply your expertise to various web projects beyond just SolidTV-specific ones. SolidTV is a well-established framework with ample tooling and developer resources, facilitating quick adoption. SolidTV is already operational with multiple production applications in progress, while Blits is still developing features that SolidTV already offers (Flex??).
 
 ## Debugging Apps
 
@@ -71,7 +71,7 @@ With Solid, what you write is what you debug.
 
 ## Other Important Features
 
-| SolidJS                               | Blits                               |
+| SolidTV                               | Blits                               |
 | ------------------------------------- | ----------------------------------- |
 | - Flex Layout System                  | - Layout Component                  |
 | - Template Show / If Statements       | - Known Issue (not implemented yet) |

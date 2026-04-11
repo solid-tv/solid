@@ -26,7 +26,7 @@ Additionally, if you want all properties to transition you can set `transition: 
 
 ## Direct Animations
 
-For more complicated animations, you can access the Lightning renderer animate API directly:
+For more complicated animations, you can access the SolidTV renderer animate API directly:
 
 ```jsx
 let button;

@@ -1,6 +1,6 @@
-## Introduction to Rendering in SolidJS with Lightning TV
+## Introduction to Rendering in SolidTV with SolidTV TV
 
-In this snippet, we are utilizing SolidJS in conjunction with Lightning TV to render a simple "Hello World" text on the screen. SolidJS is a declarative JavaScript library for creating user interfaces, renowned for its performance and fine-grained reactivity. Lightning TV is a framework for building high-performance, animated TV applications. By combining these technologies, we can create dynamic and visually appealing interfaces optimized for TV environments.
+In this snippet, we are utilizing SolidTV in conjunction with SolidTV TV to render a simple "Hello World" text on the screen. SolidTV is a declarative JavaScript library for creating user interfaces, renowned for its performance and fine-grained reactivity. SolidTV TV is a framework for building high-performance, animated TV applications. By combining these technologies, we can create dynamic and visually appealing interfaces optimized for TV environments.
 
 ```jsx
 import { render, Text } from '@solidtv/solid';
@@ -8,20 +8,20 @@ import { render, Text } from '@solidtv/solid';
 render(() => <Text>Hello World</Text>);
 ```
 
-## Understanding the Integration of SolidJS and Lightning TV
+## Understanding the Integration of SolidTV and SolidTV TV
 
-It's very important to understand the concepts of SolidJS as that is the primary library for building the UI. SolidJS provides the foundation for creating reactive and efficient user interfaces, while the Lightning TV integration merely links SolidJS with the Lightning Renderer to create Canvas drawing. This combination allows for the creation of high-performance TV applications with smooth animations and responsive designs.
+It's very important to understand the concepts of SolidTV as that is the primary library for building the UI. SolidTV provides the foundation for creating reactive and efficient user interfaces, while the SolidTV TV integration merely links SolidTV with the SolidTV Renderer to create Canvas drawing. This combination allows for the creation of high-performance TV applications with smooth animations and responsive designs.
 
-### Key Concepts in SolidJS
+### Key Concepts in SolidTV
 
-To effectively use this integration, familiarize yourself with the core concepts of SolidJS:
+To effectively use this integration, familiarize yourself with the core concepts of SolidTV:
 
-- **Reactivity**: SolidJS uses fine-grained reactivity to update the DOM. This means that only the parts of the DOM that need to change are updated, resulting in highly efficient rendering.
-- **Components**: Components are the building blocks of a SolidJS application. They are functions that return JSX and can manage their own state and lifecycle.
-- **JSX**: SolidJS uses JSX, a syntax extension for JavaScript that allows you to write HTML-like code within JavaScript. This makes it easy to define UI components declaratively.
-- **State Management**: SolidJS provides reactive primitives such as signals, stores, and context to manage state within your application.
+- **Reactivity**: SolidTV uses fine-grained reactivity to update the DOM. This means that only the parts of the DOM that need to change are updated, resulting in highly efficient rendering.
+- **Components**: Components are the building blocks of a SolidTV application. They are functions that return JSX and can manage their own state and lifecycle.
+- **JSX**: SolidTV uses JSX, a syntax extension for JavaScript that allows you to write HTML-like code within JavaScript. This makes it easy to define UI components declaratively.
+- **State Management**: SolidTV provides reactive primitives such as signals, stores, and context to manage state within your application.
 
-You can learn more about SolidJS from their [documentation](https://docs.solidjs.com/).
+You can learn more about SolidTV from their [documentation](https://docs.solidjs.com/).
 
 ## Configuring the Renderer
 
@@ -49,7 +49,7 @@ Config.rendererOptions = {
 render(() => <Text>Hello World</Text>);
 ```
 
-For the latest renderer options read the official [renderer documentation](https://www.lightningjs.io/api/renderer/interfaces/Renderer.RendererMainSettings.html)
+For the latest renderer options read the official [renderer documentation](https://www.solid-tv.github.io/solid//api/renderer/interfaces/Renderer.RendererMainSettings.html)
 
 ### Config.rendererOptions
 
@@ -135,7 +135,7 @@ Besides `rendererOptions`, the `Config` object exposes several properties specif
   The property key used to identify the focused state styling.
   - _Default_: `'$focus'`
 - **domRendererEnabled**: `boolean` (Default: `false`)
-  Whether the DOM renderer should be used instead of the Lightning Canvas renderer.
+  Whether the DOM renderer should be used instead of the SolidTV Canvas renderer.
 - **simpleAnimationsEnabled**: `boolean`
   Allows simple CSS-like transition properties without full engine overhead.
 - **throttleInput**: `number`

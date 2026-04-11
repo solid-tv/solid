@@ -1,10 +1,10 @@
-# Integrating with Solid Devtools
+# Integrating with SolidTV Devtools
 
-[Solid Devtools](https://github.com/thetarnav/solid-devtools) provides debugging capabilities for Solid.js applications. This guide explains how to integrate solid-devtools with Lightning Solid to inspect your Lightning applications.
+[SolidTV Devtools](https://github.com/thetarnav/solid-devtools) provides debugging capabilities for Solid.js applications. This guide explains how to integrate solid-devtools with SolidTV SolidTV to inspect your SolidTV applications.
 
 ## Installation
 
-For chrome-development install the [Solid Devtools Chrome Extension](https://chrome.google.com/webstore/detail/solid-devtools/kmcfjchnmmaeeagadbhoofajiopoceel).
+For chrome-development install the [SolidTV Devtools Chrome Extension](https://chrome.google.com/webstore/detail/solid-devtools/kmcfjchnmmaeeagadbhoofajiopoceel).
 
 Then, install the `solid-devtools` package:
 
@@ -16,7 +16,7 @@ pnpm add -D solid-devtools
 
 ### 1. Setup Vite Plugin (Optional)
 
-Add the Solid Devtools Vite plugin to your Vite configuration file:
+Add the SolidTV Devtools Vite plugin to your Vite configuration file:
 
 ```ts
 import devtools from 'solid-devtools/vite';
@@ -46,7 +46,7 @@ export default defineConfig({
 
 ### 2. Configure Element Interface
 
-Since Lightning.js uses a custom renderer (not DOM-based), you need to provide Solid Devtools with a custom ElementInterface implementation. Fortunately, `@solidtv/solid` already includes this implementation.
+Since Lightning.js uses a custom renderer (not DOM-based), you need to provide SolidTV Devtools with a custom ElementInterface implementation. Fortunately, `@solidtv/solid` already includes this implementation.
 
 Add the following code to your application entry file (typically `index.tsx`):
 
@@ -58,6 +58,6 @@ import { elementInterface } from '@solidtv/solid/devtools';
 setElementInterface(elementInterface);
 ```
 
-This allows the Solid Devtools panel to properly display and interact with your Lightning application's component tree.
+This allows the SolidTV Devtools panel to properly display and interact with your SolidTV application's component tree.
 
-For more information on supporting custom renderers in Solid Devtools, refer to the [official documentation](https://github.com/thetarnav/solid-devtools/tree/main/packages/debugger#supporting-custom-renderers).
+For more information on supporting custom renderers in SolidTV Devtools, refer to the [official documentation](https://github.com/thetarnav/solid-devtools/tree/main/packages/debugger#supporting-custom-renderers).

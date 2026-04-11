@@ -45,7 +45,7 @@ Config.fontSettings.fontSize = 30;
 
 ### SDF and Canvas2d
 
-Compared to Lightning 2, texts have improved a lot in Lightning 3, thanks to the SDF (Signed Distance Field) Text renderer. With the SDF text renderer, texts appear a lot _sharper_ on screen. The SDF technique also allows for better scaling of texts, without them becoming blurry. In general, it's recommended to use the SDF text renderer, but Lightning 3 still has a Canvas2d text renderer as a backup, and you can use both text renderers within the same App.
+Compared to SolidTV 2, texts have improved a lot in SolidTV, thanks to the SDF (Signed Distance Field) Text renderer. With the SDF text renderer, texts appear a lot _sharper_ on screen. The SDF technique also allows for better scaling of texts, without them becoming blurry. In general, it's recommended to use the SDF text renderer, but SolidTV still has a Canvas2d text renderer as a backup, and you can use both text renderers within the same App.
 
 ### Using Custom Fonts
 

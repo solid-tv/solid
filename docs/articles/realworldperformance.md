@@ -11,25 +11,25 @@
   }
 </style>
 
-# Lightning 3: Solid & Blits Performance in the Real World
+# SolidTV: SolidTV & Blits Performance in the Real World
 
-When it comes to **SolidJS** and **Blits**, a common question is: which is better suited for building performant, scalable TV applications? To help answer this, let’s dive into a head-to-head comparison using the **TMDB (The Movie Database)** example app, exploring each framework’s performance, developer experience, and more.
+When it comes to **SolidTV** and **Blits**, a common question is: which is better suited for building performant, scalable TV applications? To help answer this, let’s dive into a head-to-head comparison using the **TMDB (The Movie Database)** example app, exploring each framework’s performance, developer experience, and more.
 
-## Overview: Solid vs. Blits
+## Overview: SolidTV vs. Blits
 
-While not identical, the Solid and Blits TMDB versions are close enough to allow for a fair comparison. The **Solid** app includes a left navigation drawer, titles above rows, and leverages **Solid-UI components**. While these extra features should give Blits a performance lead, Solid maintains it's edge.
+While not identical, the SolidTV and Blits TMDB versions are close enough to allow for a fair comparison. The **Solid** app includes a left navigation drawer, titles above rows, and leverages **Solid-UI components**. While these extra features should give Blits a performance lead, SolidTV maintains it's edge.
 
 <div style="display: flex; justify-content: center; gap: 30px">
   <figure>
     <figcaption>
-      <a href="https://lightning-tv.github.io/solid-demo-app/#/tmdb" target="_blank">Solid TMDB</a>
+      <a href="https://solid-tv.github.io/solid-demo-app/#/tmdb" target="_blank">SolidTV TMDB</a>
     </figcaption>
-    <img src="images/compare/Solid-TMDB.png" alt="Solid TMDB">
+    <img src="images/compare/Solid-TMDB.png" alt="SolidTV TMDB">
   </figure>
 
   <figure>
     <figcaption>
-      <a href="https://blits-demo.lightningjs.io/#/demos/tmdb" target="_blank">Blits TMDB</a>
+      <a href="https://blits-demo.solid-tv.github.io/solid//#/demos/tmdb" target="_blank">Blits TMDB</a>
     </figcaption>
     <img src="images/compare/Blits-TMDB.png" alt="Blits TMDB">
   </figure>
@@ -42,9 +42,9 @@ So, how do these apps measure up in real-world performance? I tested both versio
 <div style="display: flex; justify-content: center; gap: 30px">
   <figure>
     <figcaption>
-      Solid Timeline
+      SolidTV Timeline
     </figcaption>
-    <img src="images/compare/Solid-Timeline.png" alt="Solid Timeline">
+    <img src="images/compare/Solid-Timeline.png" alt="SolidTV Timeline">
   </figure>
 
   <figure>
@@ -55,23 +55,23 @@ So, how do these apps measure up in real-world performance? I tested both versio
   </figure>
 </div>
 
-SolidJS consistently loads in about **2.5 seconds**, compared to **3.5 seconds** for Blits—a 30% improvement in load time. For users, this means faster interactions and a more responsive feel, crucial for engagement. SolidJS’ speed advantage also grows with dynamic routing and **preloading capabilities**.
+SolidTV consistently loads in about **2.5 seconds**, compared to **3.5 seconds** for Blits—a 30% improvement in load time. For users, this means faster interactions and a more responsive feel, crucial for engagement. SolidTV’ speed advantage also grows with dynamic routing and **preloading capabilities**.
 
 ### Render as You Fetch
 
-SolidJS takes things a step further by allowing **parallel data fetching** with the **Solid Router**'s preload function. When navigating from the Home page to an Entity page, Solid starts fetching data **before** the page load completes. This enables an Entity page to load in as little as **400ms**, making transitions seamless and near instant.
+SolidTV takes things a step further by allowing **parallel data fetching** with the **SolidTV Router**'s preload function. When navigating from the Home page to an Entity page, SolidTV starts fetching data **before** the page load completes. This enables an Entity page to load in as little as **400ms**, making transitions seamless and near instant.
 
 <div style="display: flex; justify-content: center; gap: 30px">
   <figure>
-    <figcaption>Solid Home</figcaption>
-    <img src="images/compare/Solid-Home.png" alt="Solid Home">
+    <figcaption>SolidTV Home</figcaption>
+    <img src="images/compare/Solid-Home.png" alt="SolidTV Home">
   </figure>
 
   <figure>
     <figcaption>
-      Solid Entity
+      SolidTV Entity
     </figcaption>
-    <img src="images/compare/Solid-Entity.png" alt="Solid Entity">
+    <img src="images/compare/Solid-Entity.png" alt="SolidTV Entity">
   </figure>
 </div>
 
@@ -79,7 +79,7 @@ Unfortunately, the Blits app doesn't have an Entity page, so direct comparisons 
 
 ## Developer Experience
 
-SolidJS offers a streamlined development process. In just a few hours, I was able to recreate the TMDB page from Blits with less code and reduced complexity. Solid’s **reusable components** and **flex layout** make it easy to maintain and scale applications, while familiarity with patterns from React keeps the learning curve low. Let's look at how the code compares:
+SolidTV offers a streamlined development process. In just a few hours, I was able to recreate the TMDB page from Blits with less code and reduced complexity. Solid’s **reusable components** and **flex layout** make it easy to maintain and scale applications, while familiarity with patterns from React keeps the learning curve low. Let's look at how the code compares:
 
 ### Route Setup
 
@@ -158,7 +158,7 @@ hooks: {
 }
 ```
 
-Here, Blits loads the page first, then calls the ready hook before fetching data. The fetching and manipulation of data is very similar. However, state for blits must be inside a component using the `state` prop. SolidJS supports truely global signals that are decoupled from components.
+Here, Blits loads the page first, then calls the ready hook before fetching data. The fetching and manipulation of data is very similar. However, state for blits must be inside a component using the `state` prop. SolidTV supports truely global signals that are decoupled from components.
 
 ### Components
 
@@ -211,8 +211,8 @@ Solid’s ecosystem includes useful components like Row and Column that handle f
 
 <div style="display: flex; justify-content: center; gap: 30px">
   <figure>
-    <figcaption>Solid Rows</figcaption>
-    <img src="images/compare/Solid-Rows.png" alt="Solid Rows">
+    <figcaption>SolidTV Rows</figcaption>
+    <img src="images/compare/Solid-Rows.png" alt="SolidTV Rows">
   </figure>
 </div>
 
@@ -265,15 +265,15 @@ Additionally, you'll want to check out `<LazyUp>` and `<Dynamic>` components. He
 
 ## Conclusion
 
-SolidJS and Blits are both frameworks built on top of the Lightning 3 Renderer, allowing for immediate rendering with WebGL. But for speed, flexibility, and developer-friendly design, **SolidJS** stands out. Its open-source router, parallel data fetching, and reusable components make it a robust choice for quickly building real-world applications.
+SolidTV and Blits are both frameworks built on top of the SolidTV Renderer, allowing for immediate rendering with WebGL. But for speed, flexibility, and developer-friendly design, **SolidTV** stands out. Its open-source router, parallel data fetching, and reusable components make it a robust choice for quickly building real-world applications.
 
-For a hands-on experience, check out the live [Solid TMDB demo](https://lightning-tv.github.io/solid-demo-app/#/tmdb) and the [Blits TMDB demo](https://blits-demo.lightningjs.io/#/demos/tmdb) to see the differences firsthand!
+For a hands-on experience, check out the live [SolidTV TMDB demo](https://solid-tv.github.io/solid-demo-app/#/tmdb) and the [Blits TMDB demo](https://blits-demo.solid-tv.github.io/solid//#/demos/tmdb) to see the differences firsthand!
 
 ---
 
 To learn more and get involved:
 
-- **Official Website**: [lightningtv.dev](https://lightningtv.dev)
-- **GitHub Repository**: [github.com/lightning-tv/solid](https://github.com/lightning-tv/solid)
+- **Official Website**: [solid-tv.github.io/solid/](https://solid-tv.github.io/solid/)
+- **GitHub Repository**: [github.com/solid-tv/solid](https://github.com/solid-tv/solid)
 - **Community Discord**: [Discord](https://discord.gg/HEqckxcB)
 - **Connect with Me**: [Chris Lorenzo on LinkedIn](https://www.linkedin.com/in/chris-lorenzo/)

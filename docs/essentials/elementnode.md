@@ -1,8 +1,8 @@
 # Element Node
 
-All JSX code is compiled into `ElementNode` class objects, which extend the Lightning 3 Renderer nodes.
+All JSX code is compiled into `ElementNode` class objects, which extend the SolidTV Renderer nodes.
 
-<img src="images/SolidElementNode.jpg" alt="Solid To Renderer Node Creation">
+<img src="images/SolidElementNode.jpg" alt="SolidTV To Renderer Node Creation">
 
 ```jsx
 let container;
@@ -22,7 +22,7 @@ container.color = '#000000';
 container.x = 100;
 // ElementNode extends Object, so you can add arbitrary properties.
 // Only renderer-specific properties will be forwarded
-container.customProp = 'Solid Rocks';
+container.customProp = 'SolidTV Rocks';
 ```
 
 Often, you'll want to manipulate the children of the node.
