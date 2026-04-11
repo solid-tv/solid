@@ -8,11 +8,11 @@ The following code demonstrates how to create a simple Counter component using S
 
 ### Imports and Typescript
 
-First, necessary functions and types are imported from `solid-js` and `@lightningtv/solid`:
+First, necessary functions and types are imported from `solid-js` and `@solidtv/solid`:
 
 ```jsx
 import { type Component } from 'solid-js';
-import { View, Text, type NodeProps } from '@lightningtv/solid';
+import { View, Text, type NodeProps } from '@solidtv/solid';
 ```
 
 ### Component Interface
@@ -31,7 +31,7 @@ The `Counter` component is defined as a SolidJS component that accepts `CounterP
 
 ```jsx
 import { type Component } from 'solid-js';
-import { View, Text, type NodeProps } from '@lightningtv/solid';
+import { View, Text, type NodeProps } from '@solidtv/solid';
 
 interface CounterProps extends NodeProps {
   count: number;

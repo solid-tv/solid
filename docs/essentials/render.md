@@ -3,7 +3,7 @@
 In this snippet, we are utilizing SolidJS in conjunction with Lightning TV to render a simple "Hello World" text on the screen. SolidJS is a declarative JavaScript library for creating user interfaces, renowned for its performance and fine-grained reactivity. Lightning TV is a framework for building high-performance, animated TV applications. By combining these technologies, we can create dynamic and visually appealing interfaces optimized for TV environments.
 
 ```jsx
-import { render, Text } from '@lightningtv/solid';
+import { render, Text } from '@solidtv/solid';
 
 render(() => <Text>Hello World</Text>);
 ```
@@ -28,12 +28,9 @@ You can learn more about SolidJS from their [documentation](https://docs.solidjs
 Before calling the Render function, you can set rendererOptions.
 
 ```jsx
-import { render, Config, Text } from '@lightningtv/solid';
-import {
-  WebGlCoreRenderer,
-  SdfTextRenderer,
-} from '@lightningjs/renderer/webgl';
-import { Inspector } from '@lightningjs/renderer/inspector';
+import { render, Config, Text } from '@solidtv/solid';
+import { WebGlCoreRenderer, SdfTextRenderer } from '@solidtv/renderer/webgl';
+import { Inspector } from '@solidtv/renderer/inspector';
 
 Config.rendererOptions = {
   fpsUpdateInterval: logFps ? 1000 : 0,
@@ -113,7 +110,7 @@ For the latest renderer options read the official [renderer documentation](https
 
 ### Additional Solid-Specific Configurations
 
-Besides `rendererOptions`, the `Config` object exposes several properties specific to `@lightningtv/solid` runtime behavior:
+Besides `rendererOptions`, the `Config` object exposes several properties specific to `@solidtv/solid` runtime behavior:
 
 - **debug**: `boolean` (Default: `false`)
   Enables general debug logging.

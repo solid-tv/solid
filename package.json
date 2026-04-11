@@ -1,39 +1,39 @@
 {
-  "name": "@lightningtv/solid",
-  "version": "3.2.5",
-  "description": "Lightning Renderer for Solid Universal",
+  "name": "@solidtv/solid",
+  "version": "0.9.0",
+  "description": "SolidTV",
   "type": "module",
   "exports": {
     ".": {
-      "@lightningtv/source": "./src/index.ts",
+      "@solidtv/source": "./src/index.ts",
       "import": {
         "types": "./dist/src/index.d.ts",
         "default": "./dist/src/index.js"
       }
     },
     "./primitives": {
-      "@lightningtv/source": "./src/primitives/index.ts",
+      "@solidtv/source": "./src/primitives/index.ts",
       "import": {
         "types": "./dist/src/primitives/index.d.ts",
         "default": "./dist/src/primitives/index.js"
       }
     },
     "./devtools": {
-      "@lightningtv/source": "./src/devtools/index.ts",
+      "@solidtv/source": "./src/devtools/index.ts",
       "import": {
         "types": "./dist/src/devtools/index.d.ts",
         "default": "./dist/src/devtools/index.js"
       }
     },
     "./shaders": {
-      "@lightningtv/source": "./src/shaders/index.ts",
+      "@solidtv/source": "./src/shaders/index.ts",
       "import": {
         "types": "./dist/src/shaders/index.d.ts",
         "default": "./dist/src/shaders/index.js"
       }
     },
     "./jsx-runtime": {
-      "@lightningtv/source": "./jsx-runtime.d.ts",
+      "@solidtv/source": "./jsx-runtime.d.ts",
       "default": "./dist/jsx-runtime.d.ts"
     }
   },
@@ -72,7 +72,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.16.0",
-    "@lightningjs/renderer": "npm:@lightningtv/renderer@3.3.0",
+    "@solidtv/renderer": "1.0.0",
     "@solid-devtools/debugger": "^0.28.1",
     "@solidjs/testing-library": "^0.8.10",
     "@typescript-eslint/eslint-plugin": "^8.17.0",
@@ -100,14 +100,14 @@
     "*.{js,cjs,md}": "prettier --write"
   },
   "peerDependencies": {
-    "@lightningjs/renderer": "^3.0.0",
+    "@solidtv/renderer": "^1.0.0",
     "@solidjs/router": "^0.15.1",
     "solid-js": "*"
   },
   "peerDependenciesMeta": {},
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/lightning-tv/solid.git"
+    "url": "git+https://github.com/solid-tv/solid.git"
   },
   "files": [
     "dist",

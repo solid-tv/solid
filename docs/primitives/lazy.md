@@ -17,7 +17,7 @@ You can also `lazyScrollToIndex` by using a ref on LazyRow or LazyColumn, simply
 ### Example Usage
 
 ```javascript
-import { LazyRow } from '@lightningtv/solid/primitives';
+import { LazyRow } from '@solidtv/solid/primitives';
 
 <LazyRow upCount={4} delay={250} each={local.items} style={styles.Row}>
   {(item, index) => <Thumbnail {...item} key={index} />}

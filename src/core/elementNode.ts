@@ -45,8 +45,8 @@ import type {
   CoreShaderNode,
   ITextNodeProps,
   INodeProps,
-} from '@lightningjs/renderer';
-import { assertTruthy } from '@lightningjs/renderer/utils';
+} from '@solidtv/renderer';
+import { assertTruthy } from '@solidtv/renderer/utils';
 import { NodeType } from './nodeTypes.js';
 import {
   ForwardFocusHandler,

@@ -32,7 +32,7 @@ Because the engines are conditionally evaluated at build time via `import.meta.e
 ### Example
 
 ```jsx
-import { View, Text } from '@lightningtv/solid';
+import { View, Text } from '@solidtv/solid';
 
 const RowStyles = {
   display: 'flex',

@@ -200,7 +200,7 @@ Now we have a simple button component that accepts props, making it easy to cust
 We can improve our button’s flexibility by introducing a style object. This also has the benefit of keeping our styles separate from the UI, similar to how CSS works with HTML. We could import our styles from another file or leave them inline - choice is yours.
 
 ```jsx
-import { View, Text } from '@lightningtv/solid';
+import { View, Text } from '@solidtv/solid';
 const buttonStyle = {
   width: 300,
   height: 150,
@@ -247,7 +247,7 @@ One problem we have no is all the buttons are a set size... let's fix that.
 Flex is a fundamental tool for building layouts. By using [flex implementation](https://lightning-tv.github.io/solid/#/flow/layout?id=flex) for Solid, we can create layouts that are responsive and easy to manage. Let’s make a button that resizes based on the size of it's text:
 
 ```jsx
-import { View, Text } from '@lightningtv/solid';
+import { View, Text } from '@solidtv/solid';
 const buttonStyle = {
   display: 'flex',
   height: 150,
@@ -364,7 +364,7 @@ Let’s say you want to dynamically generate buttons based on a list of items. S
 
 ```jsx
 import { createSignal, For } from 'solid-js';
-import { Row } from '@lightningtv/solid-ui';
+import { Row } from '@solidtv/solid-ui';
 import { Button } from '../components/button';
 
 const HelloWorld = () => {

@@ -1,4 +1,4 @@
-import * as lngr from '@lightningjs/renderer';
+import * as lngr from '@solidtv/renderer';
 import { ElementNode, type RendererNode } from './elementNode.js';
 import { NodeStates } from './states.js';
 import {

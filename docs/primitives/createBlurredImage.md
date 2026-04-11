@@ -7,8 +7,8 @@
 Import the `createBlurredImage` function and use it in your component. It takes an accessor function for the image URL and an optional options object.
 
 ```tsx
-import { createBlurredImage } from '@lightningjs/solid';
-import { Image } from '@lightningjs/solid/primitives';
+import { createBlurredImage } from '@solidtv/solid';
+import { Image } from '@solidtv/solid/primitives';
 
 const MyComponent = () => {
   const imageUrl = () => 'https://example.com/image.jpg';

@@ -13,7 +13,7 @@ This primitive should be enabled for TV's with mouse input like LG's Magic Remot
 Import the `useMouse` and call it:
 
 ```jsx
-import { useMouse } from '@lightningtv/solid';
+import { useMouse } from '@solidtv/solid';
 
 const App = () => {
   // rootNode, throttleBy in ms, and options

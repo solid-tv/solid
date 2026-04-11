@@ -1,4 +1,4 @@
-import * as lng from '@lightningjs/renderer';
+import * as lng from '@solidtv/renderer';
 import { Config, DOM_RENDERING } from './config.js';
 import { DOMRendererMain, loadFontToDom } from './dom-renderer/domRenderer.js';
 import { DomRendererMainSettings } from './dom-renderer/domRendererTypes.js';

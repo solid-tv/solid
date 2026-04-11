@@ -1,5 +1,5 @@
-import * as lng from '@lightningtv/solid';
-import * as lngp from '@lightningtv/solid/primitives';
+import * as lng from '@solidtv/solid';
+import * as lngp from '@solidtv/solid/primitives';
 import * as s from 'solid-js';
 
 type LazyProps<T extends readonly any[]> = lng.NewOmit<lng.NodeProps, 'children'> & {

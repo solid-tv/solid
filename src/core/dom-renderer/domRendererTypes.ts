@@ -1,5 +1,5 @@
-import * as lng from '@lightningjs/renderer';
-import { EventEmitter } from '@lightningjs/renderer/utils';
+import * as lng from '@solidtv/renderer';
+import { EventEmitter } from '@solidtv/renderer/utils';
 import {
   ShaderBorderPrefixedProps,
   ShaderHolePunchProps,

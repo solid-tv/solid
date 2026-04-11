@@ -5,7 +5,7 @@ A SolidJS directive that adds a visual border component to an element when it re
 ### Usage
 
 ```tsx
-import { borderBox } from '@lightningtv/solid/primitives';
+import { borderBox } from '@solidtv/solid/primitives';
 
 // Simple usage
 <view use:borderBox={true} />

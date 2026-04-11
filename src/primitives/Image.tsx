@@ -1,5 +1,5 @@
 import { type Component, createRenderEffect, createSignal } from 'solid-js';
-import { renderer, type NodeProps, type ImageTexture} from '@lightningtv/solid';
+import { renderer, type NodeProps, type ImageTexture} from '@solidtv/solid';
 import { Config } from '../core/config.js';
 
 export interface ImageProps extends NodeProps {

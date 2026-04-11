@@ -10,7 +10,7 @@ export default defineConfig(({ mode }) => ({
     solidPlugin({
       hot: false,
       solid: {
-        moduleName: '@lightningtv/solid',
+        moduleName: '@solidtv/solid',
         generate: 'universal',
         builtIns: [],
       },
@@ -23,6 +23,6 @@ export default defineConfig(({ mode }) => ({
     environment: 'jsdom',
   },
   resolve: {
-    conditions: ['@lightningtv/source', 'browser', 'development'],
+    conditions: ['@solidtv/source', 'browser', 'development'],
   },
 }));

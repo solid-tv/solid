@@ -9,10 +9,7 @@ The Focus Stack Utility helps manage focus navigation by storing and restoring f
 ### Importing and Setup
 
 ```tsx
-import {
-  FocusStackProvider,
-  useFocusStack,
-} from '@lightningtv/solid/primitives';
+import { FocusStackProvider, useFocusStack } from '@solidtv/solid/primitives';
 ```
 
 Wrap your application in the `FocusStackProvider` to provide focus management:

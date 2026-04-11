@@ -45,7 +45,7 @@ Adding `skipFocus` to any element will prevent it from receiving focus. This is 
 
 ```jsx
 import { createEffect, on, onMount } from 'solid-js';
-import { activeElement } from '@lightningtv/solid';
+import { activeElement } from '@solidtv/solid';
 
 // Get notified whenever the activeElement changes
 createEffect(
@@ -92,7 +92,7 @@ Keyhandling is added with [useFocusManager](/primitives/useFocusManager.md). It'
 You can set
 
 ```js
-import { Inspector } from '@lightningjs/renderer/inspector';
+import { Inspector } from '@solidtv/renderer/inspector';
 Config.focusDebug = true;
 Config.rendererOptions.inspector = Inspector;
 ```

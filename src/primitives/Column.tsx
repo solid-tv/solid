@@ -3,7 +3,7 @@ import {
   ElementNode,
   combineStyles,
   type NodeStyles,
-} from '@lightningtv/solid';
+} from '@solidtv/solid';
 import {
   navigableForwardFocus,
   handleNavigation,

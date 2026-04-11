@@ -7,7 +7,7 @@
 To use the `Dynamic` component:
 
 ```javascript
-import { Dynamic } from '@lightningtv/solid';
+import { Dynamic } from '@solidtv/solid';
 import { Poster, Hero, PosterTitle } from './components';
 const typeToComponent = {
   Poster: Poster,

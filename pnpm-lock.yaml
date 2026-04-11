@@ -30,15 +30,15 @@ importers:
       '@eslint/js':
         specifier: ^9.16.0
         version: 9.16.0
-      '@lightningjs/renderer':
-        specifier: npm:@lightningtv/renderer@3.3.0
-        version: '@lightningtv/renderer@3.3.0'
       '@solid-devtools/debugger':
         specifier: ^0.28.1
         version: 0.28.1(solid-js@1.9.3)
       '@solidjs/testing-library':
         specifier: ^0.8.10
         version: 0.8.10(@solidjs/router@0.15.1(solid-js@1.9.3))(solid-js@1.9.3)
+      '@solidtv/renderer':
+        specifier: 1.0.0
+        version: 1.0.0
       '@typescript-eslint/eslint-plugin':
         specifier: ^8.17.0
         version: 8.17.0(@typescript-eslint/parser@8.17.0(eslint@9.16.0)(typescript@5.9.2))(eslint@9.16.0)(typescript@5.9.2)
@@ -438,10 +438,6 @@ packages:
   '@jridgewell/trace-mapping@0.3.25':
     resolution: {integrity: sha512-vNk6aEwybGtawWmy/PzwnGDOjCkLWSD2wqvjGGAgOAwCGWySYXfYoxt00IJkTF+8Lb57DwOb3Aa0o9CApepiYQ==}
 
-  '@lightningtv/renderer@3.3.0':
-    resolution: {integrity: sha512-DmAGI86Pn2620Ft0BR6oGMnHwkQ9onatgcUyfAXxjdm++FVe0OrYyt+AbXwRbCrA/+rf5wKuBnhI+9LDuRmPng==}
-    engines: {node: '>= 18.0.0', npm: '>= 10.0.0', pnpm: '>= 10.17.0'}
-
   '@nodelib/fs.scandir@2.1.5':
     resolution: {integrity: sha512-vq24Bq3ym5HEQm2NKCr3yXDwjc7vTsEThRDnkp2DK9p1uqLR+DHurm/NOTo0KG7HYHU7eppKZj3MyqYuMBf62g==}
     engines: {node: '>= 8'}
@@ -746,6 +742,10 @@ packages:
     peerDependenciesMeta:
       '@solidjs/router':
         optional: true
+
+  '@solidtv/renderer@1.0.0':
+    resolution: {integrity: sha512-BArONFIw+jhR9qRRxxB4tJHV6bAtzXggwUvzI+JG882QAGi1ZgCeG8UAi1DXMne0iVFVdRl3FQ+u/GxlORgFbA==}
+    engines: {node: '>= 18.0.0', npm: '>= 10.0.0', pnpm: '>= 10.17.0'}
 
   '@standard-schema/spec@1.0.0':
     resolution: {integrity: sha512-m2bOd0f2RT9k8QJx1JN85cZYyH1RqFBdlwtkSlf4tBDYLCiiZnv1fIIwacK6cqwXavOydf0NPToMQgpKq+dVlA==}
@@ -2926,8 +2926,6 @@ snapshots:
       '@jridgewell/resolve-uri': 3.1.2
       '@jridgewell/sourcemap-codec': 1.5.0
 
-  '@lightningtv/renderer@3.3.0': {}
-
   '@nodelib/fs.scandir@2.1.5':
     dependencies:
       '@nodelib/fs.stat': 2.0.5
@@ -3219,6 +3217,8 @@ snapshots:
       solid-js: 1.9.3
     optionalDependencies:
       '@solidjs/router': 0.15.1(solid-js@1.9.3)
+
+  '@solidtv/renderer@1.0.0': {}
 
   '@standard-schema/spec@1.0.0': {}
 

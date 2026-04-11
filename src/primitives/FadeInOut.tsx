@@ -1,4 +1,4 @@
-import { ElementNode, NodeProps, View } from '@lightningtv/solid';
+import { ElementNode, NodeProps, View } from '@solidtv/solid';
 import { Show } from 'solid-js';
 
 interface Props {

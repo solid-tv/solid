@@ -9,7 +9,7 @@ The `useFocusManager` primitive is designed to handle user input, manage focus p
 Import the `useFocusManager` and configure it with your custom key mappings:
 
 ```jsx
-import { useFocusManager } from '@lightningtv/solid';
+import { useFocusManager } from '@solidtv/solid';
 
 const App = () => {
   const focusPath = useFocusManager(
@@ -71,7 +71,7 @@ You can now control input speed in two powerful ways . This feature helps preven
 For a quick, app-wide solution, you can set a global throttle on all key inputs directly in your configuration. This is perfect for setting a baseline input speed for your entire application.
 
 ```javascript
-import { Config } from '@lightningtv/solid';
+import { Config } from '@solidtv/solid';
 
 // Allow one keypress every 200ms across the entire app
 Config.throttleInput = 200;
@@ -142,8 +142,8 @@ Here's a complete example of how to use `useFocusManager`:
 
 ```jsx
 import { createSignal } from 'solid-js';
-import { useFocusManager } from '@lightningtv/solid';
-import { Button } from '@lightningjs/solid-ui';
+import { useFocusManager } from '@solidtv/solid';
+import { Button } from '@solidtv/solid-ui';
 
 const App = () => {
   useFocusManager({

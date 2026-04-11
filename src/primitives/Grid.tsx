@@ -1,5 +1,5 @@
 import { createSignal, createMemo, createEffect, JSX, untrack, Index } from "solid-js";
-import { type NodeProps, ElementNode, NewOmit, hasFocus } from "@lightningtv/solid";
+import { type NodeProps, ElementNode, NewOmit, hasFocus } from "@solidtv/solid";
 import { chainFunctions, chainRefs } from "./utils/chainFunctions.js";
 
 export interface GridItemProps<T> {

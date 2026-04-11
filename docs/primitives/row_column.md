@@ -1,6 +1,6 @@
 ### Row and Column Components
 
-The `Row` and `Column` components are specialized views designed for managing layouts, particularly in the context of TV apps developed with `@lightningtv/solid`. These components offer built-in navigation, focus management, and scrolling behavior.
+The `Row` and `Column` components are specialized views designed for managing layouts, particularly in the context of TV apps developed with `@solidtv/solid`. These components offer built-in navigation, focus management, and scrolling behavior.
 
 This guide will cover the `Row` component in detail. The `Column` component functions similarly but arranges children vertically instead of horizontally.
 

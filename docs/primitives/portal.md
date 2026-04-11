@@ -5,7 +5,7 @@ The `<Portal>` component allows you to mount a component with a different parent
 ## Example
 
 ```jsx
-import { Portal, Text } from '@lightningtv/solid';
+import { Portal, Text } from '@solidtv/solid';
 import { GlobalHeader } from './components/globalHeader';
 
 const App = (props) => {

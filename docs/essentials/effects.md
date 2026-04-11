@@ -42,7 +42,7 @@ const style = {
 `linearGradient` and `radialGradient` are effects that can be used by setting the effects prop.
 
 ```jsx
-import { deg2Rad } from '@lightningjs/solid';
+import { deg2Rad } from '@solidtv/solid';
 
 <View
   effects={{

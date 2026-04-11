@@ -1,4 +1,4 @@
-import { type INode, type Point } from '@lightningjs/renderer';
+import { type INode, type Point } from '@solidtv/renderer';
 import { Config, isDev } from './config.js';
 import type { Styles, ElementText, TextNode } from './intrinsicTypes.js';
 import { ElementNode } from './elementNode.js';

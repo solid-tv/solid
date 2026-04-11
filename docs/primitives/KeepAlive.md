@@ -11,7 +11,7 @@ The primary way to use this feature is with `KeepAliveRoute`, which is a wrapper
 By using `KeepAliveRoute`, you can ensure that when a user navigates back to a previously visited route, it will be displayed in the exact same state as they left it.
 
 ```jsx
-import { KeepAliveRoute } from '@lightningtv/solid';
+import { KeepAliveRoute } from '@solidtv/solid';
 import { Browse, browsePreload } from './pages/Browse';
 
 const AppRoutes = () => {
@@ -81,7 +81,7 @@ Note that the createMemo will be recalculated when you navigate away as params w
 You can manually remove a cached component using the `removeKeepAlive` function. This allows you to clear the cache for a specific route or component programmatically.
 
 ```js
-import { removeKeepAlive } from '@lightningtv/solid';
+import { removeKeepAlive } from '@solidtv/solid';
 
 // Remove the cached component with the id 'browse'
 removeKeepAlive('browse');

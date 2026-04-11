@@ -11,7 +11,7 @@ Please use [Lazy Row and Column](/primitives/lazy.md) component instead.
 To use the `LazyUp` component:
 
 ```javascript
-import { LazyUp } from '@lightningtv/solid/primitives';
+import { LazyUp } from '@solidtv/solid/primitives';
 
 <LazyUp
   component={Row}

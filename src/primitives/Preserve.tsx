@@ -1,5 +1,5 @@
 import * as s from 'solid-js'
-import * as lng from '@lightningtv/solid'
+import * as lng from '@solidtv/solid'
 
 function Preserve(props: lng.NodeProps): s.JSX.Element {
 

@@ -8,7 +8,7 @@ import {
   onCleanup,
   createRoot,
 } from 'solid-js';
-import { ElementNode } from '@lightningtv/solid';
+import { ElementNode } from '@solidtv/solid';
 
 export function Visible<T>(props: {
   when: T | undefined | null | false;

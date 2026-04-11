@@ -34,7 +34,7 @@ The `style` attribute accepts an object of properties that are passed to the Lig
 For UI component libraries, you can also pass an array (including nested arrays) to the `style` attribute, facilitating easy chaining of styles. Note that this does not perform a deep merge, so any state-specific styles will be overridden by the top-level style. Additionally, styles are applied in the order they appear in the array, meaning `props.style` will override `styles.Container`.
 
 ```jsx
-import { combineStyles } from '@lightningtv/solid';
+import { combineStyles } from '@solidtv/solid';
 const Top: Component<TopProps> = (props: TopProps) => {
   // Need the createMemo otherwise it creates a new array each time
   const compStyles = combineStyles(props.style, styles.Container);
@@ -254,7 +254,7 @@ The following props are aliases to help with layout and ShaderEffects:
 
 ### Colors
 
-RGBA number 0xRRGGBBAA and hex are fully supported with the [Vite Hex Plugin](https://github.com/lightning-tv/vite-hex-transform). If you have dynamic colors being set after transpile you'll need to use `hexColor`, `import { hexColor } from '@lightningtv/solid'` and do `hexColor('#c0ffee')` to convert colors to RGBA. Please know all hex colors are #RRGGBB so they are easy to convert to 0xRRGGBBAA and usually AA is ff for full alpha. By default, every node without a src attribute will have their color set to `0x00000000` making it transparent. If you have an element which sets it's src attribute after creation, you need to update color to `0xffffffff` so it's not transparent.
+RGBA number 0xRRGGBBAA and hex are fully supported with the [Vite Hex Plugin](https://github.com/lightning-tv/vite-hex-transform). If you have dynamic colors being set after transpile you'll need to use `hexColor`, `import { hexColor } from '@solidtv/solid'` and do `hexColor('#c0ffee')` to convert colors to RGBA. Please know all hex colors are #RRGGBB so they are easy to convert to 0xRRGGBBAA and usually AA is ff for full alpha. By default, every node without a src attribute will have their color set to `0x00000000` making it transparent. If you have an element which sets it's src attribute after creation, you need to update color to `0xffffffff` so it's not transparent.
 
 ## Effects
 
@@ -281,7 +281,7 @@ const style = {
 `linearGradient` and `radialGradient` are effects that can be used by setting the effects prop.
 
 ```jsx
-import { deg2Rad } from '@lightningjs/solid';
+import { deg2Rad } from '@solidtv/solid';
 
 <View
   effects={{

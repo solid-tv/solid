@@ -36,7 +36,7 @@ Tags for Canvas Text Rendering (Not Recommended)
 You can set the default options for all `<Text>` nodes before Rendering the App in your index:
 
 ```jsx
-import { Config } from '@lightningtv/solid';
+import { Config } from '@solidtv/solid';
 // Set defaults for all <Text>
 Config.fontSettings.fontFamily = 'Ubuntu';
 Config.fontSettings.color = 0xffffffff;
@@ -54,7 +54,7 @@ You can also use any custom font that you want, to give your App the unique look
 Then you'll need to register the custom font in the AppCoreExtensions file:
 
 ```js
-  import { loadFonts } from "@lightningtv/solid";
+  import { loadFonts } from "@solidtv/solid";
   const fonts = [
 { type: 'msdf',
   fontFamily: 'Roboto',

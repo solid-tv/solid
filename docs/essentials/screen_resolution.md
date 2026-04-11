@@ -7,7 +7,7 @@ Most TVs have a 16:9 aspect ratio, so the scaling is handled proportionally usin
 Here is how you can set up and use screen resolution in your application:
 
 ```jsx
-import { render, Config, Text } from '@lightningtv/solid';
+import { render, Config, Text } from '@solidtv/solid';
 
 Config.rendererOptions = {
   appWidth: 1920,

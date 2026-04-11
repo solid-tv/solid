@@ -1,5 +1,5 @@
 <p>
-  <img src="https://assets.solidjs.com/banner?project=Library&type=@lightningtv/solid" alt="SolidJS Lightning" />
+  <img src="https://assets.solidjs.com/banner?project=Library&type=@solidtv/solid" alt="SolidJS Lightning" />
 </p>
 
 # SolidJS for LightningJS
@@ -55,7 +55,7 @@ https://medium.com/@chiefcll/lightning-3-the-basics-of-solidjs-e6e21d73205e
 ### Hello World
 
 ```jsx
-import { render, Text } from '@lightningtv/solid';
+import { render, Text } from '@solidtv/solid';
 
 render(() => <Text>Hello World</Text>);
 ```
@@ -67,8 +67,8 @@ For a more detailed Hello World guide check out the [Hello World](HelloWorld.md)
 If you're migrating from https://github.com/lightning-js/solid
 
 Find and replace:
-"@lightningjs/solid-primitives" with "@lightningtv/solid/primitives"
-"@lightningjs/solid" with "@lightningtv/solid"
+"@solidtv/solid-primitives" with "@solidtv/solid/primitives"
+"@solidtv/solid" with "@solidtv/solid"
 
 Update vite.config to dedupe solid:
 
@@ -76,9 +76,9 @@ Update vite.config to dedupe solid:
 resolve: {
     dedupe: [
       "solid-js",
-      "@lightningtv/solid",
-      "@lightningtv/solid/primitives",
-      "@lightningjs/solid-ui",
+      "@solidtv/solid",
+      "@solidtv/solid/primitives",
+      "@solidtv/solid-ui",
     ],
   },
 ```
@@ -89,8 +89,8 @@ If you don't want to find and replace you can use alias
 resolve: {
     alias: {
       theme: "@lightningjs/l3-ui-theme-base",
-      "@lightningjs/solid": "@lightningtv/solid",
-      "@lightningjs/solid-primitives": "@lightningtv/solid/primitives",
+      "@solidtv/solid": "@solidtv/solid",
+      "@solidtv/solid-primitives": "@solidtv/solid/primitives",
     },
   },
 ```

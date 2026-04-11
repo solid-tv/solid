@@ -1,6 +1,6 @@
 import { Route, RoutePreloadFuncArgs, RouteProps } from '@solidjs/router';
 import * as s from 'solid-js';
-import { ElementNode, activeElement } from '@lightningtv/solid';
+import { ElementNode, activeElement } from '@solidtv/solid';
 import { chainFunctions } from './utils/chainFunctions.js';
 
 export interface KeepAliveElement {

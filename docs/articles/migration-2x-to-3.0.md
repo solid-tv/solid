@@ -8,7 +8,7 @@ To get the full list of changes from the renderer you can check the [changelog](
 
 1. Update to the latest version of the renderer beta (v3.0.0-beta20)
 2. Update to the latest version of the solid 3.0.0
-3. Remove references for @lightningtv/core -> use @lightningtv/solid instead
+3. Remove references for @solidtv/core -> use @solidtv/solid instead
 4. Update fonts.ts to new format (remove fontWeight information, add to fontFamily)
 5. Double check your fontWeightAlias if needed
 6. Import shaders in index.ts
@@ -132,7 +132,7 @@ import {
   RadialGradient,
   LinearGradient,
   HolePunch,
-} from '@lightningjs/renderer/webgl/shaders';
+} from '@solidtv/renderer/webgl/shaders';
 const shManager = renderer.stage.shManager;
 shManager.registerShaderType('rounded', Rounded);
 shManager.registerShaderType('roundedWithBorder', RoundedWithBorder);

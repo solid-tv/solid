@@ -28,7 +28,7 @@ export default defineConfig({
 Once the bundle is configured, you must turn on the DOM Renderer in your application's `Config` settings. This allows you to toggle it on and off dynamically within the application code.
 
 ```ts
-import { Config } from '@lightningjs/solid';
+import { Config } from '@solidtv/solid';
 
 Config.domRendererEnabled = true;
 

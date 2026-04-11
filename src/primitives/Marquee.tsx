@@ -1,5 +1,5 @@
 import * as s from 'solid-js'
-import * as lng from '@lightningtv/solid'
+import * as lng from '@solidtv/solid'
 import { chainFunctions } from './utils/chainFunctions.js'
 
 export interface MarqueeAnimationProps {

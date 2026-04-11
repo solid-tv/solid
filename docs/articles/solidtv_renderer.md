@@ -4,16 +4,16 @@ The SolidTV Renderer is a fork of the official Lightning Renderer optimized to b
 
 ## Installation
 
-The renderer is available on NPM under the `@lightningtv/renderer` package. You can install it via your package manager:
+The renderer is available on NPM under the `@solidtv/renderer` package. You can install it via your package manager:
 
 ```bash
-npm install @lightningtv/renderer
+npm install @solidtv/renderer
 ```
 
 Or edit your package.json with:
 
 ```json
-"@lightningjs/renderer": "npm:@lightningtv/renderer@3.2.5",
+"@solidtv/renderer": "npm:@solidtv/renderer@3.2.5",
 ```
 
 ## Configuration (Vite Defines)

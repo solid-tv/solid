@@ -36,7 +36,7 @@ export default defineConfig({
     }),
     solidPlugin({
       solid: {
-        moduleName: '@lightningtv/solid',
+        moduleName: '@solidtv/solid',
         generate: 'universal',
       },
     }),
@@ -46,14 +46,14 @@ export default defineConfig({
 
 ### 2. Configure Element Interface
 
-Since Lightning.js uses a custom renderer (not DOM-based), you need to provide Solid Devtools with a custom ElementInterface implementation. Fortunately, `@lightningtv/solid` already includes this implementation.
+Since Lightning.js uses a custom renderer (not DOM-based), you need to provide Solid Devtools with a custom ElementInterface implementation. Fortunately, `@solidtv/solid` already includes this implementation.
 
 Add the following code to your application entry file (typically `index.tsx`):
 
 ```ts
 import 'solid-devtools';
 import { setElementInterface } from 'solid-devtools/setup';
-import { elementInterface } from '@lightningtv/solid/devtools';
+import { elementInterface } from '@solidtv/solid/devtools';
 
 setElementInterface(elementInterface);
 ```

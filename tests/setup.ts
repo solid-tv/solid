@@ -1,10 +1,7 @@
-import * as lng from '@lightningtv/solid';
+import * as lng from '@solidtv/solid';
 import * as v from 'vitest';
-import {
-  WebGlCoreRenderer,
-  SdfTextRenderer,
-} from '@lightningjs/renderer/webgl';
-import { CanvasTextRenderer } from '@lightningjs/renderer/canvas';
+import { WebGlCoreRenderer, SdfTextRenderer } from '@solidtv/renderer/webgl';
+import { CanvasTextRenderer } from '@solidtv/renderer/canvas';
 
 lng.Config.rendererOptions = {
   fontEngines: [CanvasTextRenderer],

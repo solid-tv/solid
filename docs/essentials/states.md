@@ -76,7 +76,7 @@ When multiple states are active on an element, the order in which they are appli
 States defined in the `stateOrder` array have higher specificity than states not in the array. Within the `stateOrder` array, states at the end have higher specificity than those at the beginning.
 
 ```javascript
-import { Config } from '@lightningtv/solid';
+import { Config } from '@solidtv/solid';
 
 Config.stateOrder = ['$disabled', '$active', '$focus'];
 ```

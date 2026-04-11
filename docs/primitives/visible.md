@@ -15,7 +15,7 @@ Below is an example illustrating how to use the `Visible` component to toggle th
 
 ```typescript
 import { createSignal } from "solid-js";
-import { View, Text, Visible } from "@lightningtv/solid";
+import { View, Text, Visible } from "@solidtv/solid";
 
 function App() {
   const [isVisible, setIsVisible] = createSignal(false);

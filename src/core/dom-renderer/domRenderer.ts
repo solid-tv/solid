@@ -4,9 +4,9 @@ Experimental DOM renderer
 
 */
 
-import * as lng from '@lightningjs/renderer';
+import * as lng from '@solidtv/renderer';
 
-import { EventEmitter } from '@lightningjs/renderer/utils';
+import { EventEmitter } from '@solidtv/renderer/utils';
 import { Config } from '../config.js';
 import { FontLoadOptions } from '../intrinsicTypes.js';
 import type {

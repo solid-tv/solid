@@ -5,7 +5,7 @@
 ## Usage
 
 ```tsx
-import { createTag, View, Text } from '@lightningtv/solid';
+import { createTag, View, Text } from '@solidtv/solid';
 import { onCleanup } from 'solid-js';
 
 const App = () => {

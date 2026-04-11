@@ -1,5 +1,5 @@
 // Utilities extracted from domRenderer.ts for clarity
-import * as lng from '@lightningjs/renderer';
+import * as lng from '@solidtv/renderer';
 import { Config } from '../config.js';
 import { DOMNode } from './domRenderer.js';
 import { isFunc } from '../utils.js';

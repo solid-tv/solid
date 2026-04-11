@@ -3,7 +3,7 @@ import {
   combineStyles,
   type NodeStyles,
   type ElementNode,
-} from '@lightningtv/solid';
+} from '@solidtv/solid';
 import { chainFunctions } from './utils/chainFunctions.js';
 import {
   handleNavigation,

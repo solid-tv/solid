@@ -11,7 +11,7 @@ export default defineConfig(({ mode }) => ({
     solid({
       hot: false,
       solid: {
-        moduleName: '@lightningtv/solid',
+        moduleName: '@solidtv/solid',
         generate: 'universal',
         builtIns: [],
       },
@@ -31,6 +31,6 @@ export default defineConfig(({ mode }) => ({
     },
   },
   resolve: {
-    conditions: ['@lightningtv/source', 'browser', 'development'],
+    conditions: ['@solidtv/source', 'browser', 'development'],
   },
 }));

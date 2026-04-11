@@ -1,4 +1,4 @@
-import { rootNode, type ElementNode, insert } from '@lightningtv/solid';
+import { rootNode, type ElementNode, insert } from '@solidtv/solid';
 import { createEffect, createMemo, createRoot, createSignal, getOwner, JSX, onCleanup, runWithOwner } from 'solid-js';
 
 export function Portal(props: { mount?: string; children: JSX.Element }) {

@@ -2,7 +2,7 @@
   <img src="https://assets.solidjs.com/banner?project=Library&type=solid-lightning" alt="SolidJS LightningJS" />
 </p>
 
-`@lightningtv/solid` is an integration for the [LightningJS 3 Renderer](https://github.com/lightning-js/renderer) built with [SolidJS](https://www.solidjs.com/) [Universal Renderer](https://github.com/solidjs/solid/releases/tag/v1.2.0). It allows you to declaratively construct lightning nodes with SolidJS reactive primitives. It includes everything you need to rapidly build the performant TV Apps.
+`@solidtv/solid` is an integration for the [LightningJS 3 Renderer](https://github.com/lightning-js/renderer) built with [SolidJS](https://www.solidjs.com/) [Universal Renderer](https://github.com/solidjs/solid/releases/tag/v1.2.0). It allows you to declaratively construct lightning nodes with SolidJS reactive primitives. It includes everything you need to rapidly build the performant TV Apps.
 
 ## Starter Template
 

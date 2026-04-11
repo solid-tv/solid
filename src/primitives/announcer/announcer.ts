@@ -1,4 +1,4 @@
-import type { ElementNode } from '@lightningtv/solid';
+import type { ElementNode } from '@solidtv/solid';
 import { untrack } from 'solid-js';
 import SpeechEngine, { type SeriesResult, type SpeechType } from './speech.js';
 import { debounce } from '@solid-primitives/scheduled';
@@ -10,7 +10,7 @@ type DebounceWithFlushFunction<T> = {
   clear: VoidFunction;
 };
 
-declare module '@lightningtv/solid' {
+declare module '@solidtv/solid' {
   /**
    * Augment the existing ElementNode interface with our own
    * Announcer-specific properties.

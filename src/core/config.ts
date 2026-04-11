@@ -1,4 +1,4 @@
-import type { RendererMainSettings } from '@lightningjs/renderer';
+import type { RendererMainSettings } from '@solidtv/renderer';
 import type {
   TextProps,
   AnimationSettings,
@@ -20,7 +20,7 @@ import {
   or set them in the global scope before importing lightning-core.
 */
 declare global {
-  /** Whether the DOM renderer should be used instead of `@lightningjs/renderer` */
+  /** Whether the DOM renderer should be used instead of `@solidtv/renderer` */
   var LIGHTNING_DOM_RENDERING: boolean | undefined;
   /** Whether element shaders should be disabled */
   var LIGHTNING_DISABLE_SHADERS: boolean | undefined;
@@ -36,7 +36,7 @@ declare global {
 
 export const isDev = !!(import.meta.env && import.meta.env.DEV);
 
-/** Whether the DOM renderer is used instead of `@lightningjs/renderer` */
+/** Whether the DOM renderer is used instead of `@solidtv/renderer` */
 export const DOM_RENDERING =
   typeof LIGHTNING_DOM_RENDERING === 'boolean' && LIGHTNING_DOM_RENDERING;
 

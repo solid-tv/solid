@@ -1,6 +1,6 @@
 import * as s from 'solid-js';
-import * as lng from '@lightningtv/solid';
-import * as lngp from '@lightningtv/solid/primitives';
+import * as lng from '@solidtv/solid';
+import * as lngp from '@solidtv/solid/primitives';
 import { List } from '@solid-primitives/list';
 import * as utils from '../utils.js';
 import {
