@@ -25,6 +25,7 @@
         "default": "./dist/src/devtools/index.js"
       }
     },
+    "./devtools/jsx-locator": "./src/devtools/jsx-locator.js",
     "./shaders": {
       "@solidtv/source": "./src/shaders/index.ts",
       "import": {

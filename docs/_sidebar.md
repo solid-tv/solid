@@ -59,3 +59,4 @@
   - [Legacy Devices](/deploy/legacy.md)
 - Tooling
   - [SolidTV Devtools](/tools/solid_devtools.md)
+  - [JSX Locator Plugin](/tools/jsx_locator.md)
