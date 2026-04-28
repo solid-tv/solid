@@ -51,12 +51,12 @@ export default function (babel) {
                 );
               }
 
-              // Add componentSource if not present
+              // Add componentLocation if not present
               if (
                 !attributes.some(
                   (attr) =>
                     t.isJSXAttribute(attr) &&
-                    attr.name.name === 'componentSource',
+                    attr.name.name === 'componentLocation',
                 )
               ) {
                 const location = path.node.loc;
@@ -64,7 +64,7 @@ export default function (babel) {
                   const source = `${relativePath}:${location.start.line}:${location.start.column}`;
                   attributes.push(
                     t.jsxAttribute(
-                      t.jsxIdentifier('componentSource'),
+                      t.jsxIdentifier('componentLocation'),
                       t.stringLiteral(source),
                     ),
                   );

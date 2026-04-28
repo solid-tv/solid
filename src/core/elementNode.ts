@@ -181,6 +181,8 @@ const LightningRendererNonAnimatingProps = [
   'autosize',
   'clipping',
   'contain',
+  'componentName',
+  'componentLocation',
   'data',
   'destroyed',
   'forceLoad',
@@ -679,14 +681,6 @@ export interface ElementNode extends RendererNode, FocusNode {
    * Overrides the global `Config.stateOrder`.
    */
   stateOrder?: DollarString[];
-  /**
-   * The name of the component
-   */
-  componentName?: string;
-  /**
-   * The source location of the component
-   */
-  componentSource?: string;
 }
 
 export class ElementNode extends Object {
