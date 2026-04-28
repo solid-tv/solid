@@ -86,6 +86,92 @@ For more granular control, you can add a `throttleInput` property directly to an
 <Row throttleInput={500}>...</Row>
 ```
 
+### Focus History Logging
+
+Focus history logging records each focus change — whether triggered by a key press or programmatically — into a ring buffer of up to 50 entries. This is a **dev-only** feature: recording and printing are both gated behind the `isDev` flag and do nothing in production builds.
+
+#### Enabling (`Config.focusHistoryDebug`)
+
+Set `Config.focusHistoryDebug` to a positive integer to enable recording and automatically `console.table` the last N entries after every focus change. Set it to `0` (the default) to disable the feature entirely.
+
+```javascript
+import { Config } from '@solidtv/solid';
+
+// Record history and print the last 5 entries after each focus change
+Config.focusHistoryDebug = 5;
+```
+
+When running in dev mode, a startup message is printed to the console reminding you of the `$f` shortcut and how to enable the flag.
+
+#### `console.table` output
+
+Each print shows the following columns:
+
+| Column    | Description                                                                                                                     |
+| --------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `prev`    | Label of the element that lost focus (`id ?? componentName ?? 'Unknown'`)                                                       |
+| `key`     | The key that triggered the change — `mappedKey` if available, otherwise raw `keyPressed`, or `—` for programmatic focus changes |
+| `next`    | Label of the element that gained focus                                                                                          |
+| `nextElm` | The `ElementNode` object itself — expandable in DevTools                                                                        |
+| `nextDiv` | The underlying `HTMLDivElement` from the renderer — click to jump to it in the Elements panel                                   |
+
+Example output:
+
+```
+┌───────┬─────────────────┬──────────┬─────────────────────┬──────────┬─────────────────────┐
+│ (idx) │ prev            │ key      │ next                │ nextElm  │ nextDiv             │
+├───────┼─────────────────┼──────────┼─────────────────────┼──────────┼─────────────────────┤
+│     0 │ 'hero-card-0'   │ 'Right'  │ 'hero-card-1'       │ {…}      │ <div>               │
+│     1 │ 'hero-card-1'   │ 'Down'   │ 'rail-item-0'       │ {…}      │ <div>               │
+│     2 │ 'rail-item-0'   │ '—'      │ 'modal-close-btn'   │ {…}      │ <div>               │
+└───────┴─────────────────┴──────────┴─────────────────────┴──────────┴─────────────────────┘
+```
+
+A `key` of `—` means focus was moved programmatically (e.g. via `elm.setFocus()` on mount) rather than by a key press.
+
+#### `$f` — quick DevTools inspection
+
+After every `printFocusHistory` call, `window.$f` is set to the DOM div of the most recently focused element. You can then call `inspect($f)` in the browser console to jump directly to that node in the Elements panel.
+
+#### Manual printing (`printFocusHistory`)
+
+`printFocusHistory(n)` can be called at any time — including directly from the browser DevTools console — to print the last N entries. `count` is required.
+
+```javascript
+import { printFocusHistory } from '@solidtv/solid';
+
+printFocusHistory(20);
+
+// Also works directly in the browser DevTools console (no import needed once the app is running)
+printFocusHistory(20);
+```
+
+#### Inspecting the buffer programmatically (`getFocusHistory`)
+
+`getFocusHistory()` returns the full ring buffer as a read-only array of `FocusHistoryEntry` objects. This is useful for custom devtools panels, automated tests, or sending focus traces to a logging service.
+
+```typescript
+import { getFocusHistory, type FocusHistoryEntry } from '@solidtv/solid';
+
+const history: Readonly<FocusHistoryEntry[]> = getFocusHistory();
+```
+
+Each entry has the following shape:
+
+| Field        | Type                            | Description                                                              |
+| ------------ | ------------------------------- | ------------------------------------------------------------------------ |
+| `timestamp`  | `number`                        | `performance.now()` at the moment focus changed                          |
+| `keyPressed` | `string \| number \| undefined` | Raw key value (e.g. `"ArrowLeft"`, `37`). `undefined` if programmatic.   |
+| `mappedKey`  | `string \| undefined`           | Mapped event name (e.g. `"Left"`). `undefined` if programmatic.          |
+| `prev`       | `ElementNode \| undefined`      | The element that lost focus. `undefined` on the very first focus change. |
+| `next`       | `ElementNode`                   | The element that gained focus.                                           |
+
+Note that `prev` and `next` are live `ElementNode` references. Labels (`id ?? componentName ?? 'Unknown'`) are resolved at print time by `printFocusHistory`, not at record time.
+
+#### Memory safety
+
+Per-element metadata (focus count, last focused timestamp) is stored in a `WeakMap` keyed by `ElementNode`. This means the data is automatically released when an element is garbage collected — there is no need to manually clean up history entries when components unmount.
+
 ### Key Release
 
 On release of a key:

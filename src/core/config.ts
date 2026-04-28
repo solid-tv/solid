@@ -55,6 +55,7 @@ export interface Config {
   focusDebug: boolean;
   domRendererEnabled: boolean;
   keyDebug: boolean;
+  focusHistoryDebug: number;
   animationSettings?: AnimationSettings;
   animationsEnabled: boolean;
   fontSettings: Partial<TextProps>;
@@ -74,6 +75,7 @@ export const Config: Config = {
   domRendererEnabled: false,
   focusDebug: false,
   keyDebug: false,
+  focusHistoryDebug: 0,
   animationsEnabled: true,
   animationSettings: {
     duration: 250,

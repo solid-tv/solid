@@ -84,11 +84,120 @@ const addFocusDebug = (
   });
 };
 
+// ---------------------------------------------------------------------------
+// Focus History
+// ---------------------------------------------------------------------------
+
+export interface FocusHistoryEntry {
+  timestamp: number;
+  keyPressed: string | number | undefined;
+  mappedKey: string | undefined;
+  prev: ElementNode | undefined;
+  next: ElementNode;
+}
+
+const MAX_FOCUS_HISTORY = 50;
+const focusHistory: FocusHistoryEntry[] = [];
+
+/**
+ * WeakMap keyed by ElementNode so entries are automatically eligible for GC
+ * when the element is no longer referenced elsewhere.
+ */
+const elementFocusData = new WeakMap<
+  ElementNode,
+  { focusCount: number; lastFocusedAt: number }
+>();
+
+/** The key that triggered the most recent (non-throttled) propagation pass. */
+let _pendingHistoryKey: {
+  keyPressed: string | number | undefined;
+  mappedKey: string | undefined;
+} = { keyPressed: undefined, mappedKey: undefined };
+
+const getElementLabel = (elm: ElementNode | undefined): string => {
+  if (!elm) return 'None';
+  // ElementNode exposes _id internally; componentName comes from the Babel devtools plugin
+  const id = (elm as any).id ?? elm._id;
+  return id ?? elm.componentName ?? 'Unknown';
+};
+
+const recordFocusHistory = (
+  next: ElementNode,
+  prev: ElementNode | undefined,
+): void => {
+  if (isDev && Config.focusHistoryDebug > 0) {
+    const now = performance.now();
+
+    // Update WeakMap metadata for the element gaining focus
+    const existing = elementFocusData.get(next);
+    elementFocusData.set(next, {
+      focusCount: (existing?.focusCount ?? 0) + 1,
+      lastFocusedAt: now,
+    });
+
+    const entry: FocusHistoryEntry = {
+      timestamp: now,
+      keyPressed: _pendingHistoryKey.keyPressed,
+      mappedKey: _pendingHistoryKey.mappedKey,
+      prev,
+      next,
+    };
+
+    focusHistory.push(entry);
+    if (focusHistory.length > MAX_FOCUS_HISTORY) {
+      focusHistory.shift();
+    }
+
+    printFocusHistory(Config.focusHistoryDebug);
+  }
+};
+
+/** Returns a snapshot of the focus history ring buffer (up to 50 entries). */
+export const getFocusHistory = (): Readonly<FocusHistoryEntry[]> =>
+  focusHistory;
+
+if (isDev) {
+  console.log(
+    'DEBUG: Last focus target stored in $f, use inspect($f) to jump to it in the Elements panel. Enable with Config.focusHistoryDebug = n',
+  );
+}
+/**
+ * Prints the last `count` focus history entries as a console.table.
+ * Callable at any time from the browser console:  `printFocusHistory(20)`
+ */
+export const printFocusHistory = (count: number): void => {
+  const entries = focusHistory.slice(-count);
+  console.table(
+    entries.map((e) => ({
+      prev: getElementLabel(e.prev),
+      key: e.mappedKey ?? e.keyPressed ?? '—',
+      next: getElementLabel(e.next),
+      nextElm: e.next,
+      nextDiv: (e.next.lng as any).div as HTMLDivElement,
+    })),
+  );
+
+  // 2. Expose the most recent element for easy inspection
+  const lastEntry = entries[entries.length - 1];
+  if (lastEntry) {
+    const lastElm = (lastEntry.next.lng as any)?.div;
+    if (lastElm) {
+      (window as any).$f = lastElm;
+    }
+  }
+};
+
+// ---------------------------------------------------------------------------
+
 let activeElement: ElementNode | undefined;
 export const setActiveElement = (elm: ElementNode) => {
   if (elm === activeElement) return;
+  const prev = activeElement;
   updateFocusPath(elm, activeElement);
   activeElement = elm;
+  recordFocusHistory(elm, prev);
+  // Reset key attribution so programmatic focus changes show '—' for key fields
+  _pendingHistoryKey = { keyPressed: undefined, mappedKey: undefined };
   // Callback for libraries to use signals / refs
   Config.setActiveElement(elm);
 };
@@ -176,6 +285,12 @@ const propagateKeyPress = (
     }
     lastGlobalKeyPressTime = currentTime;
   }
+
+  // Record the key for focus-history attribution (keyup presses don't trigger focus changes)
+  if (!isUp) {
+    _pendingHistoryKey = { keyPressed: key, mappedKey: mappedEvent };
+  }
+
   const numItems = focusPath.length;
   if (numItems === 0) return false;
 
