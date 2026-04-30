@@ -18,6 +18,13 @@
         "default": "./dist/src/primitives/index.js"
       }
     },
+    "./primitives/router": {
+      "@solidtv/source": "./src/primitives/routerIndex.ts",
+      "import": {
+        "types": "./dist/src/primitives/routerIndex.d.ts",
+        "default": "./dist/src/primitives/routerIndex.js"
+      }
+    },
     "./devtools": {
       "@solidtv/source": "./src/devtools/index.ts",
       "import": {
