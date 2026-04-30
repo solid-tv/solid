@@ -6,5 +6,6 @@ build
 releases
 .tmp
 .env.local
+.claude
 # This project uses `pnpm` for package management
 package-lock.json
