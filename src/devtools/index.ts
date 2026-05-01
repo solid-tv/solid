@@ -1,6 +1,9 @@
 import * as debug from '@solid-devtools/debugger/types';
 import * as lng from '../core/index.js';
 
+export { default as hexColorTransform } from './hexColorTransform.js';
+export type { HexColorTransformOptions } from './hexColorTransform.js';
+
 const EMPTY_CHILDREN: (lng.ElementNode | lng.ElementText)[] = [];
 
 /**

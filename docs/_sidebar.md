@@ -60,3 +60,4 @@
 - Tooling
   - [SolidTV Devtools](/tools/solid_devtools.md)
   - [JSX Locator Plugin](/tools/jsx_locator.md)
+  - [Hex Color Transform](/tools/hex_color_transform.md)
