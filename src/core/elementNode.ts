@@ -136,12 +136,6 @@ export function convertToShader(
   return renderer.createShader(type, v);
 }
 
-function getPropertyAlias(name: string) {
-  if (name === 'w') return 'width';
-  if (name === 'h') return 'height';
-  return name;
-}
-
 export const LightningRendererNumberProps = [
   'alpha',
   'color',
@@ -259,6 +253,11 @@ export interface ElementNode extends RendererNode, FocusNode {
   _states?: States;
   _style?: Styles;
   _theme?: Styles;
+  _transition?:
+    | Record<string, AnimationSettings | undefined | true | false>
+    | true
+    | false;
+  _transitionLookup?: Record<string, AnimationSettings | true | undefined>;
   _lastAnyKeyPressTime?: number;
   _type: 'element' | 'textNode';
   _undoStyles?: string[];
@@ -602,16 +601,6 @@ export interface ElementNode extends RendererNode, FocusNode {
    * @see https://lightning-tv.github.io/solid/#/flow/layout
    */
   zIndex?: number;
-  /**
-   * Defines transitions for animatable properties.
-   *
-   * @see https://lightning-tv.github.io/solid/#/essentials/transitions?id=transitions-animations
-   */
-  transition?:
-    | Record<string, AnimationSettings | undefined | true | false>
-    | true
-    | false;
-
   /** Optional handler for when the element is created and rendered.
    *
    * @see https://lightning-tv.github.io/solid/#/flow/ondestroy
@@ -856,27 +845,20 @@ export class ElementNode extends Object {
   }
 
   _sendToLightningAnimatable(name: string, value: number) {
-    if (
-      this.transition &&
-      this.rendered &&
-      Config.animationsEnabled &&
-      (this.transition === true ||
-        this.transition[name] ||
-        this.transition[getPropertyAlias(name)])
-    ) {
-      const animationSettings =
-        this.transition === true || this.transition[name] === true
-          ? undefined
-          : this.transition[name] ||
-            (this.transition[getPropertyAlias(name)] as
-              | undefined
-              | AnimationSettings);
-
-      return (this.lng as any).animateProp(
-        name,
-        value,
-        animationSettings || this.animationSettings || {},
-      );
+    const t = this._transition;
+    if (t !== undefined && this.rendered && Config.animationsEnabled) {
+      // Fast path: single probe into a pre-aliased lookup, instead of probing
+      // both `transition[name]` and `transition[getPropertyAlias(name)]`.
+      const setting =
+        t === true ? true : (this._transitionLookup as any)?.[name];
+      if (setting !== undefined) {
+        const animationSettings = setting === true ? undefined : setting;
+        return (this.lng as any).animateProp(
+          name,
+          value,
+          animationSettings || this.animationSettings || {},
+        );
+      }
     }
 
     (this.lng[name as keyof (IRendererNode | INode)] as number | string) =
@@ -1053,6 +1035,35 @@ export class ElementNode extends Object {
 
   get style(): Styles {
     return this._style || {};
+  }
+
+  set transition(
+    v:
+      | Record<string, AnimationSettings | undefined | true | false>
+      | true
+      | false
+      | undefined,
+  ) {
+    this._transition = v;
+    if (v === undefined || v === true || v === false) {
+      this._transitionLookup = undefined;
+      return;
+    }
+    // Pre-build an aliased lookup so the hot path needs only a single probe.
+    // Only width/height have aliases (w/h); copy other keys verbatim.
+    const lookup: Record<string, AnimationSettings | true | undefined> = {};
+    for (const key in v) {
+      const val = v[key];
+      if (val === undefined || val === false) continue;
+      lookup[key] = val as AnimationSettings | true;
+      if (key === 'width') lookup.w = val as AnimationSettings | true;
+      else if (key === 'height') lookup.h = val as AnimationSettings | true;
+    }
+    this._transitionLookup = lookup;
+  }
+
+  get transition() {
+    return this._transition;
   }
 
   set theme(styles: Styles | undefined) {
