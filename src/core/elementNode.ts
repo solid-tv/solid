@@ -82,9 +82,8 @@ export function schedulePostMutation() {
   postMutationQueued = true;
   if ('reprocessUpdates' in renderer.stage && renderer.stage.reprocessUpdates) {
     renderer.stage.reprocessUpdates(runPostMutation);
-  } else {
-    queueMicrotask(runPostMutation);
   }
+  queueMicrotask(runPostMutation);
 }
 
 function runPostMutation() {
