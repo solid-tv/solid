@@ -30,21 +30,21 @@ export function addCustomStateToElement(
   element: RenderableNode,
   state: CustomState,
 ): void {
-  element.states?.add(state);
+  (element as ElementNode).states?.add(state);
 }
 
 export function removeCustomStateFromElement(
   element: RenderableNode,
   state: CustomState,
 ): void {
-  element?.states?.remove(state);
+  (element as ElementNode)?.states?.remove(state);
 }
 
 export function hasCustomState(
   element: RenderableNode,
   state: CustomState,
 ): boolean {
-  return element.states?.has(state);
+  return (element as ElementNode).states?.has(state);
 }
 
 function createKeyboardEvent(

@@ -2,8 +2,8 @@ import { ElementNode } from '../src/core/elementNode.ts';
 import calculateFlex from '../src/core/flex.ts';
 import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { isElementNode } from '../src/core/utils.ts';
-import { NodeType } from '../src/core/nodeTypes.ts';
-import type { ElementText, TextNode } from '../src/index.ts';
+import { TextNode } from '../src/core/nodeTypes.ts';
+import type { ElementText } from '../src/index.ts';
 
 // Helper to create a basic ElementNode for flex testing
 function createTestElement(
@@ -13,11 +13,7 @@ function createTestElement(
   } = {},
 ): ElementNode | TextNode {
   if (initialProps.nodeType === 'text') {
-    const textNodeInstance: TextNode = {
-      _type: NodeType.Text,
-      text: (initialProps as any).text || '',
-    };
-    return textNodeInstance;
+    return new TextNode((initialProps as any).text || '');
   }
 
   const nodeTypeName =

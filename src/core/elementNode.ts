@@ -8,7 +8,6 @@ import {
   type Styles,
   AddColorString,
   TextProps,
-  TextNode,
   type OnEvent,
   NewOmit,
   SingleBorderStyle,
@@ -47,7 +46,7 @@ import type {
   INodeProps,
 } from '@solidtv/renderer';
 import { assertTruthy } from '@solidtv/renderer/utils';
-import { NodeType } from './nodeTypes.js';
+import { NodeType, TextNode } from './nodeTypes.js';
 import {
   ForwardFocusHandler,
   setActiveElement,
@@ -262,6 +261,16 @@ export interface ElementNode extends RendererNode, FocusNode {
   _type: 'element' | 'textNode';
   _undoStyles?: string[];
   autosize?: boolean;
+  /**
+   * Optional component name for inspector / dev tooling — emitted by the
+   * Babel devtools plugin (see `devtools/jsx-locator.js`).
+   */
+  componentName?: string;
+  /**
+   * Optional source-location string for inspector / dev tooling — emitted by
+   * the Babel devtools plugin.
+   */
+  componentLocation?: string;
   /**
    * The distance from the bottom edge of the parent element.
    * When `bottom` is set, `mountY` is automatically set to 1.
@@ -815,7 +824,10 @@ export class ElementNode extends Object {
 
   removeChild(node: ElementNode | ElementText | TextNode) {
     if (spliceItem(this.children, node, 1) > -1) {
-      node.onRemove?.call(node, node);
+      if (isElementNode(node) && node.onRemove) {
+        node.onRemove.call(node, node);
+      }
+
       if (this.requiresLayout()) {
         addToLayoutQueue(this);
       }

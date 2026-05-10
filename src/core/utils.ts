@@ -1,8 +1,8 @@
 import { type INode, type Point } from '@solidtv/renderer';
 import { Config, isDev } from './config.js';
-import type { Styles, ElementText, TextNode } from './intrinsicTypes.js';
+import type { Styles, ElementText } from './intrinsicTypes.js';
 import { ElementNode } from './elementNode.js';
-import { NodeType } from './nodeTypes.js';
+import { NodeType, TextNode } from './nodeTypes.js';
 
 function hasDebug(node: any) {
   return isObject(node) && node.debug;

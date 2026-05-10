@@ -2,10 +2,9 @@ import {
   assertTruthy,
   isElementText,
   ElementNode,
-  NodeType,
+  TextNode,
   log,
   type ElementText,
-  type TextNode,
 } from './core/index.js';
 import type { SolidNode, SolidRendererOptions } from './types.js';
 
@@ -47,7 +46,7 @@ export default {
   },
   createTextNode(text: string): TextNode {
     // A text node is just a string - not the <text> node
-    return { _type: NodeType.Text, text };
+    return new TextNode(text);
   },
   replaceText(node: TextNode, value: string): void {
     log('Replace Text: ', node, value);

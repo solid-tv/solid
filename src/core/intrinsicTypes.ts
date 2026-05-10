@@ -1,5 +1,6 @@
 import * as lngr from '@solidtv/renderer';
 import { ElementNode, type RendererNode } from './elementNode.js';
+import type { TextNode } from './nodeTypes.js';
 import { NodeStates } from './states.js';
 import {
   ShaderBorderProps,
@@ -115,13 +116,6 @@ export interface ElementText
   style: TextStyles;
 }
 
-export interface TextNode {
-  _type: 'text';
-  parent?: ElementText;
-  text: string;
-  [key: string]: any;
-}
-
 export interface NodeProps
   extends RendererNode,
     EventHandlers<DefaultKeyMap>,
@@ -140,6 +134,8 @@ export interface NodeProps
         | 'preFlexheight'
         | 'width'
         | 'height'
+        | 'componentName'
+        | 'componentLocation'
       >
     > {
   states?: NodeStates;
