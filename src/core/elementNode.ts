@@ -789,8 +789,6 @@ export class ElementNode {
     this._states = undefined;
     this._style = undefined;
     this._theme = undefined;
-    this._transition = undefined;
-    this._transitionLookup = undefined;
     this._lastAnyKeyPressTime = undefined;
     this._undoStyles = undefined;
   }
