@@ -62,27 +62,46 @@ import {
   IRendererTextNodeProps,
 } from './dom-renderer/domRendererTypes.js';
 
+// Unified post-mutation scheduler.
+//
+// Three phases run in one microtask (or one renderer-tick callback):
+//   1. delete-flush — destroy nodes that were removed and not re-inserted
+//   2. layout       — recompute flex layout for any dirty subtree
+//   3. focus        — resolve forwardFocus on deferred elements, then apply
+//
+// Order matters: layout reads the rendered tree (so destroyed nodes must be
+// gone), and focus reads the laid-out tree.
+let postMutationQueued = false;
 let nextActiveElement: ElementNode | null = null;
-let focusQueued: boolean = false;
-let layoutRunQueued = false;
+let deferredFocusElement: ElementNode | null = null;
 const layoutQueue = new Set<ElementNode>();
+export const elementDeleteQueue: ElementNode[] = [];
 
-function addToLayoutQueue(node: ElementNode) {
-  layoutQueue.add(node);
-  if (!layoutRunQueued) {
-    layoutRunQueued = true;
-    if (
-      'reprocessUpdates' in renderer.stage &&
-      renderer.stage.reprocessUpdates
-    ) {
-      renderer.stage.reprocessUpdates(runLayout);
-    } else {
-      queueMicrotask(runLayout);
-    }
+export function schedulePostMutation() {
+  if (postMutationQueued) return;
+  postMutationQueued = true;
+  if ('reprocessUpdates' in renderer.stage && renderer.stage.reprocessUpdates) {
+    renderer.stage.reprocessUpdates(runPostMutation);
+  } else {
+    queueMicrotask(runPostMutation);
   }
 }
 
-function runLayout() {
+function runPostMutation() {
+  postMutationQueued = false;
+
+  // Phase 1: delete-flush
+  if (elementDeleteQueue.length > 0) {
+    for (let el of elementDeleteQueue) {
+      if (Number(el._queueDelete) < 0) {
+        el.destroy();
+      }
+      el._queueDelete = undefined;
+    }
+    elementDeleteQueue.length = 0;
+  }
+
+  // Phase 2: layout
   while (layoutQueue.size > 0) {
     const queue = [...layoutQueue];
     layoutQueue.clear();
@@ -91,7 +110,25 @@ function runLayout() {
       node.updateLayout();
     }
   }
-  layoutRunQueued = false;
+
+  // Phase 3: focus.  setFocus() may have evaluated forwardFocus pre-render
+  // (when no children existed yet); deferredFocusElement re-runs setFocus
+  // here once the subtree has rendered, then setActiveElement is applied.
+  if (deferredFocusElement !== null) {
+    const el = deferredFocusElement;
+    deferredFocusElement = null;
+    el.setFocus();
+  }
+  if (nextActiveElement !== null) {
+    const element = nextActiveElement;
+    nextActiveElement = null;
+    setActiveElement(element);
+  }
+}
+
+function addToLayoutQueue(node: ElementNode) {
+  layoutQueue.add(node);
+  schedulePostMutation();
 }
 
 const parseAndAssignShaderProps = (
@@ -958,19 +995,10 @@ export class ElementNode extends Object {
           }
         }
       }
-      // Delay setting focus so children can render (useful for Row + Column)
+      // Delay setting focus so children can render (useful for Row + Column).
+      // The post-mutation scheduler applies setActiveElement in its focus phase.
       nextActiveElement = this;
-      if (focusQueued === false) {
-        focusQueued = true;
-        queueMicrotask(() => {
-          focusQueued = false;
-          if (nextActiveElement) {
-            const element = nextActiveElement;
-            nextActiveElement = null;
-            setActiveElement(element);
-          }
-        });
-      }
+      schedulePostMutation();
     } else {
       this._autofocus = true;
     }
@@ -978,12 +1006,7 @@ export class ElementNode extends Object {
 
   _layoutOnLoad() {
     (this.lng as IRendererNode).on('loaded', () => {
-      if (
-        'reprocessUpdates' in renderer.stage &&
-        renderer.stage.reprocessUpdates
-      ) {
-        renderer.stage.reprocessUpdates(runLayout);
-      }
+      schedulePostMutation();
       this.parent!.updateLayout();
     });
   }
@@ -1173,9 +1196,12 @@ export class ElementNode extends Object {
    */
   set autofocus(val: any) {
     this._autofocus = val;
-    // Delay setting focus so children can render (useful for Row + Column)
-    // which now uses forwardFocus
-    val && queueMicrotask(() => this.setFocus());
+    // Defer setFocus so children render first (forwardFocus needs them).
+    // The post-mutation focus phase calls setFocus on this element.
+    if (val) {
+      deferredFocusElement = this;
+      schedulePostMutation();
+    }
   }
 
   get autofocus() {
@@ -1519,11 +1545,10 @@ export class ElementNode extends Object {
         }
       }
     }
-    if (topNode && !layoutRunQueued) {
-      //Do one pass of layout, then another with Text loads
-      layoutRunQueued = true;
-      // We use queue because <For> loop will add children one at a time, causing lots of layout
-      queueMicrotask(runLayout);
+    if (topNode) {
+      // Schedule one post-mutation pass; <For> may add many children in one
+      // tick, but the scheduler dedupes and runs everything once.
+      schedulePostMutation();
     }
 
     node._autofocus && node.setFocus();

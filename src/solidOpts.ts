@@ -5,6 +5,8 @@ import {
   TextNode,
   log,
   type ElementText,
+  elementDeleteQueue,
+  schedulePostMutation,
 } from './core/index.js';
 import type { SolidNode, SolidRendererOptions } from './types.js';
 
@@ -17,23 +19,11 @@ Object.defineProperty(ElementNode.prototype, 'preserve', {
   },
 });
 
-let elementDeleteQueue: ElementNode[] = [];
-
-function flushDeleteQueue(): void {
-  for (let el of elementDeleteQueue) {
-    if (Number(el._queueDelete) < 0) {
-      el.destroy();
-    }
-    el._queueDelete = undefined;
-  }
-  elementDeleteQueue.length = 0;
-}
-
 function pushDeleteQueue(node: ElementNode, n: number): void {
   if (node._queueDelete === undefined) {
     node._queueDelete = n;
     if (elementDeleteQueue.push(node) === 1) {
-      queueMicrotask(flushDeleteQueue);
+      schedulePostMutation();
     }
   } else {
     node._queueDelete += n;
