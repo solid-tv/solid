@@ -225,14 +225,6 @@ export const LightningRendererNumberProps = [
   'zIndexLocked',
 ];
 
-/**
- * Keys whose setter (pre-render) is equivalent to `this.lng[key] = value`.
- * Used by the `style` setter's fast path to skip the prototype setter chain
- * when applying styles before render.  Built lazily after both prop arrays
- * exist (see bottom of file).
- */
-const fastPathStyleKeys = new Set<string>();
-
 const LightningRendererNonAnimatingProps = [
   'absX',
   'absY',
@@ -1113,20 +1105,11 @@ export class ElementNode {
 
     this._style = style;
 
-    // Keys set in JSX are more important.  Pre-render, plain animatable /
-    // non-animating props can be written directly to the lng props bag,
-    // bypassing the per-key setter chain.  Special-meaning keys (shader,
-    // border, transition, states, etc.) still go through the setter.
-    const lng = this.lng as any;
-    const fastPath = !this.rendered;
-    for (const key in style) {
-      if (fastPath && fastPathStyleKeys.has(key)) {
-        if (lng[key] === undefined) {
-          lng[key] = (style as any)[key];
-        }
-      } else if (this[key as keyof Styles] === undefined) {
-        // be careful of 0 values
-        this[key as keyof Styles] = style[key as keyof Styles];
+    // Keys set in JSX are more important
+    for (const key in this._style) {
+      // be careful of 0 values
+      if (this[key as keyof Styles] === undefined) {
+        this[key as keyof Styles] = this._style[key as keyof Styles];
       }
     }
   }
@@ -1627,7 +1610,6 @@ export class ElementNode {
 }
 
 for (const key of LightningRendererNumberProps) {
-  fastPathStyleKeys.add(key);
   Object.defineProperty(ElementNode.prototype, key, {
     get(): number {
       return this.lng[key];
@@ -1639,7 +1621,6 @@ for (const key of LightningRendererNumberProps) {
 }
 
 for (const key of LightningRendererNonAnimatingProps) {
-  fastPathStyleKeys.add(key);
   Object.defineProperty(ElementNode.prototype, key, {
     get(): unknown {
       return this.lng[key];
