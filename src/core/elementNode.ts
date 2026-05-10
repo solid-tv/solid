@@ -742,7 +742,18 @@ export class ElementNode {
   constructor(name: string) {
     this._type = name === 'text' ? NodeType.TextNode : NodeType.Element;
     this.rendered = false;
-    this.lng = {};
+    // initialize lng with standard properties for v8 optimization
+    this.lng = {
+      w: undefined,
+      h: undefined,
+      x: undefined,
+      y: undefined,
+      alpha: undefined,
+      color: undefined,
+      shader: undefined,
+      clipping: undefined,
+      text: undefined,
+    };
     this.children = [];
 
     // Initialize lazy underscore fields explicitly in a fixed order.  This
