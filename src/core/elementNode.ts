@@ -976,6 +976,16 @@ export class ElementNode {
               | undefined
               | AnimationSettings);
 
+      // If the renderer doesn't support animateProp,
+      // keep backwards compatible with LightningRenderer
+      if (!('animateProp' in this.lng)) {
+        const animationController = this.animate(
+          { [name]: value },
+          animationSettings,
+        );
+        return animationController.start();
+      }
+
       return (this.lng as any).animateProp(
         name,
         value,
