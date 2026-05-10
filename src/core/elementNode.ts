@@ -131,6 +131,27 @@ function addToLayoutQueue(node: ElementNode) {
   schedulePostMutation();
 }
 
+// Text-default template, built once on first use.  Config.fontSettings is
+// expected to be set at app startup and not change afterwards.
+let _fontTemplate: Array<[string, any]> | undefined;
+let _fontFamilyIdx = -1;
+let _fontFamilyWithWeight: string | undefined;
+
+function buildFontTemplate() {
+  const tpl: Array<[string, any]> = [];
+  const fs = Config.fontSettings;
+  if (fs) {
+    for (const key in fs) {
+      if (key === 'fontFamily') {
+        _fontFamilyIdx = tpl.length;
+        _fontFamilyWithWeight = `${fs.fontFamily}${fs.fontWeight || ''}`;
+      }
+      tpl.push([key, (fs as any)[key]]);
+    }
+  }
+  _fontTemplate = tpl;
+}
+
 const parseAndAssignShaderProps = (
   prefix: string,
   obj: Record<string, any>,
@@ -1417,14 +1438,22 @@ export class ElementNode extends Object {
 
     if (isElementText(node)) {
       const textProps = props as TextProps;
-      if (Config.fontSettings) {
-        for (const key in Config.fontSettings) {
+      if (_fontTemplate === undefined) buildFontTemplate();
+      const tpl = _fontTemplate!;
+      if (tpl.length > 0) {
+        const familyIdx = _fontFamilyIdx;
+        const familyWithWeight =
+          textProps['fontWeight'] === undefined
+            ? _fontFamilyWithWeight
+            : undefined;
+        for (let i = 0; i < tpl.length; i++) {
+          const entry = tpl[i]!;
+          const key = entry[0];
           if (textProps[key] === undefined) {
-            let value = Config.fontSettings[key];
-            if (key === 'fontFamily' && textProps['fontWeight'] === undefined) {
-              value = `${value}${Config.fontSettings.fontWeight || ''}`;
-            }
-            textProps[key] = value;
+            textProps[key] =
+              i === familyIdx && familyWithWeight !== undefined
+                ? familyWithWeight
+                : entry[1];
           }
         }
       }
