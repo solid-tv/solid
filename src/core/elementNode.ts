@@ -746,13 +746,39 @@ export interface ElementNode extends RendererNode, FocusNode {
   stateOrder?: DollarString[];
 }
 
-export class ElementNode extends Object {
+export class ElementNode {
   constructor(name: string) {
-    super();
     this._type = name === 'text' ? NodeType.TextNode : NodeType.Element;
     this.rendered = false;
     this.lng = {};
     this.children = [];
+
+    // Initialize lazy underscore fields explicitly in a fixed order.  This
+    // gives every ElementNode the same hidden class on construction; later
+    // assignments transition predictably instead of forking shapes by
+    // first-touch order.
+    this._queueDelete = undefined;
+    this._animationQueue = undefined;
+    this._animationQueueSettings = undefined;
+    this._animationRunning = undefined;
+    this._animationSettings = undefined;
+    this._autofocus = undefined;
+    this._calcWidth = undefined;
+    this._calcHeight = undefined;
+    this._containsFlexGrow = undefined;
+    this._hasRenderedChildren = undefined;
+    this._effects = undefined;
+    this._fontFamily = undefined;
+    this._fontWeight = undefined;
+    this._id = undefined;
+    this._parent = undefined;
+    this._states = undefined;
+    this._style = undefined;
+    this._theme = undefined;
+    this._transition = undefined;
+    this._transitionLookup = undefined;
+    this._lastAnyKeyPressTime = undefined;
+    this._undoStyles = undefined;
   }
 
   get effects(): StyleEffects | undefined {
