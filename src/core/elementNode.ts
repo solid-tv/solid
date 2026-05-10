@@ -8,7 +8,6 @@ import {
   type Styles,
   AddColorString,
   TextProps,
-  TextNode,
   type OnEvent,
   NewOmit,
   SingleBorderStyle,
@@ -47,7 +46,7 @@ import type {
   INodeProps,
 } from '@solidtv/renderer';
 import { assertTruthy } from '@solidtv/renderer/utils';
-import { NodeType } from './nodeTypes.js';
+import { NodeType, TextNode } from './nodeTypes.js';
 import {
   ForwardFocusHandler,
   setActiveElement,
@@ -63,27 +62,45 @@ import {
   IRendererTextNodeProps,
 } from './dom-renderer/domRendererTypes.js';
 
+// Unified post-mutation scheduler.
+//
+// Three phases run in one microtask (or one renderer-tick callback):
+//   1. delete-flush — destroy nodes that were removed and not re-inserted
+//   2. layout       — recompute flex layout for any dirty subtree
+//   3. focus        — resolve forwardFocus on deferred elements, then apply
+//
+// Order matters: layout reads the rendered tree (so destroyed nodes must be
+// gone), and focus reads the laid-out tree.
+let postMutationQueued = false;
 let nextActiveElement: ElementNode | null = null;
-let focusQueued: boolean = false;
-let layoutRunQueued = false;
+let deferredFocusElement: ElementNode | null = null;
 const layoutQueue = new Set<ElementNode>();
+export const elementDeleteQueue: ElementNode[] = [];
 
-function addToLayoutQueue(node: ElementNode) {
-  layoutQueue.add(node);
-  if (!layoutRunQueued) {
-    layoutRunQueued = true;
-    if (
-      'reprocessUpdates' in renderer.stage &&
-      renderer.stage.reprocessUpdates
-    ) {
-      renderer.stage.reprocessUpdates(runLayout);
-    } else {
-      queueMicrotask(runLayout);
-    }
+export function schedulePostMutation() {
+  if (postMutationQueued) return;
+  postMutationQueued = true;
+  if ('reprocessUpdates' in renderer.stage && renderer.stage.reprocessUpdates) {
+    renderer.stage.reprocessUpdates(runPostMutation);
   }
+  queueMicrotask(runPostMutation);
 }
 
-function runLayout() {
+function runPostMutation() {
+  postMutationQueued = false;
+
+  // Phase 1: delete-flush
+  if (elementDeleteQueue.length > 0) {
+    for (let el of elementDeleteQueue) {
+      if (Number(el._queueDelete) < 0) {
+        el.destroy();
+      }
+      el._queueDelete = undefined;
+    }
+    elementDeleteQueue.length = 0;
+  }
+
+  // Phase 2: layout
   while (layoutQueue.size > 0) {
     const queue = [...layoutQueue];
     layoutQueue.clear();
@@ -92,7 +109,46 @@ function runLayout() {
       node.updateLayout();
     }
   }
-  layoutRunQueued = false;
+
+  // Phase 3: focus.  setFocus() may have evaluated forwardFocus pre-render
+  // (when no children existed yet); deferredFocusElement re-runs setFocus
+  // here once the subtree has rendered, then setActiveElement is applied.
+  if (deferredFocusElement !== null) {
+    const el = deferredFocusElement;
+    deferredFocusElement = null;
+    el.setFocus();
+  }
+  if (nextActiveElement !== null) {
+    const element = nextActiveElement;
+    nextActiveElement = null;
+    setActiveElement(element);
+  }
+}
+
+function addToLayoutQueue(node: ElementNode) {
+  layoutQueue.add(node);
+  schedulePostMutation();
+}
+
+// Text-default template, built once on first use.  Config.fontSettings is
+// expected to be set at app startup and not change afterwards.
+let _fontTemplate: Array<[string, any]> | undefined;
+let _fontFamilyIdx = -1;
+let _fontFamilyWithWeight: string | undefined;
+
+function buildFontTemplate() {
+  const tpl: Array<[string, any]> = [];
+  const fs = Config.fontSettings;
+  if (fs) {
+    for (const key in fs) {
+      if (key === 'fontFamily') {
+        _fontFamilyIdx = tpl.length;
+        _fontFamilyWithWeight = `${fs.fontFamily}${fs.fontWeight || ''}`;
+      }
+      tpl.push([key, (fs as any)[key]]);
+    }
+  }
+  _fontTemplate = tpl;
 }
 
 const parseAndAssignShaderProps = (
@@ -263,6 +319,16 @@ export interface ElementNode extends RendererNode, FocusNode {
   _type: 'element' | 'textNode';
   _undoStyles?: string[];
   autosize?: boolean;
+  /**
+   * Optional component name for inspector / dev tooling — emitted by the
+   * Babel devtools plugin (see `devtools/jsx-locator.js`).
+   */
+  componentName?: string;
+  /**
+   * Optional source-location string for inspector / dev tooling — emitted by
+   * the Babel devtools plugin.
+   */
+  componentLocation?: string;
   /**
    * The distance from the bottom edge of the parent element.
    * When `bottom` is set, `mountY` is automatically set to 1.
@@ -683,13 +749,48 @@ export interface ElementNode extends RendererNode, FocusNode {
   stateOrder?: DollarString[];
 }
 
-export class ElementNode extends Object {
+export class ElementNode {
   constructor(name: string) {
-    super();
     this._type = name === 'text' ? NodeType.TextNode : NodeType.Element;
     this.rendered = false;
-    this.lng = {};
+    // initialize lng with standard properties for v8 optimization
+    this.lng = {
+      w: undefined,
+      h: undefined,
+      x: undefined,
+      y: undefined,
+      alpha: undefined,
+      color: undefined,
+      shader: undefined,
+      clipping: undefined,
+      text: undefined,
+    };
     this.children = [];
+
+    // Initialize lazy underscore fields explicitly in a fixed order.  This
+    // gives every ElementNode the same hidden class on construction; later
+    // assignments transition predictably instead of forking shapes by
+    // first-touch order.
+    this._queueDelete = undefined;
+    this._animationQueue = undefined;
+    this._animationQueueSettings = undefined;
+    this._animationRunning = undefined;
+    this._animationSettings = undefined;
+    this._autofocus = undefined;
+    this._calcWidth = undefined;
+    this._calcHeight = undefined;
+    this._containsFlexGrow = undefined;
+    this._hasRenderedChildren = undefined;
+    this._effects = undefined;
+    this._fontFamily = undefined;
+    this._fontWeight = undefined;
+    this._id = undefined;
+    this._parent = undefined;
+    this._states = undefined;
+    this._style = undefined;
+    this._theme = undefined;
+    this._lastAnyKeyPressTime = undefined;
+    this._undoStyles = undefined;
   }
 
   get effects(): StyleEffects | undefined {
@@ -826,7 +927,10 @@ export class ElementNode extends Object {
 
   removeChild(node: ElementNode | ElementText | TextNode) {
     if (spliceItem(this.children, node, 1) > -1) {
-      node.onRemove?.call(node, node);
+      if (isElementNode(node) && node.onRemove) {
+        node.onRemove.call(node, node);
+      }
+
       if (this.requiresLayout()) {
         addToLayoutQueue(this);
       }
@@ -871,6 +975,16 @@ export class ElementNode extends Object {
             (this.transition[getPropertyAlias(name)] as
               | undefined
               | AnimationSettings);
+
+      // If the renderer doesn't support animateProp,
+      // keep backwards compatible with LightningRenderer
+      if (!('animateProp' in this.lng)) {
+        const animationController = this.animate(
+          { [name]: value },
+          animationSettings,
+        );
+        return animationController.start();
+      }
 
       return (this.lng as any).animateProp(
         name,
@@ -964,19 +1078,10 @@ export class ElementNode extends Object {
           }
         }
       }
-      // Delay setting focus so children can render (useful for Row + Column)
+      // Delay setting focus so children can render (useful for Row + Column).
+      // The post-mutation scheduler applies setActiveElement in its focus phase.
       nextActiveElement = this;
-      if (focusQueued === false) {
-        focusQueued = true;
-        queueMicrotask(() => {
-          focusQueued = false;
-          if (nextActiveElement) {
-            const element = nextActiveElement;
-            nextActiveElement = null;
-            setActiveElement(element);
-          }
-        });
-      }
+      schedulePostMutation();
     } else {
       this._autofocus = true;
     }
@@ -984,12 +1089,7 @@ export class ElementNode extends Object {
 
   _layoutOnLoad() {
     (this.lng as IRendererNode).on('loaded', () => {
-      if (
-        'reprocessUpdates' in renderer.stage &&
-        renderer.stage.reprocessUpdates
-      ) {
-        renderer.stage.reprocessUpdates(runLayout);
-      }
+      schedulePostMutation();
       this.parent!.updateLayout();
     });
   }
@@ -1150,9 +1250,12 @@ export class ElementNode extends Object {
    */
   set autofocus(val: any) {
     this._autofocus = val;
-    // Delay setting focus so children can render (useful for Row + Column)
-    // which now uses forwardFocus
-    val && queueMicrotask(() => this.setFocus());
+    // Defer setFocus so children render first (forwardFocus needs them).
+    // The post-mutation focus phase calls setFocus on this element.
+    if (val) {
+      deferredFocusElement = this;
+      schedulePostMutation();
+    }
   }
 
   get autofocus() {
@@ -1351,14 +1454,22 @@ export class ElementNode extends Object {
 
     if (isElementText(node)) {
       const textProps = props as TextProps;
-      if (Config.fontSettings) {
-        for (const key in Config.fontSettings) {
+      if (_fontTemplate === undefined) buildFontTemplate();
+      const tpl = _fontTemplate!;
+      if (tpl.length > 0) {
+        const familyIdx = _fontFamilyIdx;
+        const familyWithWeight =
+          textProps['fontWeight'] === undefined
+            ? _fontFamilyWithWeight
+            : undefined;
+        for (let i = 0; i < tpl.length; i++) {
+          const entry = tpl[i]!;
+          const key = entry[0];
           if (textProps[key] === undefined) {
-            let value = Config.fontSettings[key];
-            if (key === 'fontFamily' && textProps['fontWeight'] === undefined) {
-              value = `${value}${Config.fontSettings.fontWeight || ''}`;
-            }
-            textProps[key] = value;
+            textProps[key] =
+              i === familyIdx && familyWithWeight !== undefined
+                ? familyWithWeight
+                : entry[1];
           }
         }
       }
@@ -1496,11 +1607,10 @@ export class ElementNode extends Object {
         }
       }
     }
-    if (topNode && !layoutRunQueued) {
-      //Do one pass of layout, then another with Text loads
-      layoutRunQueued = true;
-      // We use queue because <For> loop will add children one at a time, causing lots of layout
-      queueMicrotask(runLayout);
+    if (topNode) {
+      // Schedule one post-mutation pass; <For> may add many children in one
+      // tick, but the scheduler dedupes and runs everything once.
+      schedulePostMutation();
     }
 
     node._autofocus && node.setFocus();

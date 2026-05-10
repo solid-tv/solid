@@ -2,8 +2,8 @@ import { ElementNode } from '../src/core/elementNode.ts';
 import calculateFlex from '../src/core/flex.ts';
 import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { isElementNode } from '../src/core/utils.ts';
-import { NodeType } from '../src/core/nodeTypes.ts';
-import type { ElementText, TextNode } from '../src/index.ts';
+import { TextNode } from '../src/core/nodeTypes.ts';
+import type { ElementText } from '../src/index.ts';
 
 // Helper to create a basic ElementNode for flex testing
 // (Adapted from flex.performance.spec.ts)
@@ -14,13 +14,7 @@ function createTestElement(
   } = {},
 ): ElementNode | TextNode {
   if (initialProps.nodeType === 'text') {
-    // Create a simple TextNode (not ElementText which is a type of ElementNode)
-    const textNodeInstance: TextNode = {
-      _type: NodeType.Text,
-      text: (initialProps as any).text || '',
-      // Add other properties if TextNode has them and they are relevant for testing
-    };
-    return textNodeInstance;
+    return new TextNode((initialProps as any).text || '');
   }
 
   const nodeTypeName =

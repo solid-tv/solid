@@ -144,6 +144,7 @@ class AnimationController implements lng.IAnimationController {
       loop: rawSettings.loop ?? false,
       repeat: rawSettings.repeat ?? 1,
       stopMethod: false,
+      adaptiveDuration: rawSettings.adaptiveDuration ?? false,
     };
 
     this.timeEnd =
@@ -1862,6 +1863,7 @@ export class DOMRendererMain implements IRendererMain {
       },
       loadFont: async () => {},
       cleanup() {},
+      requestRender() {},
     };
 
     this.root = new DOMNode(
