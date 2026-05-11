@@ -20,12 +20,14 @@ export function lazy<T extends Component<any>>(
       const [s, set] = createSignal<T>();
       sharedConfig.count || (sharedConfig.count = 0);
       sharedConfig.count++;
-      (p || (p = fn())).then((mod) => {
-        !sharedConfig.done && (sharedConfig.context = ctx);
-        sharedConfig.count!--;
-        set(() => mod.default);
-        sharedConfig.context = undefined;
-      });
+      (p || (p = fn()))
+        .then((mod) => {
+          !sharedConfig.done && (sharedConfig.context = ctx);
+          sharedConfig.count!--;
+          set(() => mod.default);
+          sharedConfig.context = undefined;
+        })
+        .catch(() => {});
       comp = s;
     } else if (!comp) {
       const [s] = createResource<T>(() =>
@@ -34,8 +36,9 @@ export function lazy<T extends Component<any>>(
       comp = s;
     }
     let Comp: T | undefined;
-    return createMemo(() =>
-      (Comp = comp())
+    return createMemo(() => {
+      Comp = comp();
+      return Comp
         ? untrack(() => {
             if (!ctx || sharedConfig.done) return Comp!(props);
             const c = sharedConfig.context;
@@ -44,8 +47,8 @@ export function lazy<T extends Component<any>>(
             sharedConfig.context = c;
             return r;
           })
-        : null,
-    ) as unknown as JSX.Element;
+        : null;
+    }) as unknown as JSX.Element;
   }) as T;
   wrap.preload = () =>
     p || ((p = fn()).then((mod) => (comp = () => mod.default)), p);

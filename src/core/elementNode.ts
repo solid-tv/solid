@@ -91,7 +91,7 @@ function runPostMutation() {
 
   // Phase 1: delete-flush
   if (elementDeleteQueue.length > 0) {
-    for (let el of elementDeleteQueue) {
+    for (const el of elementDeleteQueue) {
       if (Number(el._queueDelete) < 0) {
         el.destroy();
       }
@@ -288,6 +288,7 @@ export type RendererNode = AddColorString<
     >
   >
 >;
+// eslint-disable-next-line @typescript-eslint/no-unsafe-declaration-merging
 export interface ElementNode extends RendererNode, FocusNode {
   [key: string]: unknown;
 
@@ -749,6 +750,7 @@ export interface ElementNode extends RendererNode, FocusNode {
   stateOrder?: DollarString[];
 }
 
+// eslint-disable-next-line @typescript-eslint/no-unsafe-declaration-merging
 export class ElementNode {
   constructor(name: string) {
     this._type = name === 'text' ? NodeType.TextNode : NodeType.Element;
@@ -820,6 +822,7 @@ export class ElementNode {
       if (!this.lng.shader) {
         this.lng.shader = Config.convertToShader(this, target);
       } else if (DOM_RENDERING && Config.domRendererEnabled) {
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, no-self-assign
         this.lng.shader = this.lng.shader; // lng.shader is a setter, force style update
       }
     } else {
@@ -1378,7 +1381,7 @@ export class ElementNode {
         this._undoStyles = Object.keys(newStyles);
         // Apply transition first
         if (newStyles.transition !== undefined) {
-          this.transition = newStyles.transition as Styles['transition'];
+          this.transition = newStyles.transition;
         }
 
         // Apply the styles
@@ -1501,9 +1504,8 @@ export class ElementNode {
           textProps.maxHeight =
             parentHeight - textProps.y! - (textProps.marginBottom || 0);
         } else if (textProps.maxLines === 1) {
-          textProps.maxHeight = (textProps.maxHeight ||
-            textProps.lineHeight ||
-            textProps.fontSize) as number;
+          textProps.maxHeight =
+            textProps.maxHeight || textProps.lineHeight || textProps.fontSize;
         }
         // textProps.w = textProps.h = 0;
       }
@@ -1696,7 +1698,9 @@ export function shaderAccessor<T extends Record<string, any> | number>(
         if (!this.lng.shader) {
           this.lng.shader = Config.convertToShader(this, target);
         } else if (DOM_RENDERING && Config.domRendererEnabled) {
-          this.lng.shader = this.lng.shader; // lng.shader is a setter, force style update
+          // lng.shader is a setter, force style update
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, no-self-assign
+          this.lng.shader = this.lng.shader;
         }
       } else {
         this.lng.shader = target;

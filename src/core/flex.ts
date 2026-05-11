@@ -22,7 +22,7 @@ export default function (node: ElementNode): boolean {
     return false;
   }
 
-  let processableChildrenIndices: number[] = [];
+  const processableChildrenIndices: number[] = [];
   let hasOrder = false;
   let totalFlexGrow = 0;
 
@@ -46,13 +46,13 @@ export default function (node: ElementNode): boolean {
       totalFlexGrow += flexGrow;
     }
 
-    if (c[minDimension] && (c[dimension] || 0) < c[minDimension]!) {
+    if (c[minDimension] && (c[dimension] || 0) < c[minDimension]) {
       c[dimension] = c[minDimension]!;
     }
 
     if (
       c[crossMinDimension] &&
-      (c[crossDimension] || 0) < c[crossMinDimension]!
+      (c[crossDimension] || 0) < c[crossMinDimension]
     ) {
       c[crossDimension] = c[crossMinDimension]!;
     }

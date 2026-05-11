@@ -3,7 +3,7 @@ import * as lng from '@solidtv/solid'
 
 function Preserve(props: lng.NodeProps): s.JSX.Element {
 
-  let view = <view {...props} /> as any as lng.ElementNode
+  const view = <view {...props} /> as any as lng.ElementNode
 
   view.preserve = true;
 

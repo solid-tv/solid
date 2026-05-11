@@ -55,14 +55,14 @@ export function borderBox(
       runWithOwner(owner, () => {
         const props = accessor();
         border = borderComponent(
-          props === true || props === undefined ? ({} as NodeProps) : props,
+          props === true || props === undefined ? ({}) : props,
         ) as any as ElementNode;
         insertNode(el, border);
         border.render();
       });
     } else if (border) {
       border.destroy();
-      el.removeChild(border!);
+      el.removeChild(border);
       border = null;
     }
   }, el.onFocusChanged);

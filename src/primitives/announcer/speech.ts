@@ -154,7 +154,7 @@ function speak(
       resolve();
     };
     utterance.onerror = (e) => {
-      reject(e);
+      reject(new Error(`Speech synthesis error: ${e.error}`));
     };
     utterances.push(utterance);
     synth.speak(utterance);
@@ -328,7 +328,7 @@ export default function (
   lang: string = 'en-US',
   voice?: string,
 ) {
-  currentSeries && currentSeries.cancel();
+  currentSeries?.cancel();
   currentSeries = speakSeries(toSpeak, aria, lang, voice);
   return currentSeries;
 }

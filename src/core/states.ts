@@ -12,7 +12,7 @@ export default class States extends Array<DollarString> {
     if (isArray(initialState)) {
       super(...initialState);
     } else if (isString(initialState)) {
-      super(initialState as DollarString); // Assert as DollarString
+      super(initialState); // Assert as DollarString
     } else {
       super(
         ...Object.entries(initialState)
@@ -62,7 +62,7 @@ export default class States extends Array<DollarString> {
       this.push(...newStates);
     } else if (isString(newStates)) {
       this.length = 0; // Clear the current states
-      this.push(newStates as DollarString); // Assert as DollarString
+      this.push(newStates); // Assert as DollarString
     } else {
       for (const state in newStates) {
         const value = newStates[state as DollarString];

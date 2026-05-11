@@ -23,8 +23,9 @@ export function log(
 export const isFunc = (obj: unknown): obj is CallableFunction =>
   obj instanceof Function;
 
-export const isFunction = (obj: unknown): obj is Function =>
-  typeof obj === 'function';
+export const isFunction = (
+  obj: unknown,
+): obj is (...args: unknown[]) => unknown => typeof obj === 'function';
 
 export function isObject(
   item: unknown,
@@ -200,7 +201,7 @@ export function getElementScreenRect(
   }
 
   if (Config.rendererOptions != null) {
-    let dpr = Config.rendererOptions.deviceLogicalPixelRatio;
+    const dpr = Config.rendererOptions.deviceLogicalPixelRatio;
     if (dpr != null) {
       out.x *= dpr;
       out.y *= dpr;

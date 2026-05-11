@@ -34,10 +34,9 @@ export function createRenderer(
   rendererOptions?: RendererMainSettings | DomRendererMainSettings,
   node?: HTMLElement | string,
 ) {
-  const options =
-    rendererOptions || (Config.rendererOptions as RendererMainSettings);
+  const options = rendererOptions || Config.rendererOptions;
 
-  renderer = startLightningRenderer(options, node || 'app');
+  renderer = startLightningRenderer(options!, node || 'app');
   //Prevent this from happening automatically
   Config.setActiveElement = setActiveElement;
   rootNode.lng = renderer.root!;

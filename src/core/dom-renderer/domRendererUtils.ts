@@ -13,7 +13,7 @@ export function buildGradientStops(colors: number[], stops?: number[]): string {
   if (!Array.isArray(colors) || colors.length === 0) return '';
   const positions: number[] = [];
   if (Array.isArray(stops) && stops.length === colors.length) {
-    for (let v of stops) {
+    for (const v of stops) {
       if (typeof v !== 'number' || !isFinite(v)) {
         positions.push(0);
         continue;
@@ -63,7 +63,7 @@ export function computeLegacyObjectFit(
   const containerH = node.props.h || img.naturalHeight;
   const naturalW = img.naturalWidth || 1;
   const naturalH = img.naturalHeight || 1;
-  let fitType = resizeMode?.type || (srcPos ? 'none' : 'fill');
+  const fitType = resizeMode?.type || (srcPos ? 'none' : 'fill');
   let drawW = naturalW;
   let drawH = naturalH;
   switch (fitType) {

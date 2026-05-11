@@ -31,9 +31,9 @@ export interface ScrollableElement extends ElementNode {
 }
 
 // From the renderer, not exported
-const InViewPort = 8;
+const InViewPort = 8 as const;
 const isNotShown = (node: ElementNode | ElementText) => {
-  return node.lng.renderState !== InViewPort;
+  return (node.lng.renderState as number) !== InViewPort;
 };
 /*
   Auto Scrolling starts scrolling right away until the last item is shown. Keeping a full view of the list.
@@ -114,9 +114,7 @@ export function withScrolling(isRow: boolean): Scroller {
       : Math.max(targetPosition, componentRef[axis]);
     componentRef.offset = componentRef.offset ?? rootPosition;
     const offset = componentRef.offset;
-    selectedElement =
-      selectedElement ||
-      (componentRef.children[selected] as ElementNode | undefined);
+    selectedElement = selectedElement || componentRef.children[selected];
 
     if (!selectedElement) {
       return;

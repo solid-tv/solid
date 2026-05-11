@@ -148,7 +148,7 @@ export const Announcer: Announcer = {
   lang: 'en-US',
   aria: false,
   cancel: function () {
-    currentlySpeaking && currentlySpeaking.cancel();
+    currentlySpeaking?.cancel();
   },
   clearPrevFocus: function (depth = 0) {
     prevFocusPath = prevFocusPath.slice(0, depth);
@@ -178,8 +178,9 @@ export const Announcer: Announcer = {
   },
   refresh: function (depth = 0) {
     Announcer.clearPrevFocus(depth);
-    Announcer.onFocusChange &&
+    if (Announcer.onFocusChange) {
       Announcer.onFocusChange(untrack(() => focusPath()));
+    }
   },
   setupTimers: function ({
     focusDebounce = 400,
