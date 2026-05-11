@@ -80,7 +80,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.16.0",
-    "@solidtv/renderer": "1.0.0",
+    "@solidtv/renderer": "1.1.1",
     "@solid-devtools/debugger": "^0.28.1",
     "@solidjs/testing-library": "^0.8.10",
     "@typescript-eslint/eslint-plugin": "^8.17.0",
@@ -108,7 +108,7 @@
     "*.{js,cjs,md}": "prettier --write"
   },
   "peerDependencies": {
-    "@solidtv/renderer": "^1.0.0",
+    "@solidtv/renderer": "^1.1.0",
     "@solidjs/router": "^0.15.1",
     "solid-js": "*"
   },
