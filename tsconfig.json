@@ -29,8 +29,8 @@
     // jsx
     "jsx": "preserve",
     "jsxImportSource": "@solidtv/solid",
-    "types": ["solid-js"],
-    "customConditions": ["@solidtv/source"],
+    "types": ["solid-js", "vite/client"],
+    "customConditions": ["@solidtv/source"]
   },
-  "include": ["src/**/*"]
+  "include": ["vite-env.d.ts", "src/**/*"]
 }

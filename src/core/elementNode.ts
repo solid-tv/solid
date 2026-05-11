@@ -17,7 +17,7 @@ import States, { type NodeStates } from './states.js';
 import calculateFlexOld from './flex.js';
 import calculateFlexNew from './flexLayout.js';
 
-const calculateFlex = (import.meta as any).env?.VITE_USE_NEW_FLEX
+const calculateFlex = import.meta.env?.VITE_USE_NEW_FLEX
   ? calculateFlexNew
   : calculateFlexOld;
 import {

@@ -18,32 +18,16 @@ import {
   STATIC LIGHTNING CONFIGURATION \
   Replace the values below with in your build system, \
   or set them in the global scope before importing lightning-core.
+  See `vite-env.d.ts` for environment variable type definitions.
 */
-declare global {
-  /** Whether the DOM renderer should be used instead of `@solidtv/renderer` */
-  var SOLIDTV_DOM_RENDERING: boolean | undefined;
-  /** Whether element shaders should be disabled */
-  var SOLIDTV_DISABLE_SHADERS: boolean | undefined;
-
-  /** Could be set by vite or other bundler */
-  interface ImportMetaEnv {
-    DEV: boolean;
-  }
-  interface ImportMeta {
-    readonly env: ImportMetaEnv;
-  }
-}
 
 export const isDev = !!(import.meta.env && import.meta.env.DEV);
 
 /** Whether the DOM renderer is used instead of `@solidtv/renderer` */
-export const DOM_RENDERING =
-  typeof SOLIDTV_DOM_RENDERING === 'boolean' && SOLIDTV_DOM_RENDERING;
+export const DOM_RENDERING = globalThis.SOLIDTV_DOM_RENDERING === true;
 
 /** Whether element shaders are enabled */
-export const SHADERS_ENABLED = !(
-  typeof SOLIDTV_DISABLE_SHADERS === 'boolean' && SOLIDTV_DISABLE_SHADERS
-);
+export const SHADERS_ENABLED = globalThis.SOLIDTV_DISABLE_SHADERS !== true;
 
 /**
   RUNTIME LIGHTNING CONFIGURATION \
