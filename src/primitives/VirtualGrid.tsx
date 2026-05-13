@@ -3,8 +3,7 @@ import * as lng from '@solidtv/solid';
 import * as lngp from '@solidtv/solid/primitives';
 import { List } from '@solid-primitives/list';
 import * as utils from '../utils.js';
-
-const columnScroll = lngp.withScrolling(false);
+import { scrollColumn } from './utils/withScrolling.js';
 
 const rowStyles: lng.NodeStyles = {
   display: 'flex',
@@ -114,7 +113,7 @@ export function VirtualGrid<T>(props: VirtualGridProps<T>): s.JSX.Element {
       const prevRowY = this.y + active.y;
       this.updateLayout();
       this.lng.y = prevRowY - active.y;
-      columnScroll(idx, elm, active, lastIdx);
+      scrollColumn(idx, elm, active, lastIdx);
     });
   };
 
@@ -209,7 +208,7 @@ export function VirtualGrid<T>(props: VirtualGridProps<T>): s.JSX.Element {
       onUp={/* @once */ lngp.chainFunctions(props.onUp, onUp)}
       onDown={/* @once */ lngp.chainFunctions(props.onDown, onDown)}
       forwardFocus={/* @once */ lngp.navigableForwardFocus}
-      onCreate={/* @once */ props.selected ? lngp.chainFunctions(props.onCreate, columnScroll) : props.onCreate}
+      onCreate={/* @once */ props.selected ? lngp.chainFunctions(props.onCreate, scrollColumn) : props.onCreate}
       scrollToIndex={/* @once */ scrollToIndex}
       onSelectedChanged={/* @once */ chainedOnSelectedChanged}
       style={/* @once */ lng.combineStyles(props.style, rowStyles)}
