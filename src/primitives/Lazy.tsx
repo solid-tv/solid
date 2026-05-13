@@ -13,6 +13,13 @@ type LazyProps<T extends readonly any[]> = lng.NewOmit<lng.NodeProps, 'children'
   children: (item: s.Accessor<T[number]>, index: number) => s.JSX.Element;
 };
 
+// Lifecycle when props.each changes:
+//  1. items memo invalidates → <Index> reconciles → new ElementNodes mounted (sync)
+//  2. refocus effect runs (microtask) → calls viewRef.setFocus()
+//  3. setFocus queues runPostMutation
+//  4. post-mutation: delete-flush → layout → setActiveElement
+// Children are always mounted before focus is applied; do not wrap setFocus
+// in queueMicrotask — it only adds a redundant defer.
 function createLazy<T>(
   component: s.ValidComponent,
   props: LazyProps<readonly T[]>,
@@ -87,7 +94,11 @@ function createLazy<T>(
     if (itemLength !== len) {
       itemLength = len;
       if (viewRef && !viewRef.noRefocus && lng.hasFocus(viewRef)) {
-        queueMicrotask(() => viewRef.setFocus());
+        // Clamp selected so a shrunk list doesn't refocus a disposed index.
+        if (typeof viewRef.selected === 'number' && viewRef.selected >= len) {
+          viewRef.selected = Math.max(0, len - 1);
+        }
+        viewRef.setFocus();
       }
     }
   });
