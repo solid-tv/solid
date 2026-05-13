@@ -4,12 +4,35 @@ import * as s from 'solid-js';
 
 type LazyProps<T extends readonly any[]> = lng.NewOmit<lng.NodeProps, 'children'> & {
   each: T | undefined | null | false;
+
+  /** Initial visible item count before user navigation. */
   upCount: number;
+
+  /**
+   * Items to keep rendered ahead of the current selection. When selection
+   * moves within this distance of the rendered edge, the next item is
+   * scheduled to mount. Default depends on the scroll mode.
+   */
   buffer?: number;
+
+  /**
+   * Milliseconds to wait after a navigation key press before mounting the
+   * next item. Should match the scroll animation duration — mounting items
+   * mid-animation causes jank. If the user presses again before this timer
+   * fires (faster than the animation), an item is added synchronously to
+   * keep the rendered window ahead of selection.
+   */
   delay?: number;
+
+  /** Render `upCount` items synchronously on mount instead of ramping up. */
   sync?: boolean;
+
+  /** Continue mounting items in the background past `upCount`. */
   eagerLoad?: boolean;
+
+  /** Skip refocusing the container when `each.length` changes. */
   noRefocus?: boolean;
+
   children: (item: s.Accessor<T[number]>, index: number) => s.JSX.Element;
 };
 
@@ -20,6 +43,12 @@ type LazyProps<T extends readonly any[]> = lng.NewOmit<lng.NodeProps, 'children'
 //  4. post-mutation: delete-flush → layout → setActiveElement
 // Children are always mounted before focus is applied; do not wrap setFocus
 // in queueMicrotask — it only adds a redundant defer.
+//
+// Navigation key handler (updateOffset):
+//  - On each onRight/onDown, if selection is within `buffer` of the rendered
+//    edge, mount one more item. With `delay` set, the mount is deferred until
+//    the scroll animation completes so it doesn't drop a frame mid-animation.
+//    If the user out-paces `delay`, the mount fires synchronously instead.
 function createLazy<T>(
   component: s.ValidComponent,
   props: LazyProps<readonly T[]>,
@@ -115,24 +144,34 @@ function createLazy<T>(
   const updateOffset = (_event: KeyboardEvent, container: lng.ElementNode) => {
     const maxOffset = props.each ? props.each.length : 0;
     const selected = container.selected || 0;
-    const numChildren = container.children.length;
-    if (offset() >= maxOffset || selected < numChildren - buffer()) return;
+    const rendered = offset(); // == container.children.length
 
+    // Already mounted everything, or still far enough from the rendered edge
+    // that the buffer covers the next selection — no work to do.
+    if (rendered >= maxOffset || selected < rendered - buffer()) return;
+
+    const bump = () => setOffset((prev) => Math.min(prev + 1, maxOffset));
+
+    // No animation to hide behind — mount immediately.
     if (!props.delay) {
-      setOffset((prev) => Math.min(prev + 1, maxOffset));
+      bump();
       return;
     }
 
+    // A delayed mount from the previous press hasn't fired yet, which means
+    // the user is navigating faster than the scroll animation. Drop the wait
+    // (we can't smooth a frame the user is already past) and mount now.
     if (navDelayTimer) {
       clearTimeout(navDelayTimer);
-      //Moving faster than the delay so need to go sync
-      setOffset((prev) => Math.min(prev + 1, maxOffset));
+      bump();
     }
 
+    // Schedule the trailing mount to land after the scroll animation completes,
+    // so a single item mount doesn't jank the in-flight animation.
     navDelayTimer = setTimeout(() => {
-      setOffset((prev) => Math.min(prev + 1, maxOffset));
+      bump();
       navDelayTimer = null;
-    }, props.delay ?? 0);
+    }, props.delay);
   };
 
   const handler = keyHandler(updateOffset);
