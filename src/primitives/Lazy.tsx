@@ -20,9 +20,17 @@ function createLazy<T>(
 ) {
   // Need at least one item so it can be focused
   const [offset, setOffset] = s.createSignal<number>(props.sync ? props.upCount : 0);
-  let timeoutId: ReturnType<typeof setTimeout> | null = null;
+  let preloadTimer: ReturnType<typeof setTimeout> | null = null;
+  let navDelayTimer: ReturnType<typeof setTimeout> | null = null;
+  let disposed = false;
   let viewRef!: lngp.NavigableElement;
-  let itemLength: number = 0;
+  let itemLength = 0;
+
+  s.onCleanup(() => {
+    disposed = true;
+    if (preloadTimer) clearTimeout(preloadTimer);
+    if (navDelayTimer) clearTimeout(navDelayTimer);
+  });
 
   const buffer = s.createMemo(() => {
     if (typeof props.buffer === 'number') {
@@ -44,38 +52,49 @@ function createLazy<T>(
 
   if (!props.sync || props.eagerLoad) {
     s.createEffect(() => {
-      if (props.each) {
-        const loadItems = () => {
-          let count = s.untrack(offset);
-          if (count < props.upCount) {
-            setOffset(count + 1);
-            timeoutId = setTimeout(loadItems, 16); // ~60fps
-            count++;
-          } else if (props.eagerLoad) {
-            const maxOffset = props.each ? props.each.length : 0;
-            if (count >= maxOffset) return;
-            setOffset((prev) => Math.min(prev + 1, maxOffset));
-            lng.scheduleTask(loadItems);
-          }
-        };
-        loadItems();
+      if (!props.each) return;
+      // Cancel any in-flight preload chain from a prior effect run before
+      // starting a new one — otherwise two chains share state and race.
+      if (preloadTimer) {
+        clearTimeout(preloadTimer);
+        preloadTimer = null;
       }
+      const loadItems = () => {
+        if (disposed) return;
+        const count = s.untrack(offset);
+        if (count < props.upCount) {
+          setOffset(count + 1);
+          preloadTimer = setTimeout(loadItems, 16); // ~60fps
+        } else if (props.eagerLoad) {
+          const maxOffset = props.each ? props.each.length : 0;
+          if (count >= maxOffset) return;
+          setOffset((prev) => Math.min(prev + 1, maxOffset));
+          lng.scheduleTask(loadItems);
+        }
+      };
+      loadItems();
     });
   }
 
-  const items: s.Accessor<T[]> = s.createMemo(() => {
-    if (Array.isArray(props.each)) {
-      if (itemLength != props.each.length) {
-        itemLength = props.each.length;
-        if (viewRef && !viewRef.noRefocus && lng.hasFocus(viewRef)) {
-          queueMicrotask(() => viewRef.setFocus());
-        }
-      }
-      return props.each.slice(0, offset());
+  // Refocus when each.length changes. Side effect kept out of the items memo
+  // (memos must be pure — Solid may skip evaluation when there are no readers).
+  s.createEffect(() => {
+    if (!Array.isArray(props.each)) {
+      itemLength = 0;
+      return;
     }
-    itemLength = 0;
-    return [];
+    const len = props.each.length;
+    if (itemLength !== len) {
+      itemLength = len;
+      if (viewRef && !viewRef.noRefocus && lng.hasFocus(viewRef)) {
+        queueMicrotask(() => viewRef.setFocus());
+      }
+    }
   });
+
+  const items: s.Accessor<T[]> = s.createMemo(() =>
+    Array.isArray(props.each) ? props.each.slice(0, offset()) : [],
+  );
 
   function lazyScrollToIndex(this: lngp.NavigableElement, index: number) {
     setOffset(Math.max(index, 0) + buffer())
@@ -93,15 +112,15 @@ function createLazy<T>(
       return;
     }
 
-    if (timeoutId) {
-      clearTimeout(timeoutId);
+    if (navDelayTimer) {
+      clearTimeout(navDelayTimer);
       //Moving faster than the delay so need to go sync
       setOffset((prev) => Math.min(prev + 1, maxOffset));
     }
 
-    timeoutId = setTimeout(() => {
+    navDelayTimer = setTimeout(() => {
       setOffset((prev) => Math.min(prev + 1, maxOffset));
-      timeoutId = null;
+      navDelayTimer = null;
     }, props.delay ?? 0);
   };
 
