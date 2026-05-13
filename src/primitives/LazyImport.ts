@@ -34,8 +34,9 @@ export function lazy<T extends Component<any>>(
       comp = s;
     }
     let Comp: T | undefined;
-    return createMemo(() =>
-      (Comp = comp())
+    return createMemo(() => {
+      Comp = comp();
+      return Comp
         ? untrack(() => {
             if (!ctx || sharedConfig.done) return Comp!(props);
             const c = sharedConfig.context;
@@ -44,8 +45,8 @@ export function lazy<T extends Component<any>>(
             sharedConfig.context = c;
             return r;
           })
-        : null,
-    ) as unknown as JSX.Element;
+        : null;
+    }) as unknown as JSX.Element;
   }) as T;
   wrap.preload = () =>
     p || ((p = fn()).then((mod) => (comp = () => mod.default)), p);

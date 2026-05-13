@@ -21,8 +21,10 @@ import {
 */
 declare global {
   /** Whether the DOM renderer should be used instead of `@solidtv/renderer` */
+  // eslint-disable-next-line no-var
   var SOLIDTV_DOM_RENDERING: boolean | undefined;
   /** Whether element shaders should be disabled */
+  // eslint-disable-next-line no-var
   var SOLIDTV_DISABLE_SHADERS: boolean | undefined;
 
   /** Could be set by vite or other bundler */

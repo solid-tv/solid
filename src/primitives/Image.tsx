@@ -32,7 +32,7 @@ export const Image: Component<ImageProps> = (props) => {
       return;
     }
 
-    const srcTexture = renderer.createTexture('ImageTexture', props) as ImageTexture;
+    const srcTexture = renderer.createTexture('ImageTexture', props);
 
     if (props.fallback) {
       srcTexture.once('failed', () => {

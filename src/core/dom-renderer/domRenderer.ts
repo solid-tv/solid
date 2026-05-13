@@ -49,7 +49,7 @@ const supportsCssMask: boolean = supportsStandardMask || supportsWebkitMask;
  Animations
 */
 
-let animationTasks: AnimationController[] = [];
+const animationTasks: AnimationController[] = [];
 let animationFrameRequested = false;
 
 function requestAnimationUpdate() {
@@ -67,10 +67,10 @@ function updateAnimations(time: number) {
    so that the later task will override the earlier ones
   */
   for (let i = 0; i < animationTasks.length; i++) {
-    let task = animationTasks[i]!;
+    const task = animationTasks[i]!;
     if (task.pausedTime != null) continue;
 
-    let elapsed = time - task.timeStart;
+    const elapsed = time - task.timeStart;
 
     // Still in delay period
     if (elapsed < task.settings.delay) {
@@ -78,7 +78,7 @@ function updateAnimations(time: number) {
       continue;
     }
 
-    let activeTime = elapsed - task.settings.delay;
+    const activeTime = elapsed - task.settings.delay;
 
     if (activeTime >= task.settings.duration) {
       // Start next iteration
@@ -106,9 +106,9 @@ function updateAnimations(time: number) {
     let t = activeTime / task.settings.duration;
     t = applyEasing(task.settings.easing, t);
 
-    for (let prop in task.propsEnd) {
-      let start = task.propsStart[prop]!;
-      let end = task.propsEnd[prop]!;
+    for (const prop in task.propsEnd) {
+      const start = task.propsStart[prop]!;
+      const end = task.propsEnd[prop]!;
       (task.node.props as any)[prop] = interpolateProp(prop, start, end, t);
     }
 
@@ -150,7 +150,7 @@ class AnimationController implements lng.IAnimationController {
     this.timeEnd =
       this.timeStart + this.settings.delay + this.settings.duration;
 
-    for (let [prop, value] of Object.entries(props)) {
+    for (const [prop, value] of Object.entries(props)) {
       if (value != null && typeof value === 'number') {
         this.propsStart[prop] = (node.props as any)[prop];
         this.propsEnd[prop] = value;
@@ -177,7 +177,7 @@ class AnimationController implements lng.IAnimationController {
     return this;
   }
   stop() {
-    let index = animationTasks.indexOf(this);
+    const index = animationTasks.indexOf(this);
     if (index !== -1) {
       animationTasks.splice(index, 1);
     }
@@ -224,7 +224,7 @@ function animate(
   Node Properties
 */
 
-let elMap = new WeakMap<DOMNode, HTMLElement>();
+const elMap = new WeakMap<DOMNode, HTMLElement>();
 
 function updateNodeParent(node: DOMNode | DOMText) {
   const parent = node.props.parent;
@@ -234,7 +234,7 @@ function updateNodeParent(node: DOMNode | DOMText) {
 }
 
 function updateNodeStyles(node: DOMNode | DOMText) {
-  let { props } = node;
+  const { props } = node;
 
   let style = `position: absolute; z-index: ${props.zIndex}; opacity: ${props.alpha ?? 1};`;
 
@@ -246,16 +246,16 @@ function updateNodeStyles(node: DOMNode | DOMText) {
   {
     let transform = '';
 
-    let { x, y } = props;
+    const { x, y } = props;
 
     const hasMountX = props.mountX != null && props.mountX !== 0;
     const hasMountY = props.mountY != null && props.mountY !== 0;
 
     if (x !== 0) transform += `translateX(${x}px)`;
-    if (hasMountX) transform += `translateX(${-props.mountX! * 100}%)`;
+    if (hasMountX) transform += `translateX(${-props.mountX * 100}%)`;
 
     if (y !== 0) transform += `translateY(${y}px)`;
-    if (hasMountY) transform += `translateY(${-props.mountY! * 100}%)`;
+    if (hasMountY) transform += `translateY(${-props.mountY * 100}%)`;
 
     if (props.rotation !== 0) transform += `rotate(${props.rotation}rad)`;
 
@@ -270,8 +270,8 @@ function updateNodeStyles(node: DOMNode | DOMText) {
       style += `transform: ${transform};`;
     }
 
-    let pivotX = props.pivotX ?? props.pivot ?? 0.5;
-    let pivotY = props.pivotY ?? props.pivot ?? 0.5;
+    const pivotX = props.pivotX ?? props.pivot ?? 0.5;
+    const pivotY = props.pivotY ?? props.pivot ?? 0.5;
     if (pivotX !== 0.5 || pivotY !== 0.5) {
       style += `transform-origin: ${pivotX * 100}% ${pivotY * 100}%;`;
     }
@@ -279,7 +279,7 @@ function updateNodeStyles(node: DOMNode | DOMText) {
 
   // <Text>
   if (node instanceof DOMText) {
-    let textProps = node.props;
+    const textProps = node.props;
 
     if (textProps.color != null && textProps.color !== 0) {
       style += `color: ${colorToRgba(textProps.color)};`;
@@ -324,7 +324,7 @@ function updateNodeStyles(node: DOMNode | DOMText) {
         }
         break;
       case 'both': {
-        let lineHeight = getNodeLineHeight(textProps);
+        const lineHeight = getNodeLineHeight(textProps);
         const widthConstraint =
           textProps.maxWidth && textProps.maxWidth > 0
             ? `${textProps.maxWidth}px`
@@ -391,17 +391,17 @@ function updateNodeStyles(node: DOMNode | DOMText) {
     if (props.w !== 0) style += `width: ${props.w < 0 ? 0 : props.w}px;`;
     if (props.h !== 0) style += `height: ${props.h}px;`;
 
-    let vGradient =
+    const vGradient =
       props.colorBottom !== props.colorTop
         ? `linear-gradient(to bottom, ${colorToRgba(props.colorTop)}, ${colorToRgba(props.colorBottom)})`
         : null;
 
-    let hGradient =
+    const hGradient =
       props.colorLeft !== props.colorRight
         ? `linear-gradient(to right, ${colorToRgba(props.colorLeft)}, ${colorToRgba(props.colorRight)})`
         : null;
 
-    let gradient =
+    const gradient =
       vGradient && hGradient
         ? `${vGradient}, ${hGradient}`
         : vGradient || hGradient;
@@ -511,13 +511,13 @@ function updateNodeStyles(node: DOMNode | DOMText) {
     }
 
     if (props.shader?.props != null) {
-      let shaderProps = props.shader.props;
+      const shaderProps = props.shader.props;
 
-      let borderWidth = shaderProps['border-w'];
-      let borderColor = shaderProps['border-color'];
-      let borderGap = shaderProps['border-gap'] ?? 0;
-      let borderAlign = shaderProps['border-align'] ?? 'inside';
-      let radius = shaderProps['radius'];
+      const borderWidth = shaderProps['border-w'];
+      const borderColor = shaderProps['border-color'];
+      const borderGap = shaderProps['border-gap'] ?? 0;
+      const borderAlign = shaderProps['border-align'] ?? 'inside';
+      const radius = shaderProps['radius'];
 
       // Border
       const borderWidthIsNumber = typeof borderWidth === 'number';
@@ -606,11 +606,11 @@ function updateNodeStyles(node: DOMNode | DOMText) {
         const rg = shaderProps.radial as
           | Partial<lng.RadialGradientProps>
           | undefined;
-        const colors = Array.isArray(rg?.colors) ? rg!.colors! : [];
-        const stops = Array.isArray(rg?.stops) ? rg!.stops! : undefined;
-        const pivot = Array.isArray(rg?.pivot) ? rg!.pivot! : [0.5, 0.5];
-        const width = typeof rg?.w === 'number' ? rg!.w! : props.w || 0;
-        const height = typeof rg?.h === 'number' ? rg!.h! : width;
+        const colors = Array.isArray(rg?.colors) ? rg.colors : [];
+        const stops = Array.isArray(rg?.stops) ? rg.stops : undefined;
+        const pivot = Array.isArray(rg?.pivot) ? rg.pivot : [0.5, 0.5];
+        const width = typeof rg?.w === 'number' ? rg.w : props.w || 0;
+        const height = typeof rg?.h === 'number' ? rg.h : width;
 
         if (colors.length > 0) {
           const gradientStops = buildGradientStops(colors, stops);
@@ -653,9 +653,9 @@ function updateNodeStyles(node: DOMNode | DOMText) {
         const lg = shaderProps.linear as
           | Partial<lng.LinearGradientProps>
           | undefined;
-        const colors = Array.isArray(lg?.colors) ? lg!.colors! : [];
-        const stops = Array.isArray(lg?.stops) ? lg!.stops! : undefined;
-        const angleRad = typeof lg?.angle === 'number' ? lg!.angle! : 0; // radians
+        const colors = Array.isArray(lg?.colors) ? lg.colors : [];
+        const stops = Array.isArray(lg?.stops) ? lg.stops : undefined;
+        const angleRad = typeof lg?.angle === 'number' ? lg.angle : 0; // radians
 
         if (colors.length > 0) {
           const gradientStops = buildGradientStops(colors, stops);
@@ -1028,8 +1028,8 @@ function scheduleUpdateDOMTextMeasurement(node: DOMText) {
 
 function updateNodeData(node: DOMNode | DOMText) {
   const data = node.data;
-  for (let key in data) {
-    let keyValue: unknown = data[key];
+  for (const key in data) {
+    const keyValue: unknown = data[key];
     if (keyValue === undefined) {
       node.div.removeAttribute('data-' + key);
     } else {
@@ -1791,16 +1791,16 @@ class DOMText extends DOMNode {
 }
 
 function updateRootPosition(this: DOMRendererMain) {
-  let { canvas, settings } = this;
+  const { canvas, settings } = this;
 
-  let rect = canvas.getBoundingClientRect();
-  let top = document.documentElement.scrollTop + rect.top;
-  let left = document.documentElement.scrollLeft + rect.left;
+  const rect = canvas.getBoundingClientRect();
+  const top = document.documentElement.scrollTop + rect.top;
+  const left = document.documentElement.scrollLeft + rect.left;
 
-  let dpr = settings.deviceLogicalPixelRatio ?? 1;
+  const dpr = settings.deviceLogicalPixelRatio ?? 1;
 
-  let height = Math.ceil(settings.appHeight ?? 1080 / dpr);
-  let width = Math.ceil(settings.appWidth ?? 1920 / dpr);
+  const height = Math.ceil(settings.appHeight ?? 1080 / dpr);
+  const width = Math.ceil(settings.appWidth ?? 1920 / dpr);
 
   this.root.div.style.left = `${left}px`;
   this.root.div.style.top = `${top}px`;
@@ -1825,7 +1825,7 @@ export class DOMRendererMain implements IRendererMain {
   ) {
     let target: HTMLElement;
     if (typeof rawTarget === 'string') {
-      let result = document.getElementById(rawTarget);
+      const result = document.getElementById(rawTarget);
       if (result instanceof HTMLElement) {
         target = result;
       } else {
@@ -1835,7 +1835,7 @@ export class DOMRendererMain implements IRendererMain {
       target = rawTarget;
     }
 
-    let canvas = document.body.appendChild(document.createElement('canvas'));
+    const canvas = document.body.appendChild(document.createElement('canvas'));
     canvas.style.position = 'absolute';
     canvas.style.top = '0';
     canvas.style.left = '0';

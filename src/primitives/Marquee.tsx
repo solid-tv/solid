@@ -69,7 +69,7 @@ export function MarqueeText(props: MarqueeTextProps) {
   s.createEffect(() => {
     if (shouldScroll()) {
 
-      let options: lng.AnimationSettings = {
+      const options: lng.AnimationSettings = {
         duration: (textWidth() + scrollGap()) / speed() * 1000,
         delay: delay(),
         loop: true,
@@ -79,8 +79,8 @@ export function MarqueeText(props: MarqueeTextProps) {
       text1.lng.x = 0
       text2.lng.x = textWidth() + scrollGap()
 
-      let a1 = text1.lng.animate!({x: -textWidth() -scrollGap()}, options).start()
-      let a2 = text2.lng.animate!({x: 0}, options).start()
+      const a1 = text1.lng.animate!({x: -textWidth() -scrollGap()}, options).start()
+      const a2 = text2.lng.animate!({x: 0}, options).start()
 
       s.onCleanup(() => {
         a1.stop()

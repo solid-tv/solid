@@ -62,7 +62,7 @@ export function borderBox(
       });
     } else if (border) {
       border.destroy();
-      el.removeChild(border!);
+      el.removeChild(border);
       border = null;
     }
   }, el.onFocusChanged);

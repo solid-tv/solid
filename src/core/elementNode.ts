@@ -91,7 +91,7 @@ function runPostMutation() {
 
   // Phase 1: delete-flush
   if (elementDeleteQueue.length > 0) {
-    for (let el of elementDeleteQueue) {
+    for (const el of elementDeleteQueue) {
       if (Number(el._queueDelete) < 0) {
         el.destroy();
       }
@@ -811,7 +811,8 @@ export class ElementNode {
       if (!this.lng.shader) {
         this.lng.shader = Config.convertToShader(this, target);
       } else if (DOM_RENDERING && Config.domRendererEnabled) {
-        this.lng.shader = this.lng.shader; // lng.shader is a setter, force style update
+        // eslint-disable-next-line no-self-assign -- lng.shader is a setter, force style update
+        this.lng.shader = this.lng.shader;
       }
     } else {
       this.lng.shader = target;
@@ -1723,7 +1724,8 @@ export function shaderAccessor<T extends Record<string, any> | number>(
         if (!this.lng.shader) {
           this.lng.shader = Config.convertToShader(this, target);
         } else if (DOM_RENDERING && Config.domRendererEnabled) {
-          this.lng.shader = this.lng.shader; // lng.shader is a setter, force style update
+          // eslint-disable-next-line no-self-assign -- lng.shader is a setter, force style update
+          this.lng.shader = this.lng.shader;
         }
       } else {
         this.lng.shader = target;

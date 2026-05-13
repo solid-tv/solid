@@ -140,7 +140,7 @@ const createKeepAliveComponent = (
       });
     } else if (existing && !existing.children) {
       existing.children = s.runWithOwner(existing.owner, () =>
-        wrapChildren(props, existing!.setIsAlive),
+        wrapChildren(props, existing.setIsAlive),
       );
     }
     return existing.children;
@@ -202,7 +202,7 @@ export const KeepAliveRoute = <S extends string>(
         isChild = true;
         break;
       }
-      current = current.parent as ElementNode | undefined;
+      current = current.parent;
     }
 
     if (isChild && savedFocusedElement) {

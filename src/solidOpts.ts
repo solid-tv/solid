@@ -51,7 +51,7 @@ export default {
   insertNode(parent: ElementNode, node: SolidNode, anchor: SolidNode): void {
     log('INSERT: ', parent, node, anchor);
 
-    let prevParent = node.parent;
+    const prevParent = node.parent;
     parent.insertChild(node, anchor);
 
     if (node instanceof ElementNode) {

@@ -83,7 +83,7 @@ function calcFactoredRadiusArray(
   out: Vec4 = [0, 0, 0, 0],
 ): Vec4 {
   [out[0], out[1], out[2], out[3]] = radius;
-  let factor = Math.min(
+  const factor = Math.min(
     width / Math.max(width, radius[0] + radius[1]),
     width / Math.max(width, radius[2] + radius[3]),
     height / Math.max(height, radius[0] + radius[3]),

@@ -24,7 +24,7 @@ export function Suspense(props: {
 
   let children: s.JSX.Element;
 
-  let suspense = s.Suspense({
+  const suspense = s.Suspense({
     get children() {
       return [children = s.children(() => props.children) as any];
     },
