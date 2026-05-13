@@ -81,6 +81,9 @@ importers:
       typescript-eslint:
         specifier: ^8.17.0
         version: 8.17.0(eslint@9.16.0)(typescript@5.9.2)
+      vite:
+        specifier: ^6.3.3
+        version: 6.3.3(@types/node@22.14.1)(yaml@2.5.1)
       vite-plugin-solid:
         specifier: ^2.11.6
         version: 2.11.6(solid-js@1.9.3)(vite@6.3.3(@types/node@22.14.1)(yaml@2.5.1))
