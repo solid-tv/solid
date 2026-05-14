@@ -156,6 +156,23 @@ const KeepAliveRouteInternal = createKeepAliveComponent(
   storeKeepAliveRoute,
 );
 
+// Cache the resolved <Route> JSX per key. Solid Router uses the routeDef
+// object itself as the route key (see @solidjs/router index.js:455), so if
+// KeepAliveRoute ever gets re-evaluated, a new routeDef would drift the key
+// and force routeStates to dispose + recreate sibling contexts (which would
+// re-invoke their components). Returning the same JSX reference keeps the
+// route key stable across re-evaluations.
+//
+// Note: this captures `props` at first invocation. If you rely on dynamic
+// changes to KeepAliveRoute props (e.g., a reactive `transition` or `preload`
+// reference), use a stable wrapper around them or clear this cache when
+// they change.
+const keepAliveRouteCache = new Map<string, s.JSX.Element>();
+
+export const clearKeepAliveRouteCache = (): void => {
+  keepAliveRouteCache.clear();
+};
+
 export const KeepAliveRoute = <S extends string>(
   props: RouteProps<S> & {
     id?: string;
@@ -173,6 +190,12 @@ export const KeepAliveRoute = <S extends string>(
   },
 ) => {
   const key = props.id || props.path;
+
+  const cached = keepAliveRouteCache.get(key);
+  if (cached) {
+    return cached;
+  }
+
   let savedFocusedElement: ElementNode | undefined;
 
   const getExisting = () => {
@@ -246,23 +269,37 @@ export const KeepAliveRoute = <S extends string>(
       }
     : undefined;
 
-  return (
+  const componentWrapper = (childProps: RouteProps<S>) => {
+    const existing = getExisting();
+    // Do NOT spread `childProps`: it has a `children` getter (the router's
+    // outlet) that would be invoked eagerly, creating a <Show> subscribed to
+    // the next routeStates index. That stale Show would then fire when the
+    // user navigates to a sibling route whose matches populate that index,
+    // causing the sibling's component to be created from the preserved
+    // KeepAlive subtree. Inherit via prototype so the getter is preserved.
+    const innerProps = Object.create(childProps, {
+      isAlive: { value: existing.isAlive!, enumerable: true, configurable: true },
+    }) as RouteProps<S> & { isAlive: s.Accessor<boolean> };
+    return (
+      <KeepAliveRouteInternal
+        id={key}
+        onRemove={onRemove}
+        onRender={onRender}
+        transition={props.transition}
+      >
+        {props.component(innerProps)}
+      </KeepAliveRouteInternal>
+    );
+  };
+
+  const routeElement = (
     <Route
       {...props}
       preload={preload}
-      component={(childProps) => {
-        const existing = getExisting();
-        return (
-          <KeepAliveRouteInternal
-            id={key}
-            onRemove={onRemove}
-            onRender={onRender}
-            transition={props.transition}
-          >
-            {props.component({ ...childProps, isAlive: existing.isAlive! })}
-          </KeepAliveRouteInternal>
-        );
-      }}
+      component={componentWrapper}
     />
   );
+
+  keepAliveRouteCache.set(key, routeElement);
+  return routeElement;
 };
