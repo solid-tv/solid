@@ -94,20 +94,15 @@ function wrapChildren(
   );
   const transition = props.transition || { alpha: true };
 
-  // Only the props the view actually needs. Avoid `{...props}` so that
-  // KeepAlive-level config (`id`, `shouldDispose`, the unchained
-  // `onRemove`/`onRender`/`transition`) doesn't leak onto the Lightning
-  // element.
   return (
     <view
+      {...props}
       preserve
       onRemove={onRemove}
       onRender={onRender}
       forwardFocus={0}
       transition={transition}
-    >
-      {props.children}
-    </view>
+    />
   );
 }
 
