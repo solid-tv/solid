@@ -33,7 +33,7 @@ export function Grid<T>(props: GridProps<T>): JSX.Element {
     const currentIndex = untrack(focusedIndex);
     if (props.selected === currentIndex) return;
     if (props.selected !== undefined && props.items?.length > props.selected) {
-      moveFocus(props.selected! - currentIndex);
+      moveFocus(props.selected - currentIndex);
     }
   });
 

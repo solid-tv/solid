@@ -34,10 +34,9 @@ export function createRenderer(
   rendererOptions?: RendererMainSettings | DomRendererMainSettings,
   node?: HTMLElement | string,
 ) {
-  const options =
-    rendererOptions || (Config.rendererOptions as RendererMainSettings);
+  const options = rendererOptions || Config.rendererOptions;
 
-  renderer = startLightningRenderer(options, node || 'app');
+  renderer = startLightningRenderer(options!, node || 'app');
   //Prevent this from happening automatically
   Config.setActiveElement = setActiveElement;
   rootNode.lng = renderer.root!;
@@ -158,7 +157,7 @@ export const Text = (props: TextProps) => {
   return el as unknown as JSXElement;
 };
 
-export function registerDefaultShader(name: string, shader: any) {
+export function registerDefaultShader(_name: string, _shader: any) {
   // noop for v2
   // renderer.stage.shManager.registerShaderType('rounded', Rounded);
 }

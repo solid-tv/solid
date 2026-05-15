@@ -296,7 +296,7 @@ const propagateKeyPress = (
 
   let handlerAvailable: ElementNode | undefined;
   const finalFocusElm = focusPath[0]!;
-  const keyBase = mappedEvent || (e.key as string);
+  const keyBase = mappedEvent || e.key;
   const captureEvent = `onCapture${keyBase}${isUp ? 'Release' : ''}`;
   const captureKey = isUp ? 'onCaptureKeyRelease' : 'onCaptureKey';
 

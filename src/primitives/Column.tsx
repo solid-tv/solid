@@ -34,7 +34,6 @@ export const Column: Component<ColumnProps> = (props) => {
     <view
       transitionUp={defaultTransitionUp}
       transitionDown={defaultTransitionDown}
-      transition={/* @once */ {}}
       {...props}
       onUp={/* @once */ chainFunctions(props.onUp, onUp)}
       onDown={/* @once */ chainFunctions(props.onDown, onDown)}

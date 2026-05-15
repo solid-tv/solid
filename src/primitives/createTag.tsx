@@ -1,5 +1,5 @@
-import * as s from 'solid-js'
-import * as lng from '@solidtv/solid'
+import * as s from 'solid-js';
+import * as lng from '@solidtv/solid';
 
 interface Destroyable {
   (props: lng.NodeProps): s.JSX.Element;
@@ -7,21 +7,27 @@ interface Destroyable {
 }
 
 export function createTag(children: s.JSX.Element): Destroyable {
-  const [texture, setTexture] = s.createSignal<lng.Texture | null | undefined>(null);
-  const Tag = <view
-    x={lng.rootNode.w - 1}
-    y={lng.rootNode.h - 1}
-    display='flex'
-    onLayout={(n) => {
-      if (n.preFlexwidth && n.width !== n.preFlexwidth) {
-        n.rtt = true;
-        setTimeout(() => setTexture(n.texture), 1);
-      }
-    }}
-    parent={lng.rootNode} children={children}
-    textureOptions={{
-    preventCleanup: true
-  }} /> as any as lng.ElementNode
+  const [texture, setTexture] = s.createSignal<lng.Texture | null | undefined>(
+    null,
+  );
+  const Tag = (
+    <view
+      x={lng.rootNode.w - 1}
+      y={lng.rootNode.h - 1}
+      display="flex"
+      onLayout={(n) => {
+        if (n.preFlexwidth && n.width !== n.preFlexwidth) {
+          n.rtt = true;
+          setTimeout(() => setTexture(n.texture), 1);
+        }
+      }}
+      parent={lng.rootNode}
+      children={children}
+      textureOptions={{
+        preventCleanup: true,
+      }}
+    />
+  ) as unknown as lng.ElementNode;
   Tag.render(false);
 
   const TagComponent = (props: lng.NodeProps) => {

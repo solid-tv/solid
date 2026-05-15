@@ -26,7 +26,7 @@ export function createSpriteMap(
       y,
       w: width,
       h: height,
-    }) as InstanceType<TextureMap['SubTexture']>;
+    });
     return acc;
   }, {});
 }

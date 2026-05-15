@@ -30,7 +30,7 @@ export const defaultTransitionUp = {
   },
 };
 
-function idxInArray(idx: number, arr: readonly any[]): boolean {
+function idxInArray(idx: number, arr: readonly unknown[]): boolean {
   return idx >= 0 && idx < arr.length;
 }
 
@@ -117,32 +117,41 @@ export const navigableForwardFocus: lng.ForwardFocusHandler = function () {
   return selectChild(navigable, selected);
 };
 
+type NavWithTransitionCache = lngp.NavigableElement & {
+  _navBaseTransition?: object;
+  _navLastMerged?: object;
+};
+
 export function handleNavigation(
   direction: 'up' | 'right' | 'down' | 'left',
 ): lng.KeyHandler {
   return function () {
-    const el = this as lngp.NavigableElement;
-    const transition =
+    const el = this as NavWithTransitionCache;
+    const directional =
       direction === 'up'
         ? el.transitionUp
         : direction === 'down'
           ? el.transitionDown
           : direction === 'left'
             ? el.transitionLeft
-            : direction === 'right'
-              ? el.transitionRight
-              : undefined;
+            : el.transitionRight;
 
-    if (transition) {
-      const currentTransition =
+    if (directional) {
+      const current =
         typeof el.transition === 'object' && el.transition !== null
           ? el.transition
           : {};
 
-      el.transition = {
-        ...currentTransition,
-        ...(transition as object),
-      };
+      // Re-snapshot the developer-supplied transition whenever el.transition
+      // doesn't match our last merge — that means it was set externally
+      // (initial render or a reactive update), not by this handler.
+      if (current !== el._navLastMerged) {
+        el._navBaseTransition = current;
+      }
+
+      const merged = { ...(directional as object), ...el._navBaseTransition };
+      el.transition = merged;
+      el._navLastMerged = merged;
     }
 
     return moveSelection(

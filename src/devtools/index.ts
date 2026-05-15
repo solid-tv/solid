@@ -52,7 +52,7 @@ export const elementInterface: debug.ElementInterface<
     }
 
     if (lng.Config.rendererOptions != null) {
-      let dpr = lng.Config.rendererOptions.deviceLogicalPixelRatio;
+      const dpr = lng.Config.rendererOptions.deviceLogicalPixelRatio;
       if (dpr != null) {
         x *= dpr;
         y *= dpr;
@@ -64,7 +64,7 @@ export const elementInterface: debug.ElementInterface<
     return { x, y, width, height };
   },
   getElementAt(e) {
-    let target = e.target as any;
+    const target = e.target as any;
     return target != null && target.element instanceof lng.ElementNode
       ? target.element
       : null;

@@ -1,6 +1,6 @@
 {
   "name": "@solidtv/solid",
-  "version": "1.0.3",
+  "version": "1.1.2",
   "description": "SolidTV",
   "type": "module",
   "exports": {
@@ -47,19 +47,19 @@
   },
   "sideEffects": false,
   "scripts": {
-    "start": "npm run watch",
+    "start": "pnpm run watch",
     "test": "vitest",
-    "lint": "npm run lint:prettier && npm run lint:eslint",
-    "lint:fix": "npm run lint:fix:prettier && npm run lint:fix:eslint",
+    "lint": "pnpm run lint:prettier && pnpm run lint:eslint",
+    "lint:fix": "pnpm run lint:fix:prettier && pnpm run lint:fix:eslint",
     "lint:prettier": "prettier --check \"**/*.{ts,js,cjs,md}\"",
     "lint:fix:prettier": "prettier --write \"**/*.{ts,js,cjs,md}\"",
     "lint:eslint": "eslint .",
     "lint:fix:eslint": "eslint --fix .",
-    "build": "rm -rf dist && npm run tsc && cp jsx-runtime.d.ts dist/",
+    "build": "rm -rf dist && pnpm run tsc && cp jsx-runtime.d.ts dist/",
     "tsc": "tsc",
     "watch": "tsc -w",
     "prepare": "husky",
-    "prepack": "npm run build",
+    "prepack": "pnpm run build",
     "release": "release-it",
     "test:browser": "vitest --config=vitest.browser.config.ts"
   },
@@ -72,33 +72,27 @@
   ],
   "author": "Chris Lorenzo",
   "license": "Apache-2.0",
-  "dependencies": {
-    "@solid-primitives/event-listener": "^2.3.3",
-    "@solid-primitives/list": "^0.1.2",
-    "@solid-primitives/mouse": "^2.0.20",
-    "@solid-primitives/scheduled": "^1.4.4"
-  },
   "devDependencies": {
-    "@eslint/js": "^9.16.0",
-    "@solidtv/renderer": "1.0.0",
+    "@eslint/js": "^9.39.4",
     "@solid-devtools/debugger": "^0.28.1",
     "@solidjs/testing-library": "^0.8.10",
-    "@typescript-eslint/eslint-plugin": "^8.17.0",
-    "@typescript-eslint/parser": "^8.17.0",
-    "@vitest/browser-playwright": "^4.0.9",
-    "eslint": "^9.16.0",
-    "eslint-config-prettier": "^9.1.0",
-    "eslint-plugin-prettier": "^5.2.1",
-    "globals": "^15.13.0",
+    "@typescript-eslint/eslint-plugin": "^8.59.2",
+    "@typescript-eslint/parser": "^8.59.2",
+    "@vitest/browser-playwright": "^4.1.6",
+    "eslint": "^9.39.4",
+    "eslint-config-prettier": "^9.1.2",
+    "eslint-plugin-prettier": "^5.5.5",
+    "globals": "^17.6.0",
     "husky": "^9.1.7",
     "jsdom": "^26.1.0",
-    "lint-staged": "^15.2.10",
-    "prettier": "^3.4.2",
-    "release-it": "^17.10.0",
-    "typescript": "^5.9.2",
-    "typescript-eslint": "^8.17.0",
-    "vite-plugin-solid": "^2.11.6",
-    "vitest": "^4.0.9"
+    "lint-staged": "^17.0.4",
+    "prettier": "^3.8.3",
+    "release-it": "^20.0.1",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.59.2",
+    "vite": "8.0.13",
+    "vite-plugin-solid": "^2.11.12",
+    "vitest": "^4.1.6"
   },
   "lint-staged": {
     "*.ts": [
@@ -108,8 +102,12 @@
     "*.{js,cjs,md}": "prettier --write"
   },
   "peerDependencies": {
-    "@solidtv/renderer": "^1.0.0",
-    "@solidjs/router": "^0.15.1",
+    "@solid-primitives/event-listener": "^2.4.5",
+    "@solid-primitives/list": "^0.1.2",
+    "@solid-primitives/mouse": "^2.1.6",
+    "@solid-primitives/scheduled": "^1.5.3",
+    "@solidjs/router": "^0.16.1",
+    "@solidtv/renderer": "^1.1.2",
     "solid-js": "*"
   },
   "peerDependenciesMeta": {},
@@ -126,7 +124,7 @@
     "README.md",
     "docs/AI_CODING_GUIDELINES.md"
   ],
-  "packageManager": "pnpm@10.8.0",
+  "packageManager": "pnpm@10.33.4",
   "publishConfig": {
     "access": "public"
   }

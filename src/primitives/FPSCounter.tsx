@@ -9,18 +9,18 @@ const fpsStyle = {
   y: 6,
   mountX: 1,
   alpha: 1,
-  zIndex: 100
+  zIndex: 100,
 };
 
 const fpsLabel = {
   x: 10,
   fontSize: 20,
-  textColor: 0xf6f6f6ff
+  textColor: 0xf6f6f6ff,
 };
 
 const fpsValue = {
   fontSize: 22,
-  textColor: 0xf6f6f6ff
+  textColor: 0xf6f6f6ff,
 };
 
 const [fps, setFps] = createSignal(0);
@@ -32,7 +32,8 @@ const [criticalThresholdSignal, setCriticalThresholdSignal] = createSignal('');
 const [targetThresholdSignal, setTargetThresholdSignal] = createSignal('');
 const [renderableMemUsedSignal, setRenderableMemUsedSignal] = createSignal('');
 const [memUsedSignal, setMemUsedSignal] = createSignal('');
-const [renderableTexturesLoadedSignal, setRenderableTexturesLoadedSignal] = createSignal(0);
+const [renderableTexturesLoadedSignal, setRenderableTexturesLoadedSignal] =
+  createSignal(0);
 const [loadedTexturesSignal, setLoadedTexturesSignal] = createSignal(0);
 const [renderOps, setRenderOps] = createSignal(0);
 
@@ -60,8 +61,8 @@ const calcFps = (fps: number) => {
   if (!fps) return;
 
   setFps(fps);
-  setMinFps(prev => Math.min(fps, prev));
-  setMaxFps(prev => Math.max(fps, prev));
+  setMinFps((prev) => Math.min(fps, prev));
+  setMaxFps((prev) => Math.max(fps, prev));
 
   totalFps += fps;
   count++;
@@ -94,10 +95,13 @@ export function setupFPS(root: any) {
     }
   });
 
-  root.renderer.on('renderUpdate', (target: RendererMain, quadsData: RenderUpdatePayload) => {
-    setQuads(quadsData.quads);
-    setRenderOps(quadsData.renderOps);
-  });
+  root.renderer.on(
+    'renderUpdate',
+    (target: RendererMain, quadsData: RenderUpdatePayload) => {
+      setQuads(quadsData.quads);
+      setRenderOps(quadsData.renderOps);
+    },
+  );
 }
 
 export const FPSCounter = (props: NodeProps) => {

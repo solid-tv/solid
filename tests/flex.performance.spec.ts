@@ -218,7 +218,7 @@ describe('Flexbox Performance Tests (calculateFlex)', () => {
             height: scenario.parentProps.height ?? 600, // Default parent height
             children: [], // Will be populated
             ...scenario.parentProps,
-            // @ts-ignore - Type 'string' is not assignable to type 'FlexDirection'.
+            // @ts-expect-error - Type 'string' is not assignable to type 'FlexDirection'.
             flexDirection: scenario.parentProps.flexDirection,
           });
 

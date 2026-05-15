@@ -23,6 +23,7 @@ export function log(
 export const isFunc = (obj: unknown): obj is CallableFunction =>
   obj instanceof Function;
 
+// eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
 export const isFunction = (obj: unknown): obj is Function =>
   typeof obj === 'function';
 
@@ -200,7 +201,7 @@ export function getElementScreenRect(
   }
 
   if (Config.rendererOptions != null) {
-    let dpr = Config.rendererOptions.deviceLogicalPixelRatio;
+    const dpr = Config.rendererOptions.deviceLogicalPixelRatio;
     if (dpr != null) {
       out.x *= dpr;
       out.y *= dpr;

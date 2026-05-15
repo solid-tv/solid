@@ -247,7 +247,7 @@ function createVirtual<T>(
         }
         break;
 
-      case 'edge':
+      case 'edge': {
         const startScrolling = Math.max(
           1,
           props.displaySize + (atStart ? -1 : 0),
@@ -316,7 +316,7 @@ function createVirtual<T>(
           }
         }
         break;
-
+      }
       case 'none':
       default:
         start = 0;
@@ -396,21 +396,15 @@ function createVirtual<T>(
     _active,
     _lastIdx,
   ) {
-    let idx = _idx;
-    let lastIdx = _lastIdx || 0;
-    let active = _active;
+    const idx = _idx;
+    const lastIdx = _lastIdx || 0;
+    const active = _active;
     const noChange = idx === lastIdx;
     const total = itemCount();
     originalPosition = originalPosition ?? elm[axis];
 
     if (props.onSelectedChanged) {
-      props.onSelectedChanged.call(
-        this as lngp.NavigableElement,
-        idx,
-        this as lngp.NavigableElement,
-        active,
-        lastIdx,
-      );
+      props.onSelectedChanged.call(this, idx, this, active, lastIdx);
     }
 
     if (noChange) return;
@@ -480,7 +474,7 @@ function createVirtual<T>(
 
     queueMicrotask(() => {
       viewRef.updateLayout();
-      let activeIndex = viewRef.children.findIndex((x) => x.item === item);
+      const activeIndex = viewRef.children.findIndex((x) => x.item === item);
       if (activeIndex === -1) return;
       viewRef.selected = activeIndex;
       if (lng.hasFocus(viewRef)) {
@@ -539,7 +533,6 @@ function createVirtual<T>(
 
   return (
     <view
-      transition={/* @once */ {}}
       transitionLeft={isRow ? defaultTransitionBack : undefined}
       transitionRight={isRow ? defaultTransitionForward : undefined}
       transitionUp={!isRow ? defaultTransitionUp : undefined}

@@ -101,7 +101,7 @@ export function getWebglSupportedVersions(
         (context instanceof WebGLRenderingContext ||
           context instanceof WebGL2RenderingContext ||
           ('getParameter' in context &&
-            typeof (context as any).getParameter === 'function'))
+            typeof context.getParameter === 'function'))
       );
     } catch {
       return false;

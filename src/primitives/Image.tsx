@@ -1,5 +1,5 @@
 import { type Component, createRenderEffect, createSignal } from 'solid-js';
-import { renderer, type NodeProps, type ImageTexture} from '@solidtv/solid';
+import { renderer, type NodeProps } from '@solidtv/solid';
 import { Config } from '../core/config.js';
 
 export interface ImageProps extends NodeProps {
@@ -32,7 +32,7 @@ export const Image: Component<ImageProps> = (props) => {
       return;
     }
 
-    const srcTexture = renderer.createTexture('ImageTexture', props) as ImageTexture;
+    const srcTexture = renderer.createTexture('ImageTexture', props);
 
     if (props.fallback) {
       srcTexture.once('failed', () => {
@@ -43,14 +43,23 @@ export const Image: Component<ImageProps> = (props) => {
       });
     }
 
-    srcTexture.getTextureData().then(resp => {
-      // if texture fails to load, this is still called after the failed handler
-      if (resp.data)
-        setTexture(srcTexture);
-    })
-  })
+    srcTexture
+      .getTextureData()
+      .then((resp) => {
+        // if texture fails to load, this is still called after the failed handler
+        if (resp.data) setTexture(srcTexture);
+      })
+      .catch(() => {
+        // handle potential errors from getTextureData
+      });
+  });
 
   return (
-    <view {...props} src={src()} color={props.color || 0xffffffff} texture={texture()} />
+    <view
+      {...props}
+      src={src()}
+      color={props.color || 0xffffffff}
+      texture={texture()}
+    />
   );
 };

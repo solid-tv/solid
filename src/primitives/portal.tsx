@@ -1,5 +1,14 @@
 import { rootNode, type ElementNode, insert } from '@solidtv/solid';
-import { createEffect, createMemo, createRoot, createSignal, getOwner, JSX, onCleanup, runWithOwner } from 'solid-js';
+import {
+  createEffect,
+  createMemo,
+  createRoot,
+  createSignal,
+  getOwner,
+  JSX,
+  onCleanup,
+  runWithOwner,
+} from 'solid-js';
 
 export function Portal(props: { mount?: string; children: JSX.Element }) {
   let content: undefined | (() => JSX.Element);
@@ -11,15 +20,16 @@ export function Portal(props: { mount?: string; children: JSX.Element }) {
     return rootNode.searchChildrenById(mount) || rootNode;
   }
 
-  createEffect(
-    () => {
-      const [clean, setClean] = createSignal(false);
-      const cleanup = () => setClean(true);
-      content || (content = runWithOwner(owner, () => createMemo(() => props.children)));
-      createRoot(dispose => insert(mount(), () => (!clean() ? content!() : dispose()), null));
-      onCleanup(cleanup);
-    }
-  );
+  createEffect(() => {
+    const [clean, setClean] = createSignal(false);
+    const cleanup = () => setClean(true);
+    content =
+      content || runWithOwner(owner, () => createMemo(() => props.children));
+    createRoot((dispose) =>
+      insert(mount(), () => (!clean() ? content!() : dispose()), null),
+    );
+    onCleanup(cleanup);
+  });
 
   return null;
 }

@@ -33,7 +33,6 @@ export const Row: Component<RowProps> = (props) => {
     <view
       transitionLeft={defaultTransitionBack}
       transitionRight={defaultTransitionForward}
-      transition={/* @once */ {}}
       {...props}
       selected={props.selected || 0}
       onLeft={/* @once */ chainFunctions(props.onLeft, onLeft)}

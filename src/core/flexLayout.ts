@@ -31,14 +31,10 @@ export default function (node: ElementNode): boolean {
 
   // padding order: Top, Right, Bottom, Left
   const nodePadding = node.padding;
-  const paddingTop = (node.paddingTop ??
-    getArrayValue(nodePadding, 0)) as number;
-  const paddingRight = (node.paddingRight ??
-    getArrayValue(nodePadding, 1)) as number;
-  const paddingBottom = (node.paddingBottom ??
-    getArrayValue(nodePadding, 2)) as number;
-  const paddingLeft = (node.paddingLeft ??
-    getArrayValue(nodePadding, 3)) as number;
+  const paddingTop = node.paddingTop ?? getArrayValue(nodePadding, 0);
+  const paddingRight = node.paddingRight ?? getArrayValue(nodePadding, 1);
+  const paddingBottom = node.paddingBottom ?? getArrayValue(nodePadding, 2);
+  const paddingLeft = node.paddingLeft ?? getArrayValue(nodePadding, 3);
 
   const paddingStart = isRow ? paddingLeft : paddingTop;
   const paddingEnd = isRow ? paddingRight : paddingBottom;
@@ -57,7 +53,7 @@ export default function (node: ElementNode): boolean {
   }
 
   // Optimize arrays caching
-  let processableChildrenIndices: number[] = [];
+  const processableChildrenIndices: number[] = [];
   let hasOrder = false;
   let totalFlexGrow = 0;
   let totalFlexShrink = 0;
@@ -87,13 +83,13 @@ export default function (node: ElementNode): boolean {
       totalFlexShrink += flexShrink;
     }
 
-    if (c[minDimension] && (c[dimension] || 0) < c[minDimension]!) {
+    if (c[minDimension] && (c[dimension] || 0) < c[minDimension]) {
       c[dimension] = c[minDimension]!;
     }
 
     if (
       c[crossMinDimension] &&
-      (c[crossDimension] || 0) < c[crossMinDimension]!
+      (c[crossDimension] || 0) < c[crossMinDimension]
     ) {
       c[crossDimension] = c[crossMinDimension]!;
     }

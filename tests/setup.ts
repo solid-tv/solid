@@ -41,7 +41,7 @@ export const renderer = lng.createRenderer(undefined, root);
 
 export const waitForUpdate = () => {
   return v.vi.waitFor(() => {
-    var toReturn = false;
+    let toReturn = false;
     setTimeout(() => {
       toReturn = true;
     }, 1);

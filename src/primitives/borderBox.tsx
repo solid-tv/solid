@@ -28,8 +28,12 @@ const borderComponent = (props: BorderProps) => {
         el.alpha = 1;
       }}
       onDestroy={(el) => {
+        const transition = el.transition;
         return el
-          .animate({ alpha: 0 }, el.transition as any)
+          .animate(
+            { alpha: 0 },
+            typeof transition === 'object' ? transition : undefined,
+          )
           .start()
           .waitUntilStopped();
       }}
@@ -55,14 +59,14 @@ export function borderBox(
       runWithOwner(owner, () => {
         const props = accessor();
         border = borderComponent(
-          props === true || props === undefined ? ({} as NodeProps) : props,
-        ) as any as ElementNode;
+          props === true || props === undefined ? {} : props,
+        ) as unknown as ElementNode;
         insertNode(el, border);
         border.render();
       });
     } else if (border) {
       border.destroy();
-      el.removeChild(border!);
+      el.removeChild(border);
       border = null;
     }
   }, el.onFocusChanged);
