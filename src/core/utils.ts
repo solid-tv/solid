@@ -23,9 +23,9 @@ export function log(
 export const isFunc = (obj: unknown): obj is CallableFunction =>
   obj instanceof Function;
 
-export const isFunction = (
-  obj: unknown,
-): obj is (...args: unknown[]) => unknown => typeof obj === 'function';
+// eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
+export const isFunction = (obj: unknown): obj is Function =>
+  typeof obj === 'function';
 
 export function isObject(
   item: unknown,

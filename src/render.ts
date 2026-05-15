@@ -157,7 +157,7 @@ export const Text = (props: TextProps) => {
   return el as unknown as JSXElement;
 };
 
-export function registerDefaultShader(name: string, shader: any) {
+export function registerDefaultShader(_name: string, _shader: any) {
   // noop for v2
   // renderer.stage.shManager.registerShaderType('rounded', Rounded);
 }

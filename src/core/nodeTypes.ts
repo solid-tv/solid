@@ -8,7 +8,7 @@ export const NodeType = {
 export type NodeTypes = (typeof NodeType)[keyof typeof NodeType];
 
 export class TextNode {
-  readonly _type: 'text' = 'text' as const;
+  readonly _type = 'text' as const;
   parent: ElementText | undefined = undefined;
   text: string;
 

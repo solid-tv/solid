@@ -21,19 +21,20 @@ export function Suspense(props: {
   fallback?: s.JSX.Element;
   children: s.JSX.Element;
 }): s.JSX.Element {
-
   let children: s.JSX.Element;
 
   const suspense = s.Suspense({
     get children() {
-      return [children = s.children(() => props.children) as any];
+      return [(children = s.children(() => props.children) as any)];
     },
-  }) as any as () => s.JSX.Element;
+  }) as unknown as () => s.JSX.Element;
 
-  return <>
-    {suspense() ?? props.fallback}
-    <view hidden forwardFocus={0}>
-      {suspense() ? null : children}
-    </view>
-  </>
+  return (
+    <>
+      {suspense() ?? props.fallback}
+      <view hidden forwardFocus={0}>
+        {suspense() ? null : children}
+      </view>
+    </>
+  );
 }

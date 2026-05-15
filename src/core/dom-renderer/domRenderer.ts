@@ -252,10 +252,10 @@ function updateNodeStyles(node: DOMNode | DOMText) {
     const hasMountY = props.mountY != null && props.mountY !== 0;
 
     if (x !== 0) transform += `translateX(${x}px)`;
-    if (hasMountX) transform += `translateX(${-props.mountX! * 100}%)`;
+    if (hasMountX) transform += `translateX(${-props.mountX * 100}%)`;
 
     if (y !== 0) transform += `translateY(${y}px)`;
-    if (hasMountY) transform += `translateY(${-props.mountY! * 100}%)`;
+    if (hasMountY) transform += `translateY(${-props.mountY * 100}%)`;
 
     if (props.rotation !== 0) transform += `rotate(${props.rotation}rad)`;
 
@@ -606,11 +606,11 @@ function updateNodeStyles(node: DOMNode | DOMText) {
         const rg = shaderProps.radial as
           | Partial<lng.RadialGradientProps>
           | undefined;
-        const colors = Array.isArray(rg?.colors) ? rg!.colors! : [];
-        const stops = Array.isArray(rg?.stops) ? rg!.stops! : undefined;
-        const pivot = Array.isArray(rg?.pivot) ? rg!.pivot! : [0.5, 0.5];
-        const width = typeof rg?.w === 'number' ? rg!.w! : props.w || 0;
-        const height = typeof rg?.h === 'number' ? rg!.h! : width;
+        const colors = Array.isArray(rg?.colors) ? rg.colors : [];
+        const stops = Array.isArray(rg?.stops) ? rg.stops : undefined;
+        const pivot = Array.isArray(rg?.pivot) ? rg.pivot : [0.5, 0.5];
+        const width = typeof rg?.w === 'number' ? rg.w : props.w || 0;
+        const height = typeof rg?.h === 'number' ? rg.h : width;
 
         if (colors.length > 0) {
           const gradientStops = buildGradientStops(colors, stops);
@@ -653,9 +653,9 @@ function updateNodeStyles(node: DOMNode | DOMText) {
         const lg = shaderProps.linear as
           | Partial<lng.LinearGradientProps>
           | undefined;
-        const colors = Array.isArray(lg?.colors) ? lg!.colors! : [];
-        const stops = Array.isArray(lg?.stops) ? lg!.stops! : undefined;
-        const angleRad = typeof lg?.angle === 'number' ? lg!.angle! : 0; // radians
+        const colors = Array.isArray(lg?.colors) ? lg.colors : [];
+        const stops = Array.isArray(lg?.stops) ? lg.stops : undefined;
+        const angleRad = typeof lg?.angle === 'number' ? lg.angle : 0; // radians
 
         if (colors.length > 0) {
           const gradientStops = buildGradientStops(colors, stops);

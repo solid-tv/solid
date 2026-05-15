@@ -533,7 +533,6 @@ function createVirtual<T>(
 
   return (
     <view
-      transition={/* @once */ {}}
       transitionLeft={isRow ? defaultTransitionBack : undefined}
       transitionRight={isRow ? defaultTransitionForward : undefined}
       transitionUp={!isRow ? defaultTransitionUp : undefined}

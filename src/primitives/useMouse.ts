@@ -5,7 +5,6 @@ import {
   activeElement,
   isElementNode,
   isFunc,
-  isTextNode,
   rootNode,
 } from '../index.js';
 import { makeEventListener } from '@solid-primitives/event-listener';
@@ -88,41 +87,39 @@ function findElementWithCustomState<TApp extends ElementNode>(
   y: number,
   customState: CustomState,
 ): ElementNode | undefined {
-  const result = getChildrenByPosition(myApp, x, y).filter((el) =>
-    hasCustomState(el, customState),
-  );
-
-  if (result.length === 0) {
-    return undefined;
-  }
-
-  let element: ElementNode | undefined = result[result.length - 1];
-
-  while (element) {
-    const elmParent = element.parent;
-    if (elmParent?.forwardStates && hasCustomState(elmParent, customState)) {
-      element = elmParent;
-    } else {
+  const path = getChildrenByPosition(myApp, x, y);
+  let element: ElementNode | undefined;
+  for (let i = path.length - 1; i >= 0; i--) {
+    if (hasCustomState(path[i]!, customState)) {
+      element = path[i];
       break;
     }
   }
+  if (!element) return undefined;
 
+  let p = element.parent;
+  while (p?.forwardStates && hasCustomState(p, customState)) {
+    element = p;
+    p = p.parent;
+  }
   return element;
 }
 
 function findElementByActiveElement(e: MouseEvent): ElementNode | null {
   const active = activeElement();
   const precision = Config.rendererOptions?.deviceLogicalPixelRatio || 1;
+  const px = e.clientX / precision;
+  const py = e.clientY / precision;
 
   if (
     active instanceof ElementNode &&
     testCollision(
-      e.clientX,
-      e.clientY,
-      ((active.lng.absX as number) || 0) * precision,
-      ((active.lng.absY as number) || 0) * precision,
-      (active.width || 0) * precision,
-      (active.height || 0) * precision,
+      px,
+      py,
+      (active.lng.absX as number) || 0,
+      (active.lng.absY as number) || 0,
+      active.width || 0,
+      active.height || 0,
     )
   ) {
     return active;
@@ -132,14 +129,13 @@ function findElementByActiveElement(e: MouseEvent): ElementNode | null {
   while (parent) {
     if (
       isFunc(parent.onMouseClick) &&
-      active &&
       testCollision(
-        e.clientX,
-        e.clientY,
-        ((parent.lng.absX as number) || 0) * precision,
-        ((parent.lng.absY as number) || 0) * precision,
-        (parent.width || 0) * precision,
-        (parent.height || 0) * precision,
+        px,
+        py,
+        (parent.lng.absX as number) || 0,
+        (parent.lng.absY as number) || 0,
+        parent.width || 0,
+        parent.height || 0,
       )
     ) {
       return parent;
@@ -256,7 +252,6 @@ function isNodeAtPosition(
   node: ElementNode | ElementText | TextNode,
   x: number,
   y: number,
-  precision: number,
 ): node is ElementNode {
   if (!isElementNode(node)) {
     return false;
@@ -268,35 +263,12 @@ function isNodeAtPosition(
     testCollision(
       x,
       y,
-      ((node.lng.absX as number) || 0) * precision,
-      ((node.lng.absY as number) || 0) * precision,
-      (node.width || 0) * precision,
-      (node.height || 0) * precision,
+      (node.lng.absX as number) || 0,
+      (node.lng.absY as number) || 0,
+      node.width || 0,
+      node.height || 0,
     )
   );
-}
-
-function findHighestZIndexNode(nodes: ElementNode[]): ElementNode | undefined {
-  if (nodes.length === 0) {
-    return undefined;
-  }
-
-  if (nodes.length === 1) {
-    return nodes[0];
-  }
-
-  let maxZIndex = -1;
-  let highestNode: ElementNode | undefined = undefined;
-
-  for (const node of nodes) {
-    const zIndex = node.zIndex ?? -1;
-    if (zIndex >= maxZIndex) {
-      maxZIndex = zIndex;
-      highestNode = node;
-    }
-  }
-
-  return highestNode;
 }
 
 function getChildrenByPosition<TElement extends ElementNode = ElementNode>(
@@ -306,28 +278,25 @@ function getChildrenByPosition<TElement extends ElementNode = ElementNode>(
 ): TElement[] {
   const result: TElement[] = [];
   const precision = Config.rendererOptions?.deviceLogicalPixelRatio || 1;
-  // Queue for BFS
+  const px = x / precision;
+  const py = y / precision;
 
-  let queue: (ElementNode | ElementText | TextNode)[] = [node];
+  let current: ElementNode | ElementText | TextNode | undefined = node;
+  while (current && isNodeAtPosition(current, px, py)) {
+    result.push(current as TElement);
 
-  while (queue.length > 0) {
-    // Process nodes at the current level
-    const currentLevelNodes = queue.filter((currentNode) =>
-      isNodeAtPosition(currentNode, x, y, precision),
-    );
-
-    if (currentLevelNodes.length === 0) {
-      break;
+    let best: ElementNode | undefined;
+    let bestZ = -Infinity;
+    for (const child of current.children) {
+      if (!isNodeAtPosition(child, px, py)) continue;
+      const z = child.zIndex ?? -1;
+      if (z >= bestZ) {
+        bestZ = z;
+        best = child;
+      }
     }
-
-    const highestZIndexNode = findHighestZIndexNode(currentLevelNodes);
-
-    if (!highestZIndexNode || isTextNode(highestZIndexNode)) {
-      break;
-    }
-
-    result.push(highestZIndexNode as TElement);
-    queue = highestZIndexNode.children;
+    if (!best) break;
+    current = best;
   }
 
   return result;
@@ -358,60 +327,60 @@ export function useMouse<TApp extends ElementNode = ElementNode>(
     runWithOwner(owner, () => handleMouseDown(e));
   };
 
+  const focusKey = Config.focusStateKey;
+
   makeEventListener(window, 'wheel', handleScroll);
   makeEventListener(window, 'click', handleClickContext);
   makeEventListener(window, 'mousedown', handleMouseDownContext);
   createEffect(() => {
-    if (scheduled()) {
-      const result = getChildrenByPosition(myApp, pos.x, pos.y).filter(
-        (el) =>
-          !!(
-            el.onEnter ||
-            el.onMouseClick ||
-            el.onFocus ||
-            el[Config.focusStateKey] ||
-            (hoverState ? el[hoverState] : false)
-          ),
-      );
+    if (!scheduled()) return;
 
-      if (result.length) {
-        let activeElm: ElementNode | undefined = result[result.length - 1];
+    const path = getChildrenByPosition(myApp, pos.x, pos.y);
+    let activeElm: ElementNode | undefined;
+    for (let i = path.length - 1; i >= 0; i--) {
+      const el = path[i]!;
+      if (
+        el.onEnter ||
+        el.onMouseClick ||
+        el.onFocus ||
+        el[focusKey] ||
+        (hoverState && el[hoverState])
+      ) {
+        activeElm = el;
+        break;
+      }
+    }
 
-        while (activeElm) {
-          const elmParent = activeElm.parent;
-          if (elmParent?.forwardStates) {
-            activeElm = elmParent;
-          } else {
-            break;
-          }
-        }
-
-        if (!activeElm) {
-          return;
-        }
-
-        // Update Row & Column Selected property
-        const activeElmParent = activeElm.parent;
-        if (activeElmParent?.selected !== undefined) {
-          activeElmParent.selected =
-            activeElmParent.children.indexOf(activeElm);
-        }
-
-        if (previousElement && previousElement !== activeElm && hoverState) {
-          removeCustomStateFromElement(previousElement, hoverState);
-        }
-
-        if (hoverState) {
-          addCustomStateToElement(activeElm, hoverState);
-        } else {
-          activeElm.setFocus();
-        }
-
-        previousElement = activeElm;
-      } else if (previousElement && hoverState) {
+    if (!activeElm) {
+      if (previousElement && hoverState) {
         removeCustomStateFromElement(previousElement, hoverState);
         previousElement = null;
       }
+      return;
     }
+
+    let p = activeElm.parent;
+    while (p?.forwardStates) {
+      activeElm = p;
+      p = p.parent;
+    }
+
+    // Update Row & Column Selected property
+    const activeElmParent = activeElm.parent;
+    if (activeElmParent?.selected !== undefined) {
+      activeElmParent.selected = activeElmParent.children.indexOf(activeElm);
+    }
+
+    if (previousElement && previousElement !== activeElm && hoverState) {
+      removeCustomStateFromElement(previousElement, hoverState);
+    }
+
+    if (hoverState) {
+      addCustomStateToElement(activeElm, hoverState);
+    } else {
+      activeElm.setFocus();
+    }
+
+    previousElement = activeElm;
   });
 }
