@@ -74,7 +74,7 @@ Then you'll need to register the custom font in the AppCoreExtensions file:
 } as const];
 
 // must be called after createRenderer but before render
-loadFonts(fonts);
+await loadFonts(fonts);
 ```
 
 From this moment on you'll be able to use the font `ComicSans` anywhere in your App:

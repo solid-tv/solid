@@ -63,7 +63,7 @@ const TextPage = lazy(() => import('./pages/Text'));
 
 // Create the renderer and load fonts
 const { render } = createRenderer();
-loadFonts(fonts);
+await loadFonts(fonts);
 
 // Render the app using the HashRouter from SolidRouter
 render(() => (

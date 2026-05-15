@@ -122,7 +122,7 @@ Shaders are imported when needed by application. The following example shows how
 
 ```typescript
 const { renderer, render } = createRenderer();
-loadFonts(fonts);
+await loadFonts(fonts);
 // Prepare for RC3 of Renderer
 import {
   Rounded,
