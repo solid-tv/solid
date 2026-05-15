@@ -117,8 +117,7 @@ function runPostMutation() {
     const el = deferredFocusElement;
     deferredFocusElement = null;
     el.setFocus();
-  }
-  if (nextActiveElement !== null) {
+  } else if (nextActiveElement !== null) {
     const element = nextActiveElement;
     nextActiveElement = null;
     setActiveElement(element);
