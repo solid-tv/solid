@@ -88,8 +88,8 @@ export default {
     return node.children[0];
   },
   getNextSibling(node: SolidNode): SolidNode | undefined {
-    const children = node.parent!.children || [];
-    const index = children.indexOf(node as any) + 1;
+    const children = (node.parent!.children || []) as SolidNode[];
+    const index = children.indexOf(node) + 1;
     if (index < children.length) {
       return children[index];
     }

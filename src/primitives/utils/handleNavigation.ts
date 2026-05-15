@@ -30,7 +30,7 @@ export const defaultTransitionUp = {
   },
 };
 
-function idxInArray(idx: number, arr: readonly any[]): boolean {
+function idxInArray(idx: number, arr: readonly unknown[]): boolean {
   return idx >= 0 && idx < arr.length;
 }
 
