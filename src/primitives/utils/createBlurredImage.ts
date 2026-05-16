@@ -100,32 +100,38 @@ function applyVerticalBlur(
   half: number,
 ): void {
   for (let y = 0; y < height; y++) {
+    const kStart = -y < -half ? -half : -y;
+    const kEnd = height - 1 - y < half ? height - 1 - y : half;
+
+    // Kernel sums to 1; only edge rows need a renormalization factor.
+    let invWeight = 1;
+    if (kStart !== -half || kEnd !== half) {
+      let weightSum = 0;
+      for (let k = kStart; k <= kEnd; k++) weightSum += kernel[k + half]!;
+      invWeight = 1 / weightSum;
+    }
+
+    const rowBase = y * width;
     for (let x = 0; x < width; x++) {
       let r = 0,
         g = 0,
         b = 0,
         a = 0;
-      let weightSum = 0;
 
-      for (let ky = -half; ky <= half; ky++) {
-        const py = y + ky;
-        if (py >= 0 && py < height) {
-          const pixelIndex = (py * width + x) * 4;
-          const weight = kernel[ky + half]!;
-
-          r += input[pixelIndex]! * weight;
-          g += input[pixelIndex + 1]! * weight;
-          b += input[pixelIndex + 2]! * weight;
-          a += input[pixelIndex + 3]! * weight;
-          weightSum += weight;
-        }
+      for (let ky = kStart; ky <= kEnd; ky++) {
+        const pixelIndex = ((y + ky) * width + x) * 4;
+        const weight = kernel[ky + half]!;
+        r += input[pixelIndex]! * weight;
+        g += input[pixelIndex + 1]! * weight;
+        b += input[pixelIndex + 2]! * weight;
+        a += input[pixelIndex + 3]! * weight;
       }
 
-      const outputIndex = (y * width + x) * 4;
-      output[outputIndex] = r / weightSum;
-      output[outputIndex + 1] = g / weightSum;
-      output[outputIndex + 2] = b / weightSum;
-      output[outputIndex + 3] = a / weightSum;
+      const outputIndex = (rowBase + x) * 4;
+      output[outputIndex] = r * invWeight;
+      output[outputIndex + 1] = g * invWeight;
+      output[outputIndex + 2] = b * invWeight;
+      output[outputIndex + 3] = a * invWeight;
     }
   }
 }
@@ -147,33 +153,46 @@ function applyHorizontalBlur(
   kernel: Readonly<GaussianKernel>,
   half: number,
 ): void {
+  // Precompute per-column inverse weight sums; kernel sums to 1 in the interior.
+  const invWeights = new Float64Array(width);
+  for (let x = 0; x < width; x++) {
+    const kStart = -x < -half ? -half : -x;
+    const kEnd = width - 1 - x < half ? width - 1 - x : half;
+    if (kStart === -half && kEnd === half) {
+      invWeights[x] = 1;
+    } else {
+      let weightSum = 0;
+      for (let k = kStart; k <= kEnd; k++) weightSum += kernel[k + half]!;
+      invWeights[x] = 1 / weightSum;
+    }
+  }
+
   for (let y = 0; y < height; y++) {
+    const rowBase = y * width;
     for (let x = 0; x < width; x++) {
+      const kStart = -x < -half ? -half : -x;
+      const kEnd = width - 1 - x < half ? width - 1 - x : half;
+
       let r = 0,
         g = 0,
         b = 0,
         a = 0;
-      let weightSum = 0;
 
-      for (let kx = -half; kx <= half; kx++) {
-        const px = x + kx;
-        if (px >= 0 && px < width) {
-          const pixelIndex = (y * width + px) * 4;
-          const weight = kernel[kx + half]!;
-
-          r += input[pixelIndex]! * weight;
-          g += input[pixelIndex + 1]! * weight;
-          b += input[pixelIndex + 2]! * weight;
-          a += input[pixelIndex + 3]! * weight;
-          weightSum += weight;
-        }
+      for (let kx = kStart; kx <= kEnd; kx++) {
+        const pixelIndex = (rowBase + x + kx) * 4;
+        const weight = kernel[kx + half]!;
+        r += input[pixelIndex]! * weight;
+        g += input[pixelIndex + 1]! * weight;
+        b += input[pixelIndex + 2]! * weight;
+        a += input[pixelIndex + 3]! * weight;
       }
 
-      const outputIndex = (y * width + x) * 4;
-      output[outputIndex] = r / weightSum;
-      output[outputIndex + 1] = g / weightSum;
-      output[outputIndex + 2] = b / weightSum;
-      output[outputIndex + 3] = a / weightSum;
+      const invWeight = invWeights[x]!;
+      const outputIndex = (rowBase + x) * 4;
+      output[outputIndex] = r * invWeight;
+      output[outputIndex + 1] = g * invWeight;
+      output[outputIndex + 2] = b * invWeight;
+      output[outputIndex + 3] = a * invWeight;
     }
   }
 }
@@ -215,15 +234,14 @@ function gaussianBlurConvolution(
 ): ImageData {
   const { data } = imageData;
   const { width, height } = dimensions;
+  const tempData = new Uint8ClampedArray(data.length);
   const output = new Uint8ClampedArray(data.length);
 
   const kernelSize = Math.ceil(radius * 2) * 2 + 1;
   const kernel = generateGaussianKernel(kernelSize, radius);
-  const half = Math.floor(kernelSize / 2);
+  const half = (kernelSize - 1) >> 1;
 
-  applyHorizontalBlur(data, output, width, height, kernel, half);
-
-  const tempData = new Uint8ClampedArray(output);
+  applyHorizontalBlur(data, tempData, width, height, kernel, half);
   applyVerticalBlur(tempData, output, width, height, kernel, half);
 
   return new ImageData(output, width, height);
