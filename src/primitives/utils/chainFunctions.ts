@@ -23,22 +23,42 @@ export function chainFunctions<T extends AnyFunction>(
 export function chainFunctions(
   ...fns: (AnyFunction | undefined | null | false)[]
 ): AnyFunction | undefined {
-  const onlyFunctions = fns.filter((func) => typeof func === 'function');
-  if (onlyFunctions.length === 0) {
-    return undefined;
+  // Inline filter to avoid the intermediate array allocation when most
+  // callers pass 2 args and one or both happen to be falsy.
+  let first: AnyFunction | undefined;
+  let onlyFunctions: AnyFunction[] | undefined;
+  for (let i = 0; i < fns.length; i++) {
+    const fn = fns[i];
+    if (typeof fn !== 'function') continue;
+    if (first === undefined) {
+      first = fn;
+    } else {
+      if (onlyFunctions === undefined) onlyFunctions = [first];
+      onlyFunctions.push(fn);
+    }
   }
 
-  if (onlyFunctions.length === 1) {
-    return onlyFunctions[0];
+  if (first === undefined) return undefined;
+  if (onlyFunctions === undefined) return first;
+
+  // Fast path: exactly two functions — the common case for ref/handler
+  // forwarding (props.onX + local onX). Avoids the loop.
+  if (onlyFunctions.length === 2) {
+    const a = onlyFunctions[0]!;
+    const b = onlyFunctions[1]!;
+    return function (this: unknown, ...innerArgs) {
+      const result = a.apply(this, innerArgs);
+      if (result === true) return result;
+      return b.apply(this, innerArgs);
+    };
   }
 
-  return function (...innerArgs) {
+  const chained = onlyFunctions;
+  return function (this: unknown, ...innerArgs) {
     let result;
-    for (const func of onlyFunctions) {
-      result = func.apply(this, innerArgs);
-      if (result === true) {
-        return result;
-      }
+    for (let i = 0; i < chained.length; i++) {
+      result = chained[i]!.apply(this, innerArgs);
+      if (result === true) return result;
     }
     return result;
   };

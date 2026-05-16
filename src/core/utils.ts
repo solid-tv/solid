@@ -30,7 +30,7 @@ export const isFunction = (obj: unknown): obj is Function =>
 export function isObject(
   item: unknown,
 ): item is Record<string | number | symbol, unknown> {
-  return typeof item === 'object';
+  return item !== null && typeof item === 'object';
 }
 
 export function isArray(item: unknown): item is any[] {
@@ -99,9 +99,9 @@ export function flattenStyles(
   result: Styles = {},
 ): Styles {
   if (isArray(obj)) {
-    obj.forEach((item) => {
-      flattenStyles(item, result);
-    });
+    for (let i = 0; i < obj.length; i++) {
+      flattenStyles(obj[i], result);
+    }
   } else if (obj) {
     // handle the case where the object is not an array
     for (const key in obj) {

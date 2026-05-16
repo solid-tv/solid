@@ -220,10 +220,10 @@ export function moveSelection(
   return selectChild(el, selected);
 }
 
-function distanceBetweenRectCenters(a: lng.Rect, b: lng.Rect): number {
-  const dx = Math.abs(a.x + a.width / 2 - (b.x + b.width / 2)) / 2;
-  const dy = Math.abs(a.y + a.height / 2 - (b.y + b.height / 2)) / 2;
-  return Math.sqrt(dx * dx + dy * dy);
+function squaredDistanceBetweenRectCenters(a: lng.Rect, b: lng.Rect): number {
+  const dx = a.x + a.width / 2 - (b.x + b.width / 2);
+  const dy = a.y + a.height / 2 - (b.y + b.height / 2);
+  return dx * dx + dy * dy;
 }
 
 function findClosestFocusableChildIdx(
@@ -238,12 +238,14 @@ function findClosestFocusableChildIdx(
   let closestIdx = -1;
   let closestDist = Infinity;
 
-  for (const [idx, child] of el.children.entries()) {
+  const children = el.children;
+  for (let idx = 0; idx < children.length; idx++) {
+    const child = children[idx]!;
     if (!child.skipFocus) {
       lng.getElementScreenRect(child, el, childRect);
       childRect.x += elRect.x;
       childRect.y += elRect.y;
-      const distance = distanceBetweenRectCenters(prevRect, childRect);
+      const distance = squaredDistanceBetweenRectCenters(prevRect, childRect);
       if (distance < closestDist) {
         closestDist = distance;
         closestIdx = idx;

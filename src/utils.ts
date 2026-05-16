@@ -19,16 +19,18 @@ export function hexColor(color: string | number = ''): number {
 
   if (typeof color === 'string') {
     // Renderer expects RGBA values
-    if (color.startsWith('#')) {
-      return Number(
-        color.replace('#', '0x') + (color.length === 7 ? 'ff' : ''),
-      );
+    let hex: string;
+    if (color.charCodeAt(0) === 35 /* '#' */) {
+      hex = color.length === 7 ? color.slice(1) + 'ff' : color.slice(1);
+    } else if (
+      color.charCodeAt(0) === 48 &&
+      color.charCodeAt(1) === 120 /* '0x' */
+    ) {
+      hex = color.slice(2);
+    } else {
+      hex = color.length === 6 ? color + 'ff' : color;
     }
-
-    if (color.startsWith('0x')) {
-      return Number(color);
-    }
-    return Number('0x' + (color.length === 6 ? color + 'ff' : color));
+    return parseInt(hex, 16);
   }
 
   return 0x00000000;
