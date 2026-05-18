@@ -58,7 +58,6 @@ const App = () => {
 Creates a tag component from the provided children.
 
 - **Parameters**:
-
   - `children`: The SolidTV/SolidTV elements to render into the texture.
 
 - **Returns**:

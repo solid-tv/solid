@@ -11,10 +11,10 @@ import {
 import type { SolidNode, SolidRendererOptions } from './types.js';
 
 Object.defineProperty(ElementNode.prototype, 'preserve', {
-  get(): boolean | undefined {
+  get(this: ElementNode): boolean | undefined {
     return this._queueDelete === 0;
   },
-  set(v: boolean) {
+  set(this: ElementNode, v: boolean) {
     this._queueDelete = v ? 0 : undefined;
   },
 });

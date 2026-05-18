@@ -946,9 +946,15 @@ function updateNodeStyles(node: DOMNode | DOMText) {
             node.lazyImageSubTextureProps,
           );
 
-          const resizeMode = (node.props.textureOptions as any)?.resizeMode;
-          const clipX = resizeMode?.clipX ?? 0.5;
-          const clipY = resizeMode?.clipY ?? 0.5;
+          const resizeMode = node.props.textureOptions?.resizeMode;
+          const clipX =
+            resizeMode?.type !== 'contain' && resizeMode?.clipX
+              ? resizeMode?.clipX
+              : 0.5;
+          const clipY =
+            resizeMode?.type !== 'contain' && resizeMode?.clipY
+              ? resizeMode?.clipY
+              : 0.5;
           computeLegacyObjectFit(
             node,
             node.imgEl!,
@@ -1019,9 +1025,15 @@ function updateNodeStyles(node: DOMNode | DOMText) {
         (!supportsObjectFit || !supportsObjectPosition) &&
         node.imgEl.dataset.rawSrc === rawImgSrc
       ) {
-        const resizeMode = (node.props.textureOptions as any)?.resizeMode;
-        const clipX = resizeMode?.clipX ?? 0.5;
-        const clipY = resizeMode?.clipY ?? 0.5;
+        const resizeMode = node.props.textureOptions?.resizeMode;
+        const clipX =
+          resizeMode?.type !== 'contain' && resizeMode?.clipX
+            ? resizeMode?.clipX
+            : 0.5;
+        const clipY =
+          resizeMode?.type !== 'contain' && resizeMode?.clipY
+            ? resizeMode?.clipY
+            : 0.5;
         computeLegacyObjectFit(
           node,
           node.imgEl,
@@ -1212,8 +1224,11 @@ function scheduleUpdateDOMTextMeasurement(node: DOMText) {
       const fonts = document.fonts;
       if (fonts.status === 'loaded') {
         setTimeout(updateDOMTextMeasurements);
-      } else if (fonts.ready && typeof fonts.ready.then === 'function') {
-        fonts.ready.then(updateDOMTextMeasurements);
+      } else if (
+        fonts.ready != null &&
+        typeof fonts.ready.then === 'function'
+      ) {
+        void fonts.ready.then(updateDOMTextMeasurements);
       } else {
         setTimeout(updateDOMTextMeasurements, 500);
       }
@@ -2038,8 +2053,10 @@ export class DOMRendererMain implements IRendererMain {
   root: DOMNode;
   canvas: HTMLCanvasElement;
   stage: IRendererStage;
-  private eventListeners: Map<string, Set<(target: any, data: any) => void>> =
-    new Map();
+  private eventListeners: Map<
+    string,
+    Set<(target: unknown, data: unknown) => void>
+  > = new Map();
 
   constructor(
     public settings: DomRendererMainSettings,
@@ -2173,12 +2190,12 @@ export class DOMRendererMain implements IRendererMain {
   ): void;
   emit<K extends string | number>(
     event: Extract<K, string>,
-    target: any,
+    target: unknown,
     data: Parameters<any>[1],
   ): void;
   emit<K extends string | number>(
     event: Extract<K, string>,
-    targetOrData: any,
+    targetOrData: unknown,
     maybeData?: Parameters<any>[1],
   ): void {
     const listeners = this.eventListeners.get(event);

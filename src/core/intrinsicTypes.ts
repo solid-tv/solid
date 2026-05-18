@@ -24,16 +24,18 @@ export type AddColorString<T> = {
   [K in keyof T]: K extends `color${string}` ? string | number : T[K];
 };
 
-export interface BorderStyleObject
-  extends AddColorString<Partial<lngr.BorderProps>> {
+export interface BorderStyleObject extends AddColorString<
+  Partial<lngr.BorderProps>
+> {
   width?: number | [number, number, number, number];
   gap?: number;
   align?: 'inside' | 'outside' | 'center';
   fill?: number | string;
 }
 
-export interface SingleBorderStyleObject
-  extends AddColorString<Partial<lngr.BorderProps>> {
+export interface SingleBorderStyleObject extends AddColorString<
+  Partial<lngr.BorderProps>
+> {
   width?: number;
   w?: number;
   gap?: number;
@@ -104,7 +106,8 @@ type CleanElementNode = NewOmit<
 >;
 /** Node text, children of a ElementNode of type TextNode */
 export interface ElementText
-  extends NewOmit<
+  extends
+    NewOmit<
       ElementNode,
       '_type' | 'parent' | 'children' | 'src' | 'scale' | 'fontFamily'
     >,
@@ -117,7 +120,8 @@ export interface ElementText
 }
 
 export interface NodeProps
-  extends RendererNode,
+  extends
+    RendererNode,
     EventHandlers<DefaultKeyMap>,
     EventHandlers<KeyHoldMap>,
     FocusNode,
@@ -147,7 +151,8 @@ export interface NodeStyles extends NewOmit<NodeProps, 'style'> {
 }
 
 export interface TextProps
-  extends RendererText,
+  extends
+    RendererText,
     Partial<
       NewOmit<
         CleanElementNode,

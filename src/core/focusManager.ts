@@ -8,7 +8,9 @@ import type {
 } from './focusKeyTypes.js';
 import { isFunction } from './utils.js';
 
-const keyMapEntries: Record<KeyNameOrKeyCode, string> = {
+type KeyMapEntries = Record<KeyNameOrKeyCode, string>;
+
+const keyMapEntries: KeyMapEntries = {
   ArrowLeft: 'Left',
   ArrowRight: 'Right',
   ArrowUp: 'Up',
@@ -24,18 +26,23 @@ const keyHoldMapEntries: Record<KeyNameOrKeyCode, string> = {
   // Enter: 'EnterHold',
 };
 
-const flattenKeyMap = (keyMap: any, targetMap: any): void => {
+const flattenKeyMap = (
+  keyMap: Partial<KeyMap>,
+  targetMap: KeyMapEntries,
+): KeyMapEntries => {
+  const newTargetMap = targetMap;
   for (const [key, value] of Object.entries(keyMap)) {
     if (Array.isArray(value)) {
       value.forEach((v) => {
-        targetMap[v] = key;
+        newTargetMap[v] = key;
       });
     } else if (value === null) {
-      delete targetMap[key];
+      delete newTargetMap[key];
     } else {
-      targetMap[value as keyof any] = key;
+      newTargetMap[value as KeyNameOrKeyCode] = key;
     }
   }
+  return newTargetMap;
 };
 
 let needFocusDebugStyles = true;

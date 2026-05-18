@@ -22,7 +22,7 @@ const relaxedTypedRules = {
   '@typescript-eslint/no-unused-expressions': 'warn',
   '@typescript-eslint/unbound-method': 'warn',
   '@typescript-eslint/no-this-alias': 'warn',
-  '@typescript-eslint/no-empty-object-type': 'warn',
+  '@typescript-eslint/no-empty-object-type': 'off',
   '@typescript-eslint/ban-ts-comment': 'warn',
   '@typescript-eslint/restrict-template-expressions': 'warn',
   '@typescript-eslint/prefer-promise-reject-errors': 'warn',

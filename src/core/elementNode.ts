@@ -995,8 +995,9 @@ export class ElementNode {
     props: Partial<INodeAnimateProps<CoreShaderNode>>,
     animationSettings?: AnimationSettings,
   ): IAnimationController {
-    isDev &&
+    if (isDev) {
       assertTruthy(this.rendered, 'Node must be rendered before animating');
+    }
     return (this.lng as IRendererNode).animate(
       props,
       animationSettings || this.animationSettings || {},
