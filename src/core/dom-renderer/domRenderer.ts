@@ -298,6 +298,32 @@ function updateRenderStateIfNeeded(node: DOMNode | DOMText): void {
   }
 }
 
+function applyLegacyObjectFit(
+  node: DOMNode,
+  img: HTMLImageElement,
+  srcPos: InstanceType<lng.TextureMap['SubTexture']>['props'] | null,
+): void {
+  const resizeMode = node.props.textureOptions?.resizeMode;
+  const clipX =
+    resizeMode?.type !== 'contain' && resizeMode?.clipX
+      ? resizeMode?.clipX
+      : 0.5;
+  const clipY =
+    resizeMode?.type !== 'contain' && resizeMode?.clipY
+      ? resizeMode?.clipY
+      : 0.5;
+  computeLegacyObjectFit(
+    node,
+    img,
+    resizeMode,
+    clipX,
+    clipY,
+    srcPos,
+    supportsObjectFit,
+    supportsObjectPosition,
+  );
+}
+
 function updateNodeStyles(node: DOMNode | DOMText) {
   const { props } = node;
 
@@ -765,7 +791,14 @@ function updateNodeStyles(node: DOMNode | DOMText) {
       }
 
       let bgLayerStyle =
-        'position: absolute; top:0; left:0; right:0; bottom:0; z-index: -1; pointer-events: none; -webkit-clip-path: inset(0); clip-path: inset(0);';
+        'position: absolute; top:0; left:0; right:0; bottom:0; z-index: -1; pointer-events: none;';
+      // overflow:hidden clips the transformed imgEl to prevent sprite bleed-through
+      // for non-tinted subtextures. NOT applied when hasDivBgTint because
+      // overflow:hidden + CSS mask-image causes a 1px white border artifact on WebKit.
+      // Tinted nodes use mask-image for visual clipping, so overflow:hidden is unnecessary.
+      if (srcPos !== null && !hasDivBgTint) {
+        bgLayerStyle += 'overflow: hidden;';
+      }
       if (bgStyle) {
         bgLayerStyle += bgStyle;
       }
@@ -802,19 +835,9 @@ function updateNodeStyles(node: DOMNode | DOMText) {
               node.lazyImageSubTextureProps,
             );
 
-            const resizeMode = (node.props.textureOptions as any)?.resizeMode;
-            const clipX = resizeMode?.clipX ?? 0.5;
-            const clipY = resizeMode?.clipY ?? 0.5;
-            computeLegacyObjectFit(
-              node,
-              node.imgEl!,
-              resizeMode,
-              clipX,
-              clipY,
-              node.lazyImageSubTextureProps,
-              supportsObjectFit,
-              supportsObjectPosition,
-            );
+            if (!node.lazyImageSubTextureProps) {
+              applyLegacyObjectFit(node, node.imgEl!, null);
+            }
 
             // Reveal only after final fit/positioning is applied
             if (node.imgEl) {
@@ -883,19 +906,7 @@ function updateNodeStyles(node: DOMNode | DOMText) {
           (!supportsObjectFit || !supportsObjectPosition) &&
           node.imgEl.dataset.rawSrc === rawImgSrc
         ) {
-          const resizeMode = (node.props.textureOptions as any)?.resizeMode;
-          const clipX = resizeMode?.clipX ?? 0.5;
-          const clipY = resizeMode?.clipY ?? 0.5;
-          computeLegacyObjectFit(
-            node,
-            node.imgEl,
-            resizeMode,
-            clipX,
-            clipY,
-            srcPos,
-            supportsObjectFit,
-            supportsObjectPosition,
-          );
+          applyLegacyObjectFit(node, node.imgEl, srcPos);
         }
       } else {
         node.lazyImagePendingSrc = null;
@@ -946,25 +957,9 @@ function updateNodeStyles(node: DOMNode | DOMText) {
             node.lazyImageSubTextureProps,
           );
 
-          const resizeMode = node.props.textureOptions?.resizeMode;
-          const clipX =
-            resizeMode?.type !== 'contain' && resizeMode?.clipX
-              ? resizeMode?.clipX
-              : 0.5;
-          const clipY =
-            resizeMode?.type !== 'contain' && resizeMode?.clipY
-              ? resizeMode?.clipY
-              : 0.5;
-          computeLegacyObjectFit(
-            node,
-            node.imgEl!,
-            resizeMode,
-            clipX,
-            clipY,
-            node.lazyImageSubTextureProps,
-            supportsObjectFit,
-            supportsObjectPosition,
-          );
+          if (!node.lazyImageSubTextureProps) {
+            applyLegacyObjectFit(node, node.imgEl!, null);
+          }
 
           if (node.imgEl) {
             node.imageLoading = false;
@@ -1025,25 +1020,7 @@ function updateNodeStyles(node: DOMNode | DOMText) {
         (!supportsObjectFit || !supportsObjectPosition) &&
         node.imgEl.dataset.rawSrc === rawImgSrc
       ) {
-        const resizeMode = node.props.textureOptions?.resizeMode;
-        const clipX =
-          resizeMode?.type !== 'contain' && resizeMode?.clipX
-            ? resizeMode?.clipX
-            : 0.5;
-        const clipY =
-          resizeMode?.type !== 'contain' && resizeMode?.clipY
-            ? resizeMode?.clipY
-            : 0.5;
-        computeLegacyObjectFit(
-          node,
-          node.imgEl,
-          resizeMode,
-          clipX,
-          clipY,
-          srcPos,
-          supportsObjectFit,
-          supportsObjectPosition,
-        );
+        applyLegacyObjectFit(node, node.imgEl, srcPos);
       }
     } else {
       node.lazyImagePendingSrc = null;
