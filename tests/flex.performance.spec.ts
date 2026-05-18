@@ -92,11 +92,11 @@ const currentRunResults: PerformanceResult[] = [];
 let previousRunData: PerformanceRunData | null = null;
 
 // Check if fs module is available (for Node.js environment)
-const isFsAvailable =
-  typeof fs !== 'undefined' &&
-  typeof fs.existsSync === 'function' &&
-  typeof fs.readFileSync === 'function' &&
-  typeof fs.writeFileSync === 'function';
+const isFsAvailable = false;
+//  typeof fs !== 'undefined' &&
+//  typeof fs.existsSync === 'function' &&
+//  typeof fs.readFileSync === 'function' &&
+//  typeof fs.writeFileSync === 'function';
 
 describe('Flexbox Performance Tests (calculateFlex)', () => {
   const scenarios = [

@@ -6,6 +6,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 SolidTV (`@solidtv/solid`) — a SolidJS-based UI framework for building TV applications over WebGL/Canvas (not DOM). Navigation is directional (arrow keys/remote), not pointer-based. UI is built with `<View>`, `<Text>`, `<Row>`, `<Column>` — never DOM elements like `<div>`.
 
+## Code Writing Rules
+
+1. Don’t assume. Don’t hide confusion. Surface tradeoffs.
+2. Minimum code that solves the problem. Nothing speculative.
+3. Touch only what you must. Clean up only your own mess.
+4. Define success criteria. Loop until verified.
+
 ## Commands
 
 ```sh
