@@ -22,6 +22,7 @@ export * from './VirtualGrid.jsx';
 export * from './Virtual.jsx';
 export * from './utils/withScrolling.js';
 export * from './createTag.jsx';
+export { HashRouter, type HashRouterProps } from './router.js';
 export {
   type AnyFunction,
   chainFunctions,
