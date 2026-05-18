@@ -485,7 +485,7 @@ function createVirtual<T>(
   function measureAndInit() {
     if (!viewRef || derivedDims() || itemCount() === 0) return;
 
-    viewRef.updateLayout();
+    // viewRef.updateLayout();
     const containerSize = viewRef[sizeDim] || 0;
     if (!containerSize) return;
 
@@ -498,7 +498,7 @@ function createVirtual<T>(
     const gap = viewRef.gap || 0;
     const itemSize = childSize + gap;
     const vc = Math.max(1, Math.floor(containerSize / itemSize));
-    const buf = Math.max(2, Math.ceil(vc * 0.25));
+    const buf = Math.max(2, Math.ceil(vc * 0.3));
 
     if (props.debugInfo) {
       console.log('[Virtual] measured', {
@@ -599,6 +599,7 @@ function createVirtual<T>(
       forwardFocus={/* @once */ lngp.navigableForwardFocus}
       scrollToIndex={/* @once */ scrollToIndex}
       onSelectedChanged={/* @once */ onSelectedChanged}
+      flexBoundary='fixed'
       style={
         /* @once */ lng.combineStyles(
           props.style,
