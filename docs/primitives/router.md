@@ -5,7 +5,7 @@ The `HashRouter` primitive is based on the [SolidTV Router](https://github.com/s
 ### Usage
 
 ```jsx
-import { HashRouter } from '@solidtv/solid/primitives';
+import { HashRouter } from '@solidtv/solid/primitives/router';
 
 <HashRouter root={App} queryParams={['id', 'search', 'otherParam']}>
   <Route path="/" component={HelloWorld} />
