@@ -52,6 +52,7 @@ import {
   setActiveElement,
   FocusNode,
 } from './focusManager.js';
+import { initClickInspector } from './clickInspector.js';
 
 import {
   IRendererNode,
@@ -278,6 +279,8 @@ declare global {
     element?: ElementNode;
   }
 }
+
+initClickInspector();
 
 export type RendererNode = AddColorString<
   Partial<
@@ -1338,6 +1341,17 @@ export class ElementNode {
   _stateChanged() {
     isDev && log('State Changed: ', this, this.states);
 
+    if (isDev) {
+      const div = (this.lng as any)?.div as HTMLElement | undefined;
+      if (div) {
+        if (this.states.length > 0) {
+          div.dataset.states = this.states.join(' ');
+        } else {
+          delete div.dataset.states;
+        }
+      }
+    }
+
     if (this.forwardStates) {
       // apply states to children first
       const states = this.states.slice() as States;
@@ -1622,7 +1636,12 @@ export class ElementNode {
 
     // L3 Inspector adds div to the lng object
     const div: HTMLElement | undefined = (node.lng as any)?.div;
-    if (div) div.element = node;
+    if (isDev && div) {
+      div.element = node;
+      if (node._states && node._states.length > 0) {
+        div.dataset.states = node._states.join(' ');
+      }
+    }
 
     if (node._type === NodeType.Element) {
       // only element nodes will have children that need rendering

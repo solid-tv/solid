@@ -134,6 +134,7 @@ export function Dynamic<T extends Record<string, any>>(
 
       case 'string': {
         const el = createElement(component);
+        (el as { componentName?: string }).componentName = component;
         spread(el, others);
         return el;
       }
