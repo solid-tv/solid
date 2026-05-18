@@ -24,22 +24,24 @@ export function startLightningRenderer(
 
 export async function loadFonts(fonts: FontLoadOptions[]) {
   const enableDomRenderer = DOM_RENDERING && Config.domRendererEnabled;
-  for (const font of fonts) {
-    // WebGL — SDF
-    if (
-      renderer.stage.renderer.mode === 'webgl' &&
-      'type' in font &&
-      (font.type === 'msdf' || font.type === 'ssdf')
-    ) {
-      await renderer.stage.loadFont('sdf', font);
-    }
-    // Canvas — Web
-    else if ('fontUrl' in font) {
-      if (enableDomRenderer) {
-        loadFontToDom(font);
-      } else if (renderer.stage.renderer.mode !== 'webgl') {
-        await renderer.stage.loadFont('canvas', font);
+  await Promise.all(
+    fonts.map((font) => {
+      // WebGL — SDF
+      if (
+        renderer.stage.renderer.mode === 'webgl' &&
+        'type' in font &&
+        (font.type === 'msdf' || font.type === 'ssdf')
+      ) {
+        return renderer.stage.loadFont('sdf', font);
       }
-    }
-  }
+      // Canvas — Web
+      if ('fontUrl' in font) {
+        if (enableDomRenderer) {
+          loadFontToDom(font);
+        } else if (renderer.stage.renderer.mode !== 'webgl') {
+          return renderer.stage.loadFont('canvas', font);
+        }
+      }
+    }),
+  );
 }
