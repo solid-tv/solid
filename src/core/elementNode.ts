@@ -6,6 +6,8 @@ import {
   type AnimationSettings,
   type ElementText,
   type Styles,
+  type AnimationEvents,
+  type AnimationEventHandler,
   AddColorString,
   TextProps,
   type OnEvent,
@@ -676,7 +678,18 @@ export interface ElementNode extends RendererNode, FocusNode {
     | Record<string, AnimationSettings | undefined | true | false>
     | true
     | false;
-
+  /**
+   * Optional handlers for animation events.
+   *
+   * Available animation events:
+   * - 'animating': Fired when the animation starts.
+   * - 'stopped': Fired (via setTimeout for the animation duration) when the animation completes.
+   *
+   * Each event handler is optional and maps to a corresponding event.
+   *
+   * @see https://lightning-tv.github.io/solid/#/essentials/transitions?id=animation-callbacks
+   */
+  onAnimation?: Partial<Record<AnimationEvents, AnimationEventHandler>>;
   /** Optional handler for when the element is created and rendered.
    *
    * @see https://lightning-tv.github.io/solid/#/flow/ondestroy
@@ -980,18 +993,38 @@ export class ElementNode {
           { [name]: value },
           animationSettings,
         );
+        this._fireAnimationEvents(name, value, animationSettings);
         return animationController.start();
       }
 
-      return (this.lng as INode).animateProp(
+      const result = (this.lng as INode).animateProp(
         name,
         value,
         animationSettings || this.animationSettings || {},
       );
+      this._fireAnimationEvents(name, value, animationSettings);
+      return result;
     }
 
     (this.lng[name as keyof (IRendererNode | INode)] as number | string) =
       value;
+  }
+
+  _fireAnimationEvents(
+    name: string,
+    value: number,
+    animationSettings?: AnimationSettings,
+  ) {
+    if (!this.onAnimation) return;
+    const settings = animationSettings || this.animationSettings;
+    const { animating, stopped } = this.onAnimation;
+    if (animating) {
+      animating.call(this, name, value);
+    }
+    if (stopped) {
+      const total = (settings?.duration ?? 0) + (settings?.delay ?? 0);
+      setTimeout(() => stopped.call(this, name, value), total);
+    }
   }
 
   animate(

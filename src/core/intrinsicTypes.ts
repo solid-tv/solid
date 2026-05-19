@@ -195,6 +195,13 @@ export interface IntrinsicNodeProps extends NodeProps {}
 export interface IntrinsicNodeStyleProps extends NodeStyles {}
 export interface IntrinsicTextNodeStyleProps extends TextStyles {}
 
+export type AnimationEvents = 'animating' | 'stopped';
+export type AnimationEventHandler = (
+  this: ElementNode,
+  name: string,
+  endValue: number,
+) => void;
+
 type EventPayloadMap = {
   loaded: lngr.NodeLoadedPayload;
   failed: lngr.NodeFailedPayload;
