@@ -230,6 +230,8 @@ function updateNodeParent(node: DOMNode | DOMText) {
   const parent = node.props.parent;
   if (parent instanceof DOMNode) {
     elMap.get(parent)!.appendChild(node.div);
+  } else {
+    node.div.parentNode?.removeChild(node.div);
   }
 }
 
@@ -1369,7 +1371,7 @@ export class DOMNode extends EventEmitter implements IRendererNode {
     if (parent instanceof DOMNode) {
       parent.children.delete(this);
     }
-    this.div.parentNode!.removeChild(this.div);
+    this.div.parentNode?.removeChild(this.div);
   }
 
   get parent() {

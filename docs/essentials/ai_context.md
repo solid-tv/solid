@@ -8,7 +8,7 @@
 - **Reactivity:** Uses SolidTV primitives (`createSignal`, `createEffect`, `createMemo`).
 - **Primitives:** UI is built using custom components like `<View>`, `<Text>`, `<Row>`, `<Column>`.
 - **Patterns:** Always use functional components and modern TypeScript/JSX. Avoid classes.
-- **Assumption:** Always frame answers within the context of SolidTV + SolidTV TV environment.
+- **Assumption:** Always frame answers within the context of SolidTV environment.
 
 ## 2. Layout & Positioning
 

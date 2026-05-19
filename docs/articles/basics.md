@@ -2,7 +2,9 @@
 
 SolidTV is the fastest, full-featured frontend framework for building TV applications available today. It stands out with its superior performance, which is a game-changer when developing for low-power devices. That’s why choosing SolidTV is an excellent choice for building high-performance TV apps.
 
-![SolidTV](../images/basics/solid-lightning.svg)
+<p>
+  <img src="https://assets.solidjs.com/banner?project=Library&type=solidtv" alt="SolidTV" />
+</p>
 
 ## Quick Start
 
@@ -53,9 +55,9 @@ Here, we’re setting up a few important things:
 - We’re defaulting font settings for all `<Text>` nodes.
 - The `rendererOptions` allow us to pass options to the SolidTV renderer, including the number of image workers, font engines, and pixel ratios.
 
-## Routing with SolidTV Router
+## Routing with SolidJS Router
 
-Routing in SolidTV is handled with the popular [SolidTV Router](https://github.com/solidjs/solid-router), why write your own? It’s robust, fast, and flexible.
+Routing in SolidTV is handled with the popular [SolidJS Router](https://github.com/solidjs/solid-router). It’s robust, fast, and flexible.
 
 ```jsx
 // Lazy load routes easily with lazy

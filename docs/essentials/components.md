@@ -4,7 +4,7 @@ There are two building blocks provided by SolidTV Lightning: **View** & **Text**
 
 ## Creating a Counter Component
 
-The following code demonstrates how to create a simple Counter component using SolidTV and SolidTV TV. This component displays a text element with custom styles.
+The following code demonstrates how to create a simple Counter component using SolidTV. This component displays a text element with custom styles.
 
 ### Imports and Typescript
 
