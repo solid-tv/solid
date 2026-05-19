@@ -1,4 +1,5 @@
 import { Config, isDev } from './config.js';
+import { IRendererNode } from './dom-renderer/domRendererTypes.js';
 export type * from './focusKeyTypes.js';
 import { ElementNode } from './elementNode.js';
 import type {
@@ -124,7 +125,7 @@ let _pendingHistoryKey: {
 const getElementLabel = (elm: ElementNode | undefined): string => {
   if (!elm) return 'None';
   // ElementNode exposes _id internally; componentName comes from the Babel devtools plugin
-  const id = (elm as any).id ?? elm._id;
+  const id = elm.id ?? elm._id;
   return id ?? elm.componentName ?? 'Unknown';
 };
 
@@ -180,14 +181,14 @@ export const printFocusHistory = (count: number): void => {
       key: e.mappedKey ?? e.keyPressed ?? '—',
       next: getElementLabel(e.next),
       nextElm: e.next,
-      nextDiv: (e.next.lng as any).div as HTMLDivElement,
+      nextDiv: (e.next.lng as IRendererNode).div,
     })),
   );
 
   // 2. Expose the most recent element for easy inspection
   const lastEntry = entries[entries.length - 1];
   if (lastEntry) {
-    const lastElm = (lastEntry.next.lng as any)?.div;
+    const lastElm = (lastEntry.next.lng as IRendererNode)?.div;
     if (lastElm) {
       (window as any).$f = lastElm;
     }
