@@ -1,4 +1,4 @@
-import { createSignal } from 'solid-js';
+import { createSignal, getOwner, onCleanup, runWithOwner } from 'solid-js';
 import { Config, isDev } from './config.js';
 import { IRendererNode } from './dom-renderer/domRendererTypes.js';
 export type * from './focusKeyTypes.js';
@@ -214,7 +214,8 @@ export const setActiveElement = (elm: ElementNode) => {
   _signalWrapper(() => setActiveElementSignal(elm));
 };
 
-let focusPath: ElementNode[] = [];
+export const [focusPath, setFocusPath] = createSignal<ElementNode[]>([]);
+
 const updateFocusPath = (
   currentFocusedElm: ElementNode,
   prevFocusedElm: ElementNode | undefined,
@@ -247,7 +248,8 @@ const updateFocusPath = (
     current = current.parent;
   }
 
-  focusPath.forEach((elm) => {
+  const prevFp = focusPath();
+  prevFp.forEach((elm) => {
     if (!fpSet.has(elm)) {
       elm.states.remove(Config.focusStateKey);
       elm.onBlur?.call(elm, currentFocusedElm, prevFocusedElm!, elm);
@@ -262,11 +264,10 @@ const updateFocusPath = (
   });
 
   if (Config.focusDebug) {
-    addFocusDebug(focusPath, fp);
+    addFocusDebug(prevFp, fp);
   }
 
-  focusPath = fp;
-  return fp;
+  _signalWrapper(() => setFocusPath(fp));
 };
 
 let lastGlobalKeyPressTime = 0;
@@ -303,17 +304,18 @@ const propagateKeyPress = (
     _pendingHistoryKey = { keyPressed: key, mappedKey: mappedEvent };
   }
 
-  const numItems = focusPath.length;
+  const fp = focusPath();
+  const numItems = fp.length;
   if (numItems === 0) return false;
 
   let handlerAvailable: ElementNode | undefined;
-  const finalFocusElm = focusPath[0]!;
+  const finalFocusElm = fp[0]!;
   const keyBase = mappedEvent || e.key;
   const captureEvent = `onCapture${keyBase}${isUp ? 'Release' : ''}`;
   const captureKey = isUp ? 'onCaptureKeyRelease' : 'onCaptureKey';
 
   for (let i = numItems - 1; i >= 0; i--) {
-    const elm = focusPath[i]!;
+    const elm = fp[i]!;
 
     // Check throttle for capture phase
     if (elm.throttleInput) {
@@ -348,7 +350,7 @@ const propagateKeyPress = (
   }
 
   for (let i = 0; i < numItems; i++) {
-    const elm = focusPath[i]!;
+    const elm = fp[i]!;
 
     // Check throttle for bubbling phase
     if (elm.throttleInput) {
@@ -450,56 +452,42 @@ const handleKeyEvents = (
   }
 };
 
-interface FocusManagerOptions {
-  userKeyMap?: Partial<KeyMap>;
-  keyHoldOptions?: KeyHoldOptions;
-  ownerContext?: (cb: () => void) => void;
-}
-
-export const useFocusManager = ({
-  userKeyMap,
-  keyHoldOptions,
-  ownerContext = (cb) => {
-    cb();
-  },
-}: FocusManagerOptions = {}) => {
+export const useFocusManager = (
+  userKeyMap?: Partial<KeyMap>,
+  keyHoldOptions?: KeyHoldOptions,
+) => {
   if (userKeyMap) {
     flattenKeyMap(userKeyMap, keyMapEntries);
   }
-
   if (keyHoldOptions?.userKeyHoldMap) {
     flattenKeyMap(keyHoldOptions.userKeyHoldMap, keyHoldMapEntries);
   }
 
-  // Route signal updates from programmatic .setFocus() and post-mutation
-  // through the same owner context as key events so effect subscribers have
-  // a parent for cleanup.
+  // Capture the calling owner so signal updates and key-event reactions
+  // can run inside it — needed for programmatic .setFocus(), post-mutation
+  // focus, and any effect subscribers that rely on onCleanup.
+  const owner = getOwner();
+  const ownerContext = (cb: () => void) => {
+    runWithOwner(owner, cb);
+  };
   _signalWrapper = ownerContext;
 
   const delay = keyHoldOptions?.holdThreshold || DEFAULT_KEY_HOLD_THRESHOLD;
   const runKeyEvent = handleKeyEvents.bind(null, delay);
 
   const keyPressHandler = (event: KeyboardEvent) =>
-    ownerContext(() => {
-      runKeyEvent(event, undefined);
-    });
-
+    ownerContext(() => runKeyEvent(event, undefined));
   const keyUpHandler = (event: KeyboardEvent) =>
-    ownerContext(() => {
-      runKeyEvent(undefined, event);
-    });
+    ownerContext(() => runKeyEvent(undefined, event));
 
-  document.addEventListener('keyup', keyUpHandler);
   document.addEventListener('keydown', keyPressHandler);
+  document.addEventListener('keyup', keyUpHandler);
 
-  return {
-    cleanup: () => {
-      document.removeEventListener('keydown', keyPressHandler);
-      document.removeEventListener('keyup', keyUpHandler);
-      for (const [_, timeout] of Object.entries(keyHoldTimeouts)) {
-        if (timeout && timeout !== true) clearTimeout(timeout);
-      }
-    },
-    focusPath: () => focusPath,
-  };
+  onCleanup(() => {
+    document.removeEventListener('keydown', keyPressHandler);
+    document.removeEventListener('keyup', keyUpHandler);
+    for (const timeout of Object.values(keyHoldTimeouts)) {
+      if (timeout && timeout !== true) clearTimeout(timeout);
+    }
+  });
 };
