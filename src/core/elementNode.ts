@@ -25,7 +25,6 @@ const calculateFlex = import.meta.env?.VITE_USE_NEW_FLEX
 import {
   log,
   isArray,
-  isFunc,
   keyExists,
   isINode,
   isElementNode,
@@ -34,7 +33,12 @@ import {
   isFunction,
   spliceItem,
 } from './utils.js';
-import { Config, DOM_RENDERING, isDev, SHADERS_ENABLED } from './config.js';
+import {
+  Config,
+  isDev,
+  SHADERS_ENABLED,
+  isDomRendererActive,
+} from './config.js';
 import type {
   RendererMain,
   INode,
@@ -106,7 +110,7 @@ function runPostMutation() {
   // Phase 1: delete-flush
   if (elementDeleteQueue.length > 0) {
     for (const el of elementDeleteQueue) {
-      if (Number(el._queueDelete) < 0) {
+      if ((el._queueDelete ?? 0) < 0) {
         el.destroy();
       }
       el._queueDelete = undefined;
@@ -838,7 +842,7 @@ export class ElementNode {
     if (this.rendered) {
       if (!this.lng.shader) {
         this.lng.shader = Config.convertToShader(this, target);
-      } else if (DOM_RENDERING && Config.domRendererEnabled) {
+      } else if (isDomRendererActive()) {
         // eslint-disable-next-line no-self-assign -- lng.shader is a setter, force style update
         this.lng.shader = this.lng.shader;
       }
@@ -1104,7 +1108,7 @@ export class ElementNode {
     if (this.rendered) {
       // can be 0
       if (this.forwardFocus !== undefined) {
-        if (isFunc(this.forwardFocus)) {
+        if (isFunction(this.forwardFocus)) {
           if (this.forwardFocus.call(this, this) !== false) {
             return;
           }
@@ -1370,7 +1374,7 @@ export class ElementNode {
       const flexChanged = this.display === 'flex' && calculateFlex(this);
       layoutQueue.delete(this);
       const onLayoutChanged =
-        isFunc(this.onLayout) && this.onLayout.call(this, this);
+        isFunction(this.onLayout) && this.onLayout.call(this, this);
 
       if ((flexChanged || onLayoutChanged) && this.parent) {
         addToLayoutQueue(this.parent);
@@ -1382,7 +1386,7 @@ export class ElementNode {
           if (c.display === 'flex' && isElementNode(c)) {
             // calculating directly to prevent infinite loops recalculating parents
             calculateFlex(c);
-            isFunc(c.onLayout) && c.onLayout.call(c, c);
+            isFunction(c.onLayout) && c.onLayout.call(c, c);
             addToLayoutQueue(this);
           }
         });
@@ -1795,7 +1799,7 @@ export function shaderAccessor<T extends Record<string, any> | number>(
       if (this.rendered) {
         if (!this.lng.shader) {
           this.lng.shader = Config.convertToShader(this, target);
-        } else if (DOM_RENDERING && Config.domRendererEnabled) {
+        } else if (isDomRendererActive()) {
           // eslint-disable-next-line no-self-assign -- lng.shader is a setter, force style update
           this.lng.shader = this.lng.shader;
         }

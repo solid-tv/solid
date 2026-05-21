@@ -1,5 +1,5 @@
 import * as lng from '@solidtv/renderer';
-import { Config, DOM_RENDERING } from './config.js';
+import { isDomRendererActive } from './config.js';
 import { DOMRendererMain, loadFontToDom } from './dom-renderer/domRenderer.js';
 import { DomRendererMainSettings } from './dom-renderer/domRendererTypes.js';
 import { FontLoadOptions } from './intrinsicTypes.js';
@@ -14,7 +14,7 @@ export function startLightningRenderer(
   options: lng.RendererMainSettings | DomRendererMainSettings,
   rootId: string | HTMLElement = 'app',
 ) {
-  const enableDomRenderer = DOM_RENDERING && Config.domRendererEnabled;
+  const enableDomRenderer = isDomRendererActive();
 
   renderer = enableDomRenderer
     ? new DOMRendererMain(options, rootId)
@@ -23,7 +23,7 @@ export function startLightningRenderer(
 }
 
 export async function loadFonts(fonts: FontLoadOptions[]) {
-  const enableDomRenderer = DOM_RENDERING && Config.domRendererEnabled;
+  const enableDomRenderer = isDomRendererActive();
   await Promise.all(
     fonts.map((font) => {
       // WebGL — SDF

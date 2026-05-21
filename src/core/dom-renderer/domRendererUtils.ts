@@ -2,7 +2,7 @@
 import * as lng from '@solidtv/renderer';
 import { Config } from '../config.js';
 import { DOMNode } from './domRenderer.js';
-import { isFunc } from '../utils.js';
+import { isFunction } from '../utils.js';
 
 // #region Color & Gradient Utils
 
@@ -160,7 +160,7 @@ export function applyEasing(
   easing: string | lng.TimingFunction,
   progress: number,
 ): number {
-  if (isFunc(easing)) {
+  if (isFunction(easing)) {
     return easing(progress);
   }
 

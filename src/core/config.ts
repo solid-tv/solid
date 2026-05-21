@@ -34,6 +34,15 @@ export const SHADERS_ENABLED =
   SOLIDTV_DISABLE_SHADERS !== true;
 
 /**
+ * True when the DOM renderer is both built in (`DOM_RENDERING`) and turned on
+ * at runtime (`Config.domRendererEnabled`). `Config.domRendererEnabled` is
+ * mutable up until the renderer starts, so this is a function rather than a
+ * constant.
+ */
+export const isDomRendererActive = () =>
+  DOM_RENDERING && Config.domRendererEnabled;
+
+/**
   RUNTIME LIGHTNING CONFIGURATION \
   This configuration can be set at runtime, but it is recommended to set it
   before running any Lightning modules to ensure consistent behavior across the application.
