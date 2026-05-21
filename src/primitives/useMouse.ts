@@ -4,7 +4,7 @@ import {
   ElementNode,
   activeElement,
   isElementNode,
-  isFunc,
+  isFunction,
   rootNode,
 } from '../index.js';
 import { makeEventListener } from '@solid-primitives/event-listener';
@@ -128,7 +128,7 @@ function findElementByActiveElement(e: MouseEvent): ElementNode | null {
   let parent = active?.parent;
   while (parent) {
     if (
-      isFunc(parent.onMouseClick) &&
+      isFunction(parent.onMouseClick) &&
       testCollision(
         px,
         py,
@@ -167,10 +167,10 @@ function handleElementClick(
     pressedElementRef.current = null;
   }
 
-  if (isFunc(clickedElement.onMouseClick)) {
+  if (isFunction(clickedElement.onMouseClick)) {
     clickedElement.onMouseClick(e, clickedElement);
     return;
-  } else if (isFunc(clickedElement.onEnter)) {
+  } else if (isFunction(clickedElement.onEnter)) {
     clickedElement.onEnter();
     return;
   }
