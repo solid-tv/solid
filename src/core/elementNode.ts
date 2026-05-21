@@ -168,6 +168,15 @@ function buildFontTemplate() {
   _fontTemplate = tpl;
 }
 
+const EFFECT_SHADER_KEYS = [
+  'border',
+  'borderTop',
+  'borderRight',
+  'borderBottom',
+  'borderLeft',
+  'shadow',
+] as const satisfies ReadonlyArray<keyof StyleEffects>;
+
 const parseAndAssignShaderProps = (
   prefix: string,
   obj: Record<string, unknown>,
@@ -215,7 +224,7 @@ function getPropertyAlias(name: string) {
   return name;
 }
 
-export const LightningRendererNumberProps = [
+const LightningRendererNumberProps = [
   'alpha',
   'color',
   'colorTop',
@@ -820,6 +829,25 @@ export class ElementNode {
     return this.lng.shader;
   }
 
+  /**
+   * Commit a built shader-props target back to `this.lng.shader`. When the
+   * node is already rendered we either convert the props into a real shader
+   * (first time) or self-assign so the DOM renderer's setter reapplies style;
+   * pre-render we just attach the bag for the upcoming `render()`.
+   */
+  _writeShaderTarget(target: unknown) {
+    if (this.rendered) {
+      if (!this.lng.shader) {
+        this.lng.shader = Config.convertToShader(this, target as StyleEffects);
+      } else if (isDomRendererActive()) {
+        // eslint-disable-next-line no-self-assign -- lng.shader is a setter, force style update
+        this.lng.shader = this.lng.shader;
+      }
+    } else {
+      this.lng.shader = target;
+    }
+  }
+
   set effects(v: StyleEffects) {
     if (!SHADERS_ENABLED) return;
     let target = this.lng.shader || {};
@@ -828,27 +856,11 @@ export class ElementNode {
     }
     if (v.rounded) target.radius = v.rounded.radius;
     if (v.borderRadius) target.radius = v.borderRadius;
-    if (v.border) parseAndAssignShaderProps('border', v.border, target);
-    if (v.borderTop)
-      parseAndAssignShaderProps('borderTop', v.borderTop, target);
-    if (v.borderRight)
-      parseAndAssignShaderProps('borderRight', v.borderRight, target);
-    if (v.borderBottom)
-      parseAndAssignShaderProps('borderBottom', v.borderBottom, target);
-    if (v.borderLeft)
-      parseAndAssignShaderProps('borderLeft', v.borderLeft, target);
-    if (v.shadow) parseAndAssignShaderProps('shadow', v.shadow, target);
-
-    if (this.rendered) {
-      if (!this.lng.shader) {
-        this.lng.shader = Config.convertToShader(this, target);
-      } else if (isDomRendererActive()) {
-        // eslint-disable-next-line no-self-assign -- lng.shader is a setter, force style update
-        this.lng.shader = this.lng.shader;
-      }
-    } else {
-      this.lng.shader = target;
+    for (const k of EFFECT_SHADER_KEYS) {
+      if (v[k]) parseAndAssignShaderProps(k, v[k], target);
     }
+
+    this._writeShaderTarget(target);
   }
 
   set id(id: string) {
@@ -1796,16 +1808,7 @@ export function shaderAccessor<T extends Record<string, any> | number>(
         parseAndAssignShaderProps(key, value, target);
       }
 
-      if (this.rendered) {
-        if (!this.lng.shader) {
-          this.lng.shader = Config.convertToShader(this, target);
-        } else if (isDomRendererActive()) {
-          // eslint-disable-next-line no-self-assign -- lng.shader is a setter, force style update
-          this.lng.shader = this.lng.shader;
-        }
-      } else {
-        this.lng.shader = target;
-      }
+      this._writeShaderTarget(target);
 
       if (animationSettings) {
         this.animate({ shaderProps: target }, animationSettings).start();
