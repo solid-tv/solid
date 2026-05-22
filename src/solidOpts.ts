@@ -24,7 +24,7 @@ export default {
     assertTruthy(parent);
     parent.text = parent.getText();
   },
-  setProperty(node: ElementNode, name: string, value: any = true): void {
+  setProperty(node: ElementNode, name: string, value: any): void {
     node[name] = value;
   },
   insertNode(parent: ElementNode, node: SolidNode, anchor: SolidNode): void {
