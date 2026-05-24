@@ -21,9 +21,10 @@ both was the bigger risk.
       1.2 → 1.3 upgrade pointer.
 - [x] Updated `tests/flex.spec.ts`: dropped the assertion on the removed
       "No available space for flex-grow items to expand" warning.
-- [x] Added the new key-handler consume contract (see "Key-handler consume
-      contract" section below). `e.stopPropagation()` is the new way to
-      consume a key event; legacy `return true` still works with a dev warn.
+- [x] Flipped the key-handler consume default — a handler that runs now
+      consumes the event by default; `return false` to bubble. See
+      "Key-handler consume contract" section below. **Silent breaking
+      change for observation-only handlers — audit before upgrading.**
 
 #### Still TODO before tagging 1.3
 
@@ -87,28 +88,44 @@ edge cases shift. Audit the items below before upgrading.
 
 - `"No available space for flex-grow items to expand, or items overflow."`
 
-**Key-handler consume signal (deprecated, not breaking in 1.3)**
+**Key-handler consume default flipped (breaking, silent)**
 
-Key handlers (`onEnter`, `onUp`/`Down`/`Left`/`Right`, `onKeyPress`,
-`onKeyHold`, `on${MappedKey}`, capture-phase equivalents) should now call
-`e.stopPropagation()` to consume the event and stop focus-path bubbling.
-Returning `true` continues to work in 1.3 with a one-time dev-mode warning
-per handler, and is removed in 1.4.
+The default behavior for focus-path key handlers (`onEnter`, `onUp`/`Down`/
+`Left`/`Right`, `onKeyPress`, `onKeyHold`, `on${MappedKey}`, capture-phase
+equivalents) is inverted in 1.3:
 
-Before:
+|                                           | 1.2      | 1.3          |
+| ----------------------------------------- | -------- | ------------ |
+| Handler returns `true`                    | consumed | consumed     |
+| Handler returns `false`                   | bubbles  | bubbles      |
+| Handler returns `undefined` / no `return` | bubbles  | **consumed** |
+
+In practice this means: **if you bind a key handler in 1.3, it consumes the
+event by default.** Return `false` explicitly if you want the event to
+continue bubbling up the focus path.
+
+Existing `return true` handlers continue to work unchanged. Existing
+`return false` handlers continue to work unchanged. **The migration risk
+is observation-only handlers** — anything like
 
 ```tsx
-onEnter={() => { doThing(); return true; }}
+onEnter={() => analytics.track('enter pressed')}
+onKeyPress={(e) => console.log(e.key)}
 ```
 
-After:
+These used to be transparent (the event continued bubbling to ancestors).
+In 1.3 they silently consume. If an ancestor was relying on receiving the
+same event, it will stop firing. To preserve 1.2 behavior, change them to:
 
 ```tsx
-onEnter={(e) => { doThing(); e.stopPropagation(); }}
+onEnter={() => { analytics.track('enter pressed'); return false; }}
+onKeyPress={(e) => { console.log(e.key); return false; }}
 ```
 
-Handlers that don't consume the event need no changes — observation-only
-handlers (logging, analytics) continue to bubble as before.
+There is no compiler signal and no runtime warning for this change. Audit
+every key handler in the app for observation-without-consume patterns
+before upgrading. A search for `onEnter|onUp|onDown|onLeft|onRight|onKeyPress|onKeyHold`
+across the codebase is the recommended starting point.
 
 #### Rollback
 
@@ -117,87 +134,43 @@ that need the old behavior should pin to `1.2.x` until they migrate.
 
 ---
 
-### Key-handler consume contract: prefer `e.stopPropagation()`
+### Key-handler consume contract: flip the default
 
-**Status:** shipped on the `1.3` branch via Option A (additive). Legacy
-`return true` continues to work in 1.3 with a one-time dev warning per
-handler. Removal scheduled for 1.4.
+**Status:** shipped on the `1.3` branch. Default-flip with no warning shim.
 
-**Today** (`src/core/focusManager.ts`):
+**Old contract (1.2):**
 
-- A focus-path handler (`onEnter`, `onUp`, `onKeyPress`, `on${Mapped}`, etc.)
-  is checked with `handler.call(...) === true`.
-- Strict `true` consumes the event and stops traversal up the focus path.
-- Anything else (`undefined`, `false`, `null`, void) lets the event bubble to
-  the next ancestor.
+- `runBubblePhase` / `runCapturePhase` in `src/core/focusManager.ts` consumed
+  the event only when the handler returned strict `true`.
+- `undefined`, `false`, `null`, and void all bubbled to the next ancestor.
 
-**Proposed:**
+**New contract (1.3):**
 
-- If a handler function exists on a focus-path node, the event is consumed by
-  default (traversal stops).
-- To let the event continue bubbling, the handler must explicitly
-  `return false`.
+- A focus-path handler that runs is considered to have consumed the event.
+- `return false` is the only way to opt back into bubbling.
+- All other return values (`undefined`, `true`, void, non-boolean) consume.
 
-**Migration impact:**
+**Implementation:**
 
-- Every existing handler that did _not_ `return true` (the common case — most
-  handlers don't bother) is unchanged in observable behavior: they were the
-  end of bubbling anyway because the parent rarely had a competing handler.
-- Handlers that intentionally observed-but-passed-through (logging, analytics,
-  debug overlays, instrumentation wrappers, `onKeyPress` on a parent that
-  watches all keys) silently start swallowing events. **This is the dangerous
-  class.** There is no compile error; the app just stops reacting at a parent.
-- The handler signature does not change, so no TypeScript surfaces the break.
+- Consume check centralized in `_isHandlerConsumed(result)` — returns
+  `result !== false`. Exported `@internal` for tests.
+- Both `runCapturePhase` and `runBubblePhase` call into the helper as the
+  single source of truth for the consume signal.
+- `KeyHandlerReturn` in `focusKeyTypes.ts` JSDoc documents the new contract
+  on hover. Type remains `boolean | void` — `false` is the meaningful return.
+- Tests in `tests/focusManager.keyhandler.spec.ts` verify each return-value
+  case (`false`, `undefined`, `true`, void, non-boolean).
 
-**Pros of flipping:**
+**Migration risk (documented in the changelog migration notes above):**
 
-- Matches the 90% case — most TV handlers do consume.
-- Less boilerplate; no trailing `return true;` on every handler.
-- Forgetting to `return true` today is a quiet double-handling bug. Forgetting
-  `return false` under the new contract is a loud "parent stopped firing" bug,
-  which is easier to notice.
+This is a silent semantic flip. Observation-only handlers (logging,
+analytics, instrumentation) that previously transparently bubbled now
+consume by default. There is no compile error and no runtime warning.
+Apps upgrading from 1.2 must audit every focus-path handler for the
+"observe but don't act" pattern and add an explicit `return false` to
+preserve 1.2 behavior.
 
-**Cons of flipping:**
-
-- Pure semantic break with no compiler signal. Worst kind of migration.
-- Composition hazard: any wrapper / decorator / HOC handler that observes
-  without consuming becomes a focus trap.
-- Diverges from DOM / React / Solid synthetic-event convention, where handlers
-  do _not_ consume by default and you call `e.stopPropagation()`.
-- Conflates "is bound" with "consumed." `undefined` is a natural "I didn't
-  decide" return; the new contract removes that affordance.
-
-**What landed on `1.3`:**
-
-- Both `runCapturePhase` and `runBubblePhase` in `src/core/focusManager.ts`
-  now consume the event when either signal is present:
-  - **Modern:** the handler called `e.stopPropagation()` (sets `cancelBubble`
-    on the native `KeyboardEvent`).
-  - **Legacy:** the handler returned `true`. Emits a one-time dev-mode
-    warning per handler function, then consumes. WeakSet-keyed so the
-    warning fires once per handler over the app lifetime, not per keypress.
-- Consume check is factored into `_isHandlerConsumed` (exported as `@internal`
-  for tests) — single source of truth for both phases.
-- `KeyHandlerReturn` in `src/core/focusKeyTypes.ts` is marked `@deprecated`
-  for the boolean case via JSDoc — surfaces as a strikethrough on `return true`
-  in IDEs.
-- `tests/focusManager.keyhandler.spec.ts` covers: `stopPropagation` consume,
-  `return true` consume + warn, no return → bubble, `return false` → bubble,
-  warn-once per handler, distinct handlers warn separately, both signals
-  together (no warn), sticky `cancelBubble` across the focus path.
-
-**What's deferred to 1.4:**
-
-- Remove the `result === true` shim from `_isHandlerConsumed`.
-- Delete `warnDeprecatedReturnTrue` and the WeakSet.
-- Narrow `KeyHandlerReturn` to `void`.
-- Drop the legacy-path tests.
-
-**Why Option A over flipping the default:**
-
-A silent default-flip ("auto-consume if a handler exists, return false to
-bubble") has no compiler signal, no runtime signal for the dangerous case
-(observation-only handlers silently swallow events), and conflates "is bound"
-with "consumed." `e.stopPropagation()` matches DOM/React/Solid idiom and is
-explicit at the call site. The shim lets every existing handler keep working
-unchanged through 1.3 while pushing new code toward the explicit signal.
+The reasoning for accepting this risk: the consume-by-default case is the
+overwhelming majority of handler bodies, and the boilerplate of an
+explicit `return true` on every handler outweighed the migration cost of
+the rare observation-only case.
