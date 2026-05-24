@@ -1,5 +1,5 @@
 import * as lng from '@solidtv/renderer';
-import { isDomRendererActive } from './config.js';
+import { Config, DOM_RENDERING } from './config.js';
 import { DOMRendererMain, loadFontToDom } from './dom-renderer/domRenderer.js';
 import { DomRendererMainSettings } from './dom-renderer/domRendererTypes.js';
 import { FontLoadOptions } from './intrinsicTypes.js';
@@ -14,7 +14,9 @@ export function startLightningRenderer(
   options: lng.RendererMainSettings | DomRendererMainSettings,
   rootId: string | HTMLElement = 'app',
 ) {
-  const enableDomRenderer = isDomRendererActive();
+  // Inlined (not isDomRendererActive()) so bundlers can fold DOM_RENDERING to
+  // false and drop the DOMRendererMain branch + import in WebGL builds.
+  const enableDomRenderer = DOM_RENDERING && Config.domRendererEnabled;
 
   renderer = enableDomRenderer
     ? new DOMRendererMain(options, rootId)
@@ -23,7 +25,8 @@ export function startLightningRenderer(
 }
 
 export async function loadFonts(fonts: FontLoadOptions[]) {
-  const enableDomRenderer = isDomRendererActive();
+  // Inlined so the loadFontToDom branch + import tree-shake in WebGL builds.
+  const enableDomRenderer = DOM_RENDERING && Config.domRendererEnabled;
   await Promise.all(
     fonts.map((font) => {
       // WebGL — SDF
