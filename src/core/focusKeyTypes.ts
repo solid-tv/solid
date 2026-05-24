@@ -69,6 +69,18 @@ export type EventHandlers<Map> = {
 
 export interface KeyHoldMap extends DefaultKeyHoldMap {}
 
+/**
+ * Return type of key handlers (onEnter, onUp, onKeyPress, onCapture*, etc.).
+ *
+ * In 1.3+ the canonical way to consume a key event and stop it from bubbling
+ * up the focus path is to call `e.stopPropagation()` in the handler. The
+ * legacy contract — returning `true` to consume — is deprecated and still
+ * works in 1.3 (with a one-time dev-mode warning per handler), and is
+ * removed in 1.4.
+ *
+ * @deprecated The `boolean` return is deprecated. Call `e.stopPropagation()`
+ * instead. The handler return type narrows to `void` in 1.4.
+ */
 export type KeyHandlerReturn = boolean | void;
 
 export type KeyHandler = (

@@ -273,6 +273,50 @@ const updateFocusPath = (
 let lastGlobalKeyPressTime = 0;
 let lastInputKey: string | number | undefined;
 
+// One-time deprecation warning per handler function for `return true` consume.
+// WeakSet so handler functions don't leak when their elements are disposed.
+const _warnedReturnTrueHandlers = new WeakSet<object>();
+const warnDeprecatedReturnTrue = (
+  handlerKey: string,
+  handler: unknown,
+  elm: ElementNode,
+): void => {
+  if (typeof handler !== 'function') return;
+  if (_warnedReturnTrueHandlers.has(handler as object)) return;
+  _warnedReturnTrueHandlers.add(handler as object);
+  console.warn(
+    `[solidtv] Returning \`true\` from \`${handlerKey}\` to consume a key ` +
+      `event is deprecated and will be removed in 1.4. Call ` +
+      `\`e.stopPropagation()\` instead. Handler on:`,
+    elm,
+  );
+};
+
+/**
+ * Returns true if the handler consumed the event.
+ *   - Modern: handler called `e.stopPropagation()` (sets `cancelBubble`).
+ *   - Legacy: handler returned `true`. Logs a one-time dev warning.
+ * `cancelBubble` is checked first so handlers that do both don't trigger
+ * the deprecation warning.
+ *
+ * @internal exported for tests. Not part of the public API; signature may
+ * change in any minor.
+ */
+export const _isHandlerConsumed = (
+  e: KeyboardEvent,
+  result: unknown,
+  handlerKey: string,
+  handler: unknown,
+  elm: ElementNode,
+): boolean => {
+  if (e.cancelBubble) return true;
+  if (result === true) {
+    if (isDev) warnDeprecatedReturnTrue(handlerKey, handler, elm);
+    return true;
+  }
+  return false;
+};
+
 const isElementThrottled = (
   elm: ElementNode,
   sameKey: boolean,
@@ -302,13 +346,22 @@ const runCapturePhase = (
     const elm = fp[i]!;
     if (isElementThrottled(elm, sameKey, currentTime)) return true;
 
-    const captureHandler = elm[captureEvent] || elm[captureKey];
-    if (
-      isFunction(captureHandler) &&
-      captureHandler.call(elm, e, elm, finalFocusElm, mappedEvent) === true
-    ) {
-      elm._lastAnyKeyPressTime = currentTime;
-      return true;
+    const captureHandlerKey = elm[captureEvent] ? captureEvent : captureKey;
+    const captureHandler = elm[captureHandlerKey];
+    if (isFunction(captureHandler)) {
+      const result = captureHandler.call(
+        elm,
+        e,
+        elm,
+        finalFocusElm,
+        mappedEvent,
+      );
+      if (
+        _isHandlerConsumed(e, result, captureHandlerKey, captureHandler, elm)
+      ) {
+        elm._lastAnyKeyPressTime = currentTime;
+        return true;
+      }
     }
   }
   return false;
@@ -350,16 +403,34 @@ const runBubblePhase = (
       const eventHandler = elm[eventHandlerKey];
       if (isFunction(eventHandler)) {
         lastHandlerSeen = elm;
-        handled = eventHandler.call(elm, e, elm, finalFocusElm) === true;
+        const result = eventHandler.call(elm, e, elm, finalFocusElm);
+        handled = _isHandlerConsumed(
+          e,
+          result,
+          eventHandlerKey,
+          eventHandler,
+          elm,
+        );
       }
     }
     if (!handled && fallbackHandlerKey) {
       const fallbackHandler = elm[fallbackHandlerKey];
       if (isFunction(fallbackHandler)) {
         lastHandlerSeen = elm;
-        handled =
-          fallbackHandler.call(elm, e, mappedEvent, elm, finalFocusElm) ===
-          true;
+        const result = fallbackHandler.call(
+          elm,
+          e,
+          mappedEvent,
+          elm,
+          finalFocusElm,
+        );
+        handled = _isHandlerConsumed(
+          e,
+          result,
+          fallbackHandlerKey,
+          fallbackHandler,
+          elm,
+        );
       }
     }
 
