@@ -35,7 +35,7 @@ Run a single test file: `npx vitest tests/flex.spec.ts`
 - `src/core/elementNode.ts` — `ElementNode` is the core node abstraction. Manages properties, children, flex layout, focus, states, animations, and syncs to the underlying `@solidtv/renderer` INode.
 - `src/core/focusManager.ts` — Handles keyboard/remote input, focus path traversal, and key mapping. Focus walks the component tree via `onUp`/`onDown`/`onLeft`/`onRight`/`onEnter` handlers.
 - `src/core/config.ts` — Runtime `Config` object (debug flags, animation settings, font defaults, focus state key).
-- `src/core/flex.ts` / `src/core/flexLayout.ts` — Two flex layout implementations; toggled by `VITE_USE_NEW_FLEX` env var.
+- `src/core/flex.ts` — Flex layout. CSS-aligned, supports `flexGrow`, `flexShrink`, `flexBasis`, per-side padding/margin (scalar, CSS-shorthand array `[t, r, b, l]`, or explicit `paddingTop`/`marginLeft`/etc.).
 
 ### Build-Time Globals
 
@@ -70,5 +70,5 @@ The `@solidtv/source` custom import condition resolves to source `.ts` files ins
 - Colors must be 8-char hex strings (e.g., `"#ff0000ff"`). No named colors.
 - Use `color` not `background`. Use object structures for `border`/`shadow`.
 - No `style={{}}`, no CSS classes, no DOM elements.
-- Flex: `display: "flex"` activates it. Only single `padding` number (no `paddingLeft` etc.). Margins, gap, alignItems, justifyContent all supported.
+- Flex: `display: "flex"` activates it. `padding` accepts a scalar, an array (`[all]`, `[v, h]`, `[t, h, b]`, `[t, r, b, l]`), or per-side props (`paddingTop`, `paddingLeft`, etc.). `margin` follows the same rules. `gap`, `rowGap`, `columnGap`, `alignItems`, `justifyContent`, `flexGrow`, `flexShrink`, `flexBasis`, `flexOrder`, `flexWrap` all supported.
 - Focus: `onFocusChanged`, `onFocus`, `onBlur`, `onEnter`, `onUp`/`onDown`/`onLeft`/`onRight`. One item should have `autofocus`. `Row`/`Column` manage child focus automatically.

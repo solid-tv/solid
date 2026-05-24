@@ -15,19 +15,9 @@ The `<text>` element does not require any of these properties, as it will use th
 
 ## Flex
 
-A fundamental tool for layout is the Flex container. Currently, there is a minimal implementation of flex (`display: flex`) that supports the following properties: `flexDirection`, `justifyContent`, `alignItems`, `flexOrder`, `flexGrow` and `gap`. This is useful for laying out elements in rows and columns.
+A fundamental tool for layout is the Flex container (`display: flex`). The engine is CSS-aligned and supports `flexDirection`, `justifyContent`, `alignItems`, `alignSelf`, `flexOrder`, `flexGrow`, `flexShrink`, `flexBasis`, `flexWrap`, `gap`, `rowGap`, and `columnGap`. Padding and margin accept a scalar, a CSS-shorthand array (`[all]`, `[v, h]`, `[t, h, b]`, `[t, r, b, l]`), or per-side props (`paddingTop`, `marginLeft`, etc.). This is useful for laying out elements in rows and columns.
 
-### New Flex Engine Toggle
-
-The framework now includes a modern, high-performance, CSS-aligned flex engine alongside the legacy engine. To opt into the new flex engine, define the following environment variable during your Vite build process:
-
-```bash
-VITE_USE_NEW_FLEX=true
-```
-
-This will add `flexShrink`, `flexBasis` support and padding / margin full support with array syntax.
-
-Because the engines are conditionally evaluated at build time via `import.meta.env`, your bundler (e.g., Rollup) will automatically perform **Dead-Code Elimination (tree-shaking)**. This means whichever layout engine isn't selected will be completely omitted from your application's final production bundle.
+> **Upgrading from 1.2 → 1.3:** the legacy flex engine and the `VITE_USE_NEW_FLEX` build flag have been removed. The previously opt-in engine is now the only engine. See the 1.3 release notes for breaking changes (per-side padding, `margin`/`flexBasis`/`flexShrink` are now load-bearing, `wrap-reverse` behavior, etc.).
 
 ### Example
 

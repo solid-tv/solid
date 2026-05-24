@@ -318,11 +318,8 @@ describe('Flexbox Layout (calculateFlex)', () => {
       }) as ElementNode;
 
       calculateFlex(parent);
-      expect(child1.width).toBe(150); // Unchanged
-      expect(child2.width).toBe(150); // Unchanged
-      expect(console.warn).toHaveBeenCalledWith(
-        'No available space for flex-grow items to expand, or items overflow.',
-      );
+      expect(child1.width).toBe(150); // Unchanged — no positive space to grow into
+      expect(child2.width).toBe(150); // Unchanged — no positive space to grow into
     });
 
     it('should not apply flexGrow if only one child', () => {
