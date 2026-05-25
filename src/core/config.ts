@@ -38,6 +38,12 @@ export const SHADERS_ENABLED =
  * at runtime (`Config.domRendererEnabled`). `Config.domRendererEnabled` is
  * mutable up until the renderer starts, so this is a function rather than a
  * constant.
+ *
+ * NOTE: do not use this to gate code paths whose dead-code elimination matters
+ * (e.g. branches that reference DOM-renderer-only modules). Bundlers don't
+ * inline this call, so the gated branch — and its imports — stay live. In
+ * those spots inline `DOM_RENDERING && Config.domRendererEnabled` so the
+ * `DOM_RENDERING` build constant can collapse the branch.
  */
 export const isDomRendererActive = () =>
   DOM_RENDERING && Config.domRendererEnabled;
