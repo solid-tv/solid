@@ -1,24 +1,24 @@
 import { type ElementNode } from './elementNode.js';
-import { isTextNode, isElementText } from './utils.js';
 
-function getArrayValue(
-  val: number | number[] | undefined,
-  index: number,
-  defaultValue: number = 0,
-): number {
-  if (val === undefined) return defaultValue;
-  if (typeof val === 'number') return val;
+let processableChildrenIndices = new Int32Array(256);
+let childMainSizes = new Float32Array(256);
+let childMarginStarts = new Float32Array(256);
+let childMarginEnds = new Float32Array(256);
+let childTotalMainSizes = new Float32Array(256);
+let childCrossSizes = new Float32Array(256);
+let childMarginCrossStarts = new Float32Array(256);
+let childMarginCrossEnds = new Float32Array(256);
 
-  const len = val.length;
-  let result;
-  if (len === 2) {
-    result = index % 2 === 0 ? val[0] : val[1];
-  } else if (len === 3) {
-    result = index === 0 ? val[0] : index === 2 ? val[2] : val[1];
-  } else {
-    result = val[index];
-  }
-  return result ?? defaultValue;
+function ensureCapacity(size: number) {
+  const newSize = Math.max(processableChildrenIndices.length * 2, size);
+  processableChildrenIndices = new Int32Array(newSize);
+  childMainSizes = new Float32Array(newSize);
+  childMarginStarts = new Float32Array(newSize);
+  childMarginEnds = new Float32Array(newSize);
+  childTotalMainSizes = new Float32Array(newSize);
+  childCrossSizes = new Float32Array(newSize);
+  childMarginCrossStarts = new Float32Array(newSize);
+  childMarginCrossEnds = new Float32Array(newSize);
 }
 
 export default function (node: ElementNode): boolean {
@@ -31,10 +31,35 @@ export default function (node: ElementNode): boolean {
 
   // padding order: Top, Right, Bottom, Left
   const nodePadding = node.padding;
-  const paddingTop = node.paddingTop ?? getArrayValue(nodePadding, 0);
-  const paddingRight = node.paddingRight ?? getArrayValue(nodePadding, 1);
-  const paddingBottom = node.paddingBottom ?? getArrayValue(nodePadding, 2);
-  const paddingLeft = node.paddingLeft ?? getArrayValue(nodePadding, 3);
+  let pTop = 0,
+    pRight = 0,
+    pBottom = 0,
+    pLeft = 0;
+  if (nodePadding !== undefined) {
+    if (typeof nodePadding === 'number') {
+      pTop = pRight = pBottom = pLeft = nodePadding;
+    } else {
+      const len = nodePadding.length;
+      if (len === 2) {
+        pTop = pBottom = nodePadding[0] ?? 0;
+        pRight = pLeft = nodePadding[1] ?? 0;
+      } else if (len === 3) {
+        pTop = nodePadding[0] ?? 0;
+        pRight = pLeft = nodePadding[1] ?? 0;
+        pBottom = nodePadding[2] ?? 0;
+      } else if (len > 0) {
+        pTop = nodePadding[0] ?? 0;
+        pRight = nodePadding[1] ?? 0;
+        pBottom = nodePadding[2] ?? 0;
+        pLeft = nodePadding[3] ?? 0;
+      }
+    }
+  }
+
+  const paddingTop = node.paddingTop ?? pTop;
+  const paddingRight = node.paddingRight ?? pRight;
+  const paddingBottom = node.paddingBottom ?? pBottom;
+  const paddingLeft = node.paddingLeft ?? pLeft;
 
   const paddingStart = isRow ? paddingLeft : paddingTop;
   const paddingEnd = isRow ? paddingRight : paddingBottom;
@@ -52,20 +77,24 @@ export default function (node: ElementNode): boolean {
     return false;
   }
 
-  // Optimize arrays caching
-  const processableChildrenIndices: number[] = [];
+  if (numChildren > processableChildrenIndices.length) {
+    ensureCapacity(numChildren);
+  }
+
+  let numProcessedChildren = 0;
   let hasOrder = false;
   let totalFlexGrow = 0;
   let totalFlexShrink = 0;
 
   for (let i = 0; i < numChildren; i++) {
     const c = children[i]!;
+    const type = c._type;
 
-    if (isElementText(c) && c.text && !(c.width || c.height)) {
+    if (type === 'textNode' && (c as any).text && !(c.width || c.height)) {
       return false; // specific text layout constraint
     }
 
-    if (isTextNode(c) || c.flexItem === false) {
+    if ((type as string) === 'text' || c.flexItem === false) {
       continue;
     }
 
@@ -83,36 +112,47 @@ export default function (node: ElementNode): boolean {
       totalFlexShrink += flexShrink;
     }
 
-    if (c[minDimension] && (c[dimension] || 0) < c[minDimension]) {
-      c[dimension] = c[minDimension]!;
+    const cMinDim = c[minDimension];
+    if (cMinDim) {
+      const cDim = c[dimension] || 0;
+      if (cDim < cMinDim) {
+        c[dimension] = cMinDim;
+      }
     }
 
-    if (
-      c[crossMinDimension] &&
-      (c[crossDimension] || 0) < c[crossMinDimension]
-    ) {
-      c[crossDimension] = c[crossMinDimension]!;
+    const cCrossMinDim = c[crossMinDimension];
+    if (cCrossMinDim) {
+      const cCrossDim = c[crossDimension] || 0;
+      if (cCrossDim < cCrossMinDim) {
+        c[crossDimension] = cCrossMinDim;
+      }
     }
 
-    processableChildrenIndices.push(i);
+    processableChildrenIndices[numProcessedChildren++] = i;
+  }
+
+  if (numProcessedChildren === 0) {
+    return false;
   }
 
   if (hasOrder) {
-    processableChildrenIndices.sort((aIdx, bIdx) => {
+    const indices = processableChildrenIndices.subarray(
+      0,
+      numProcessedChildren,
+    );
+    indices.sort((aIdx, bIdx) => {
       const a = children[aIdx] as ElementNode;
       const b = children[bIdx] as ElementNode;
       return (a.flexOrder || 0) - (b.flexOrder || 0);
     });
   }
 
-  // Apply reverse layout ordering
   if (isReverse || node.direction === 'rtl') {
-    processableChildrenIndices.reverse();
-  }
-
-  const numProcessedChildren = processableChildrenIndices.length;
-  if (numProcessedChildren === 0) {
-    return false;
+    const indices = processableChildrenIndices.subarray(
+      0,
+      numProcessedChildren,
+    );
+    indices.reverse();
   }
 
   const prop = isRow ? 'x' : 'y';
@@ -133,64 +173,81 @@ export default function (node: ElementNode): boolean {
   const align = node.alignItems || (node.flexWrap ? 'flexStart' : undefined);
   let containerUpdated = false;
 
-  // Resolve sizes matching old processed calculation
-  const childMainSizes = new Float32Array(numProcessedChildren);
-  const childMarginStarts = new Float32Array(numProcessedChildren);
-  const childMarginEnds = new Float32Array(numProcessedChildren);
-  const childTotalMainSizes = new Float32Array(numProcessedChildren);
-  const childCrossSizes = new Float32Array(numProcessedChildren);
-  const childMarginCrossStarts = new Float32Array(numProcessedChildren);
-  const childMarginCrossEnds = new Float32Array(numProcessedChildren);
-
   let sumOfFlexBaseSizesWithMargins = 0;
 
   for (let idx = 0; idx < numProcessedChildren; idx++) {
     const c = children[processableChildrenIndices[idx]!] as ElementNode;
+    let mTop = 0,
+      mRight = 0,
+      mBottom = 0,
+      mLeft = 0;
     const marginArray = c.margin;
-    // index mappings for margins: Top: 0, Right: 1, Bottom: 2, Left: 3
-    // if row: main = left/right (3/1),
+    if (marginArray !== undefined) {
+      if (typeof marginArray === 'number') {
+        mTop = mRight = mBottom = mLeft = marginArray;
+      } else {
+        const len = marginArray.length;
+        if (len === 2) {
+          mTop = mBottom = marginArray[0] ?? 0;
+          mRight = mLeft = marginArray[1] ?? 0;
+        } else if (len === 3) {
+          mTop = marginArray[0] ?? 0;
+          mRight = mLeft = marginArray[1] ?? 0;
+          mBottom = marginArray[2] ?? 0;
+        } else if (len > 0) {
+          mTop = marginArray[0] ?? 0;
+          mRight = marginArray[1] ?? 0;
+          mBottom = marginArray[2] ?? 0;
+          mLeft = marginArray[3] ?? 0;
+        }
+      }
+    }
+
+    const marginStart = isRow ? c.marginLeft || mLeft : c.marginTop || mTop;
+    const marginEnd = isRow
+      ? c.marginRight || mRight
+      : c.marginBottom || mBottom;
+    const marginCrossStart = isRow
+      ? c.marginTop || mTop
+      : c.marginLeft || mLeft;
+    const marginCrossEnd = isRow
+      ? c.marginBottom || mBottom
+      : c.marginRight || mRight;
+
     const flexBasis = c.flexBasis;
     const isBasisAuto = flexBasis === undefined || flexBasis === 'auto';
-    const computedBasis = isBasisAuto
-      ? c[dimension] || 0
-      : (flexBasis as number);
-    const baseMainSize = isBasisAuto
-      ? computedBasis
-      : Math.max(computedBasis, c[minDimension] || 0);
-
-    const marginStart = isRow
-      ? c.marginLeft || getArrayValue(marginArray, 3)
-      : c.marginTop || getArrayValue(marginArray, 0);
-    const marginEnd = isRow
-      ? c.marginRight || getArrayValue(marginArray, 1)
-      : c.marginBottom || getArrayValue(marginArray, 2);
-    const marginCrossStart = isRow
-      ? c.marginTop || getArrayValue(marginArray, 0)
-      : c.marginLeft || getArrayValue(marginArray, 3);
-    const marginCrossEnd = isRow
-      ? c.marginBottom || getArrayValue(marginArray, 2)
-      : c.marginRight || getArrayValue(marginArray, 1);
+    let baseMainSize = 0;
+    if (isBasisAuto) {
+      baseMainSize = c[dimension] || 0;
+    } else {
+      const computedBasis = flexBasis as number;
+      const minDimVal = c[minDimension] || 0;
+      baseMainSize = computedBasis > minDimVal ? computedBasis : minDimVal;
+    }
 
     childMainSizes[idx] = baseMainSize;
     childMarginStarts[idx] = marginStart;
     childMarginEnds[idx] = marginEnd;
-    childTotalMainSizes[idx] = baseMainSize + marginStart + marginEnd;
+    const totalMainSize = baseMainSize + marginStart + marginEnd;
+    childTotalMainSizes[idx] = totalMainSize;
     childCrossSizes[idx] = c[crossDimension] || 0;
     childMarginCrossStarts[idx] = marginCrossStart;
     childMarginCrossEnds[idx] = marginCrossEnd;
 
-    sumOfFlexBaseSizesWithMargins += childTotalMainSizes[idx]!;
+    sumOfFlexBaseSizesWithMargins += totalMainSize;
   }
+
+  let totalItemSize = sumOfFlexBaseSizesWithMargins;
 
   if ((totalFlexGrow > 0 || totalFlexShrink > 0) && numProcessedChildren > 1) {
     node.flexBoundary = node.flexBoundary || 'fixed';
 
-    const totalGapSpace =
-      numProcessedChildren > 0 ? gap * (numProcessedChildren - 1) : 0;
+    const totalGapSpace = gap * (numProcessedChildren - 1);
     const availableSpace =
       containerSize - sumOfFlexBaseSizesWithMargins - totalGapSpace;
 
     if (availableSpace > 0 && totalFlexGrow > 0) {
+      let sizeAdded = 0;
       for (let idx = 0; idx < numProcessedChildren; idx++) {
         const c = children[processableChildrenIndices[idx]!] as ElementNode;
         const flexGrowValue = c.flexGrow || 0;
@@ -201,11 +258,12 @@ export default function (node: ElementNode): boolean {
           childMainSizes[idx] = newMainSize;
           childTotalMainSizes[idx] =
             newMainSize + childMarginStarts[idx]! + childMarginEnds[idx]!;
+          sizeAdded += shareOfSpace;
         }
       }
+      totalItemSize += sizeAdded;
       node._containsFlexGrow = node._containsFlexGrow ? null : true;
     } else if (availableSpace < 0 && totalFlexShrink > 0) {
-      // Flex Shrink Phase
       let totalScaledShrinkFactor = 0;
       for (let idx = 0; idx < numProcessedChildren; idx++) {
         const c = children[processableChildrenIndices[idx]!] as ElementNode;
@@ -214,6 +272,7 @@ export default function (node: ElementNode): boolean {
       }
 
       if (totalScaledShrinkFactor > 0) {
+        let sizeShrunk = 0;
         for (let idx = 0; idx < numProcessedChildren; idx++) {
           const c = children[processableChildrenIndices[idx]!] as ElementNode;
           const flexShrinkValue = c.flexShrink || 0;
@@ -224,11 +283,12 @@ export default function (node: ElementNode): boolean {
             const sizeReduction = shrinkRatio * Math.abs(availableSpace);
             let newMainSize = childMainSizes[idx]! - sizeReduction;
 
-            // Constrain by min width/height
             const minBound = c[minDimension] || 0;
             if (newMainSize < minBound) {
               newMainSize = minBound;
             }
+
+            sizeShrunk += childMainSizes[idx]! - newMainSize;
 
             c[dimension] = newMainSize;
             childMainSizes[idx] = newMainSize;
@@ -236,6 +296,7 @@ export default function (node: ElementNode): boolean {
               newMainSize + childMarginStarts[idx]! + childMarginEnds[idx]!;
           }
         }
+        totalItemSize -= sizeShrunk;
       }
       node._containsFlexGrow = node._containsFlexGrow ? null : true;
     } else if (node._containsFlexGrow) {
@@ -243,15 +304,16 @@ export default function (node: ElementNode): boolean {
     }
   }
 
-  let totalItemSize = 0;
-  if (
-    justify === 'center' ||
-    justify === 'spaceBetween' ||
-    justify === 'spaceEvenly' ||
-    justify === 'spaceAround'
-  ) {
+  if (isRow && node._calcHeight && !node.flexCrossBoundary) {
+    let maxHeight = 0;
     for (let idx = 0; idx < numProcessedChildren; idx++) {
-      totalItemSize += childTotalMainSizes[idx]!;
+      const crossSize = childCrossSizes[idx]!;
+      if (crossSize > maxHeight) maxHeight = crossSize;
+    }
+    const newHeight = maxHeight || node.height;
+    if (newHeight !== node.height) {
+      containerUpdated = true;
+      node.height = containerCrossSize = newHeight;
     }
   }
 
@@ -280,23 +342,10 @@ export default function (node: ElementNode): boolean {
         /* no-op */
       };
 
-  if (isRow && node._calcHeight && !node.flexCrossBoundary) {
-    let maxHeight = 0;
-    for (let idx = 0; idx < numProcessedChildren; idx++) {
-      if (childCrossSizes[idx]! > maxHeight) maxHeight = childCrossSizes[idx]!;
-    }
-    const newHeight = maxHeight || node.height;
-    if (newHeight !== node.height) {
-      containerUpdated = true;
-      node.height = containerCrossSize = newHeight;
-    }
-  }
-
   let currentPos = paddingStart;
   if (justify === 'flexStart') {
     if (node.flexWrap === 'wrap') {
-      const childCrossSizeVar =
-        numProcessedChildren > 0 ? childCrossSizes[0]! : containerCrossSize;
+      const childCrossSizeVar = childCrossSizes[0]!;
       let crossCurrentPos = isWrapReverse
         ? containerCrossSize - paddingCrossEnd - childCrossSizeVar
         : paddingCrossStart;
