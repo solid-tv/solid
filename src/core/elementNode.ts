@@ -1383,7 +1383,7 @@ export class ElementNode {
       const onLayoutChanged =
         isFunction(this.onLayout) && this.onLayout.call(this, this);
 
-      if ((flexChanged || onLayoutChanged) && this.parent) {
+      if ((flexChanged || onLayoutChanged) && this.parent?.requiresLayout()) {
         addToLayoutQueue(this.parent);
       }
 
@@ -1392,9 +1392,12 @@ export class ElementNode {
         this.children.forEach((c) => {
           if (c.display === 'flex' && isElementNode(c)) {
             // calculating directly to prevent infinite loops recalculating parents
-            calculateFlex(c);
-            isFunction(c.onLayout) && c.onLayout.call(c, c);
-            addToLayoutQueue(this);
+            const childFlexChanged = calculateFlex(c);
+            const childOnLayoutChanged =
+              isFunction(c.onLayout) && c.onLayout.call(c, c);
+            if (childFlexChanged || childOnLayoutChanged) {
+              addToLayoutQueue(this);
+            }
           }
         });
       }
@@ -1628,6 +1631,8 @@ export class ElementNode {
       if (parent.requiresLayout()) {
         if (!textProps.maxWidth || !textProps.maxHeight) {
           node._layoutOnLoad();
+          // no need to layout until text is rendered
+          layoutQueue.delete(parent);
         }
       }
     } else {
