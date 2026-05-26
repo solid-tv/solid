@@ -98,11 +98,17 @@ export function onGridFocus(
 export const navigableForwardFocus: lng.ForwardFocusHandler = function () {
   const navigable = this as lngp.NavigableElement;
 
-  let selected = Math.max(navigable.selected, 0);
-
   if (this.children.length === 0) {
     return false;
   }
+
+  // Coerce to a finite, in-range integer. Without this, `selected` arriving as
+  // undefined/NaN/Infinity (e.g. from a spread of partially-defined props)
+  // turns `selected--` into an infinite loop (NaN-- stays NaN).
+  const raw = navigable.selected as unknown;
+  let selected =
+    typeof raw === 'number' && Number.isFinite(raw) ? Math.trunc(raw) : 0;
+  if (selected < 0) selected = 0;
 
   if (selected !== 0) {
     selected = lng.clamp(selected, 0, Math.max(0, this.children.length - 1));
