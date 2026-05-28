@@ -1,10 +1,10 @@
 # Components
 
-There are two building blocks provided by SolidTV Lightning: **View** & **Text**
+There are two core intrinsic elements provided by SolidTV Lightning: **`<view>`** & **`<text>`**. These are registered with the renderer and require no import.
 
 ## Creating a Counter Component
 
-The following code demonstrates how to create a simple Counter component using SolidTV and SolidTV TV. This component displays a text element with custom styles.
+The following code demonstrates how to create a simple Counter component using SolidTV. This component displays a text element with custom styles.
 
 ### Imports and Typescript
 
@@ -12,7 +12,7 @@ First, necessary functions and types are imported from `solid-js` and `@solidtv/
 
 ```jsx
 import { type Component } from 'solid-js';
-import { View, Text, type NodeProps } from '@solidtv/solid';
+import { type NodeProps } from '@solidtv/solid';
 ```
 
 ### Component Interface
@@ -31,7 +31,7 @@ The `Counter` component is defined as a SolidTV component that accepts `CounterP
 
 ```jsx
 import { type Component } from 'solid-js';
-import { View, Text, type NodeProps } from '@solidtv/solid';
+import { type NodeProps } from '@solidtv/solid';
 
 interface CounterProps extends NodeProps {
   count: number;
@@ -41,7 +41,7 @@ const styles = {
   Container: {
     width: 300
   },
-  Text: {
+  text: {
     fontSize: 24,
     contain: 'width'
   }
@@ -49,12 +49,12 @@ const styles = {
 
 const Counter: Component<CounterProps> = props => {
   return (
-    <View
+    <view
       {...props}
       style={styles.Container}
     >
-      <Text style={styles.Text}>{props.count}</Text>
-    </View>
+      <text style={styles.text}>{props.count}</text>
+    </view>
   );
 };
 ```
@@ -86,4 +86,4 @@ function App() {
 
 ## use: (Directives) in Solid
 
-SolidTV has built in [Directives](https://www.solidjs.com/docs/latest/api#use___) support via `use:` property. These only work on root elements `node` and `text`. Meaning you can't use `View` or `Text`. It is a callback function which receives a ref to the node.
+SolidTV has built in [Directives](https://www.solidjs.com/docs/latest/api#use___) support via `use:` property. These only work on root elements `node` and `text`. It is a callback function which receives a ref to the node.

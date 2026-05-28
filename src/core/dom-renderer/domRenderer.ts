@@ -230,13 +230,108 @@ function updateNodeParent(node: DOMNode | DOMText) {
   const parent = node.props.parent;
   if (parent instanceof DOMNode) {
     elMap.get(parent)!.appendChild(node.div);
+  } else {
+    node.div.parentNode?.removeChild(node.div);
   }
+}
+
+/**
+ * Builds the CSS transform string from node props (x, y, rotation, scale, mount).
+ * Returns an empty string if no transform is needed.
+ */
+function buildTransformCSS(props: IRendererNodeProps): string {
+  const transforms: string[] = [];
+
+  const { x, y } = props;
+  const hasMountX = props.mountX != null && props.mountX !== 0;
+  const hasMountY = props.mountY != null && props.mountY !== 0;
+
+  if (x !== 0) transforms.push(`translateX(${x}px)`);
+  if (hasMountX) transforms.push(`translateX(${-props.mountX * 100}%)`);
+
+  if (y !== 0) transforms.push(`translateY(${y}px)`);
+  if (hasMountY) transforms.push(`translateY(${-props.mountY * 100}%)`);
+
+  if (props.rotation !== 0) transforms.push(`rotate(${props.rotation}rad)`);
+
+  if (props.scale !== 1 && props.scale != null) {
+    transforms.push(`scale(${props.scale})`);
+  } else {
+    if (props.scaleX !== 1) transforms.push(`scaleX(${props.scaleX})`);
+    if (props.scaleY !== 1) transforms.push(`scaleY(${props.scaleY})`);
+  }
+
+  return transforms.join(' ');
+}
+
+/**
+ * Fast path for transform-only updates (x, y, rotation, scale, mount).
+ * Skips full style rebuild but still re-evaluates viewport bounds for nodes
+ * with a texture source to drive lazy image load/unload during scroll.
+ */
+function updateTransformOnly(node: DOMNode | DOMText): void {
+  const transform = buildTransformCSS(node.props);
+  const s = node.div.style;
+
+  if (transform.length > 0) {
+    s.transform = `${transform}`;
+  } else {
+    s.transform = '';
+  }
+
+  updateRenderStateIfNeeded(node);
+}
+
+/**
+ * Recomputes the viewport bounds state for a node with a texture source and,
+ * if changed, triggers lazy image load or unload via updateRenderState.
+ */
+function updateRenderStateIfNeeded(node: DOMNode | DOMText): void {
+  if (!(node instanceof DOMNode) || node === node.stage.root) return;
+  const hasTextureSrc = nodeHasTextureSource(node);
+  if (hasTextureSrc && node.boundsDirty) {
+    const next = computeRenderStateForNode(node);
+    if (next != null) {
+      node.updateRenderState(next);
+    }
+    node.boundsDirty = false;
+  } else if (!hasTextureSrc) {
+    node.boundsDirty = false;
+  }
+}
+
+function applyLegacyObjectFit(
+  node: DOMNode,
+  img: HTMLImageElement,
+  srcPos: InstanceType<lng.TextureMap['SubTexture']>['props'] | null,
+): void {
+  const resizeMode = node.props.textureOptions?.resizeMode;
+  const clipX =
+    resizeMode?.type !== 'contain' && resizeMode?.clipX
+      ? resizeMode?.clipX
+      : 0.5;
+  const clipY =
+    resizeMode?.type !== 'contain' && resizeMode?.clipY
+      ? resizeMode?.clipY
+      : 0.5;
+  computeLegacyObjectFit(
+    node,
+    img,
+    resizeMode,
+    clipX,
+    clipY,
+    srcPos,
+    supportsObjectFit,
+    supportsObjectPosition,
+  );
 }
 
 function updateNodeStyles(node: DOMNode | DOMText) {
   const { props } = node;
 
-  let style = `position: absolute; z-index: ${props.zIndex}; opacity: ${props.alpha ?? 1};`;
+  let style = `position: absolute; z-index: ${props.zIndex};`;
+
+  if (props.alpha !== 1) style += `opacity: ${props.alpha};`;
 
   if (props.clipping) {
     style += `overflow: hidden;`;
@@ -244,36 +339,9 @@ function updateNodeStyles(node: DOMNode | DOMText) {
 
   // Transform
   {
-    let transform = '';
-
-    const { x, y } = props;
-
-    const hasMountX = props.mountX != null && props.mountX !== 0;
-    const hasMountY = props.mountY != null && props.mountY !== 0;
-
-    if (x !== 0) transform += `translateX(${x}px)`;
-    if (hasMountX) transform += `translateX(${-props.mountX * 100}%)`;
-
-    if (y !== 0) transform += `translateY(${y}px)`;
-    if (hasMountY) transform += `translateY(${-props.mountY * 100}%)`;
-
-    if (props.rotation !== 0) transform += `rotate(${props.rotation}rad)`;
-
-    if (props.scale !== 1 && props.scale != null) {
-      transform += `scale(${props.scale})`;
-    } else {
-      if (props.scaleX !== 1) transform += `scaleX(${props.scaleX})`;
-      if (props.scaleY !== 1) transform += `scaleY(${props.scaleY})`;
-    }
-
+    const transform = buildTransformCSS(props);
     if (transform.length > 0) {
       style += `transform: ${transform};`;
-    }
-
-    const pivotX = props.pivotX ?? props.pivot ?? 0.5;
-    const pivotY = props.pivotY ?? props.pivot ?? 0.5;
-    if (pivotX !== 0.5 || pivotY !== 0.5) {
-      style += `transform-origin: ${pivotX * 100}% ${pivotY * 100}%;`;
     }
   }
 
@@ -436,10 +504,9 @@ function updateNodeStyles(node: DOMNode | DOMText) {
     let imgStyle = '';
     let hasDivBgTint = false;
 
+    let hasTint = false;
     if (rawImgSrc) {
-      needsBackgroundLayer = true;
-
-      const hasTint = props.color !== 0xffffffff && props.color !== 0x00000000;
+      hasTint = props.color !== 0xffffffff && props.color !== 0x00000000;
 
       if (hasTint) {
         bgStyle += `background-color: ${colorToRgba(props.color)};`;
@@ -465,6 +532,8 @@ function updateNodeStyles(node: DOMNode | DOMText) {
         'bottom: 0',
         'display: block',
         'pointer-events: none',
+        `opacity: ${node.imageLoading ? 0 : 1}`,
+        'transition: opacity 100ms linear',
       ];
 
       if (props.textureOptions.resizeMode?.type) {
@@ -497,7 +566,7 @@ function updateNodeStyles(node: DOMNode | DOMText) {
         if (supportsMixBlendMode) {
           imgStyleParts.push('mix-blend-mode: multiply');
         } else {
-          imgStyleParts.push('opacity: 0.9');
+          imgStyleParts.push('opacity: 1');
         }
       }
 
@@ -693,6 +762,16 @@ function updateNodeStyles(node: DOMNode | DOMText) {
       }
     }
 
+    // If there's still no reason to use divBg, check out tint/gradient/subtexture/radius/bgStyle
+    if (!needsBackgroundLayer && rawImgSrc) {
+      needsBackgroundLayer =
+        hasTint ||
+        !!gradient ||
+        srcPos !== null ||
+        radiusStyle !== '' ||
+        bgStyle !== '';
+    }
+
     style += radiusStyle;
 
     if (needsBackgroundLayer) {
@@ -703,13 +782,33 @@ function updateNodeStyles(node: DOMNode | DOMText) {
         node.div.insertBefore(node.divBg, node.div.firstChild);
       }
 
+      const isSyncSubtextureUpdate =
+        rawImgSrc != null &&
+        srcPos != null &&
+        !!node.imgEl &&
+        node.imgEl.complete &&
+        node.imgEl.dataset.rawSrc === rawImgSrc;
+      if (isSyncSubtextureUpdate) {
+        node.imageLoading = true;
+      }
+
       let bgLayerStyle =
-        'position: absolute; top:0; left:0; right:0; bottom:0; z-index: -1; pointer-events: none; overflow: hidden;';
+        'position: absolute; top:0; left:0; right:0; bottom:0; z-index: -1; pointer-events: none;';
+      // overflow:hidden clips the transformed imgEl to prevent sprite bleed-through
+      // for non-tinted subtextures. NOT applied when hasDivBgTint because
+      // overflow:hidden + CSS mask-image causes a 1px white border artifact on WebKit.
+      // Tinted nodes use mask-image for visual clipping, so overflow:hidden is unnecessary.
+      if (srcPos !== null && !hasDivBgTint) {
+        bgLayerStyle += 'overflow: hidden;';
+      }
       if (bgStyle) {
         bgLayerStyle += bgStyle;
       }
       if (maskStyle) {
         bgLayerStyle += maskStyle;
+      }
+      if (hasDivBgTint && srcPos != null && node.imageLoading) {
+        bgLayerStyle += 'opacity: 0;';
       }
 
       node.divBg.setAttribute('style', bgLayerStyle + radiusStyle);
@@ -738,23 +837,22 @@ function updateNodeStyles(node: DOMNode | DOMText) {
               node.lazyImageSubTextureProps,
             );
 
-            const resizeMode = (node.props.textureOptions as any)?.resizeMode;
-            const clipX = resizeMode?.clipX ?? 0.5;
-            const clipY = resizeMode?.clipY ?? 0.5;
-            computeLegacyObjectFit(
-              node,
-              node.imgEl!,
-              resizeMode,
-              clipX,
-              clipY,
-              node.lazyImageSubTextureProps,
-              supportsObjectFit,
-              supportsObjectPosition,
-            );
+            if (!node.lazyImageSubTextureProps) {
+              applyLegacyObjectFit(node, node.imgEl!, null);
+            }
+
+            // Reveal only after final fit/positioning is applied
+            if (node.imgEl) {
+              node.imageLoading = false;
+              node.imgEl.style.opacity = '1';
+            }
+            node.showBackgroundLayer();
             node.emit('loaded', payload);
           });
 
           node.imgEl.addEventListener('error', () => {
+            node.imageLoading = false;
+            node.showBackgroundLayer();
             if (node.imgEl) {
               node.imgEl.removeAttribute('src');
               node.imgEl.style.display = 'none';
@@ -780,7 +878,7 @@ function updateNodeStyles(node: DOMNode | DOMText) {
           node.divBg.appendChild(node.imgEl);
         }
 
-        node.imgEl.setAttribute('style', imgStyle);
+        node.imgEl.setAttribute('style', imgStyle + radiusStyle);
 
         if (hasDivBgTint) {
           node.imgEl.style.visibility = 'hidden';
@@ -798,6 +896,11 @@ function updateNodeStyles(node: DOMNode | DOMText) {
           node.imgEl.dataset.rawSrc === rawImgSrc
         ) {
           applySubTextureScaling(node, node.imgEl, srcPos);
+          if (node.imageLoading) {
+            node.imageLoading = false;
+            node.imgEl.style.opacity = '1';
+            node.showBackgroundLayer();
+          }
         }
         if (
           !srcPos &&
@@ -805,19 +908,7 @@ function updateNodeStyles(node: DOMNode | DOMText) {
           (!supportsObjectFit || !supportsObjectPosition) &&
           node.imgEl.dataset.rawSrc === rawImgSrc
         ) {
-          const resizeMode = (node.props.textureOptions as any)?.resizeMode;
-          const clipX = resizeMode?.clipX ?? 0.5;
-          const clipY = resizeMode?.clipY ?? 0.5;
-          computeLegacyObjectFit(
-            node,
-            node.imgEl,
-            resizeMode,
-            clipX,
-            clipY,
-            srcPos,
-            supportsObjectFit,
-            supportsObjectPosition,
-          );
+          applyLegacyObjectFit(node, node.imgEl, srcPos);
         }
       } else {
         node.lazyImagePendingSrc = null;
@@ -826,6 +917,112 @@ function updateNodeStyles(node: DOMNode | DOMText) {
           node.imgEl.remove();
           node.imgEl = undefined;
         }
+      }
+    } else if (rawImgSrc) {
+      // Image directly in node.div (without divBg) when there is no tint/gradient
+
+      // Cleanup divBg
+      if (node.divBg) {
+        node.divBg.remove();
+        node.divBg = undefined;
+      }
+
+      const isSyncSubtextureUpdate =
+        srcPos != null &&
+        !!node.imgEl &&
+        node.imgEl.complete &&
+        node.imgEl.dataset.rawSrc === rawImgSrc;
+      if (isSyncSubtextureUpdate) {
+        node.imageLoading = true;
+      }
+
+      if (!node.imgEl) {
+        node.imgEl = document.createElement('img');
+        node.imgEl.alt = '';
+        node.imgEl.crossOrigin = 'anonymous';
+        node.imgEl.setAttribute('aria-hidden', 'true');
+        node.imgEl.setAttribute('loading', 'lazy');
+        node.imgEl.removeAttribute('src');
+
+        node.imgEl.addEventListener('load', () => {
+          const payload: lng.NodeTextureLoadedPayload = {
+            type: 'texture',
+            dimensions: {
+              w: node.imgEl!.naturalWidth,
+              h: node.imgEl!.naturalHeight,
+            },
+          };
+          node.imgEl!.style.display = '';
+          applySubTextureScaling(
+            node,
+            node.imgEl!,
+            node.lazyImageSubTextureProps,
+          );
+
+          if (!node.lazyImageSubTextureProps) {
+            applyLegacyObjectFit(node, node.imgEl!, null);
+          }
+
+          if (node.imgEl) {
+            node.imageLoading = false;
+            node.imgEl.style.opacity = '1';
+          }
+          node.emit('loaded', payload);
+        });
+
+        node.imgEl.addEventListener('error', () => {
+          node.imageLoading = false;
+          if (node.imgEl) {
+            node.imgEl.removeAttribute('src');
+            node.imgEl.style.display = 'none';
+            node.imgEl.removeAttribute('data-rawSrc');
+          }
+
+          const failedSrc =
+            node.imgEl?.dataset.pendingSrc || node.lazyImagePendingSrc || '';
+
+          const payload: lng.NodeTextureFailedPayload = {
+            type: 'texture',
+            error: new Error(`Failed to load image: ${failedSrc}`),
+          };
+          node.emit('failed', payload);
+        });
+      }
+
+      node.lazyImagePendingSrc = rawImgSrc;
+      node.lazyImageSubTextureProps = srcPos;
+      node.imgEl.dataset.pendingSrc = rawImgSrc;
+
+      if (node.imgEl.parentElement !== node.div) {
+        node.div.appendChild(node.imgEl);
+      }
+
+      node.imgEl.setAttribute('style', imgStyle + radiusStyle);
+
+      if (isRenderStateInBounds(node.renderState)) {
+        node.applyPendingImageSrc();
+      } else if (!node.imgEl.dataset.rawSrc) {
+        node.imgEl.removeAttribute('src');
+      }
+
+      if (
+        srcPos &&
+        node.imgEl.complete &&
+        node.imgEl.dataset.rawSrc === rawImgSrc
+      ) {
+        applySubTextureScaling(node, node.imgEl, srcPos);
+        if (node.imageLoading) {
+          node.imageLoading = false;
+          node.imgEl.style.opacity = '1';
+        }
+      }
+      if (
+        !srcPos &&
+        node.imgEl.complete &&
+        (!supportsObjectFit || !supportsObjectPosition) &&
+        node.imgEl.dataset.rawSrc === rawImgSrc
+      ) {
+        applyLegacyObjectFit(node, node.imgEl, srcPos);
       }
     } else {
       node.lazyImagePendingSrc = null;
@@ -863,20 +1060,13 @@ function updateNodeStyles(node: DOMNode | DOMText) {
     }
   }
 
-  node.div.setAttribute('style', compactString(style));
-
-  if (node instanceof DOMNode && node !== node.stage.root) {
-    const hasTextureSrc = nodeHasTextureSource(node);
-    if (hasTextureSrc && node.boundsDirty) {
-      const next = computeRenderStateForNode(node);
-      if (next != null) {
-        node.updateRenderState(next);
-      }
-      node.boundsDirty = false;
-    } else if (!hasTextureSrc) {
-      node.boundsDirty = false;
-    }
+  const newStyle = compactString(style);
+  if (node._lastStyleStr !== newStyle) {
+    node._lastStyleStr = newStyle;
+    node.div.setAttribute('style', newStyle);
   }
+
+  updateRenderStateIfNeeded(node);
 }
 
 const textNodesToMeasure = new Set<DOMText>();
@@ -947,6 +1137,7 @@ function updateDOMTextSize(node: DOMText, emitLoaded = true): void {
         w: node.w,
         h: node.h,
       },
+      trimmedHeight: node.h,
     };
     node.emit('loaded', payload);
     node.loaded = true;
@@ -1013,12 +1204,16 @@ function scheduleUpdateDOMTextMeasurement(node: DOMText) {
       const fonts = document.fonts;
       if (fonts.status === 'loaded') {
         setTimeout(updateDOMTextMeasurements);
-      } else if (fonts.ready && typeof fonts.ready.then === 'function') {
-        fonts.ready.then(updateDOMTextMeasurements);
+      } else if (
+        fonts.ready != null &&
+        typeof fonts.ready.then === 'function'
+      ) {
+        void fonts.ready.then(updateDOMTextMeasurements);
       } else {
         setTimeout(updateDOMTextMeasurements, 500);
       }
     } else {
+      // Fallback for devices without FontFaceSet.ready()
       setTimeout(updateDOMTextMeasurements, 500);
     }
   }
@@ -1134,12 +1329,15 @@ export class DOMNode extends EventEmitter implements IRendererNode {
   divBg: HTMLElement | undefined;
   divBorder: HTMLElement | undefined;
   imgEl: HTMLImageElement | undefined;
+  imageLoading = false;
   lazyImagePendingSrc: string | null = null;
   lazyImageSubTextureProps:
     | InstanceType<lng.TextureMap['SubTexture']>['props']
     | null = null;
   boundsDirty = true;
   children = new Set<DOMNode>();
+  /** Cached result of the last updateNodeStyles call — avoids redundant setAttribute writes. */
+  _lastStyleStr: string = '';
 
   id = ++lastNodeId;
 
@@ -1174,7 +1372,7 @@ export class DOMNode extends EventEmitter implements IRendererNode {
     if (parent instanceof DOMNode) {
       parent.children.delete(this);
     }
-    this.div.parentNode!.removeChild(this.div);
+    this.div.parentNode?.removeChild(this.div);
   }
 
   get parent() {
@@ -1238,11 +1436,30 @@ export class DOMNode extends EventEmitter implements IRendererNode {
     }
   }
 
+  showBackgroundLayer() {
+    if (this.divBg) {
+      this.divBg.style.opacity = '1';
+    }
+  }
+
+  hideMaskedBackgroundLayer() {
+    if (
+      this.divBg &&
+      (this.divBg.style.maskImage || this.divBg.style.webkitMaskImage)
+    ) {
+      this.divBg.style.opacity = '0';
+    }
+  }
+
   applyPendingImageSrc() {
     if (!this.imgEl) return;
     const pendingSrc = this.lazyImagePendingSrc;
     if (!pendingSrc) return;
     if (this.imgEl.dataset.rawSrc === pendingSrc) return;
+    // Hide transient frame while source is loading and being fitted.
+    this.imageLoading = true;
+    this.imgEl.style.opacity = '0';
+    this.hideMaskedBackgroundLayer();
     this.imgEl.style.display = '';
     this.imgEl.dataset.pendingSrc = pendingSrc;
     this.imgEl.src = pendingSrc;
@@ -1258,7 +1475,7 @@ export class DOMNode extends EventEmitter implements IRendererNode {
     this.props.x = v;
     this.boundsDirty = true;
     this.markChildrenBoundsDirty();
-    updateNodeStyles(this);
+    updateTransformOnly(this);
   }
   get y() {
     return this.props.y;
@@ -1268,7 +1485,7 @@ export class DOMNode extends EventEmitter implements IRendererNode {
     this.props.y = v;
     this.boundsDirty = true;
     this.markChildrenBoundsDirty();
-    updateNodeStyles(this);
+    updateTransformOnly(this);
   }
   get w() {
     return this.props.w;
@@ -1435,7 +1652,7 @@ export class DOMNode extends EventEmitter implements IRendererNode {
     this.props.scale = v;
     this.boundsDirty = true;
     this.markChildrenBoundsDirty();
-    updateNodeStyles(this);
+    updateTransformOnly(this);
   }
   get scaleX() {
     return this.props.scaleX;
@@ -1445,7 +1662,7 @@ export class DOMNode extends EventEmitter implements IRendererNode {
     this.props.scaleX = v;
     this.boundsDirty = true;
     this.markChildrenBoundsDirty();
-    updateNodeStyles(this);
+    updateTransformOnly(this);
   }
   get scaleY() {
     return this.props.scaleY;
@@ -1455,7 +1672,7 @@ export class DOMNode extends EventEmitter implements IRendererNode {
     this.props.scaleY = v;
     this.boundsDirty = true;
     this.markChildrenBoundsDirty();
-    updateNodeStyles(this);
+    updateTransformOnly(this);
   }
   get mount() {
     return this.props.mount;
@@ -1465,7 +1682,7 @@ export class DOMNode extends EventEmitter implements IRendererNode {
     this.props.mount = v;
     this.boundsDirty = true;
     this.markChildrenBoundsDirty();
-    updateNodeStyles(this);
+    updateTransformOnly(this);
   }
   get mountX() {
     return this.props.mountX;
@@ -1475,7 +1692,7 @@ export class DOMNode extends EventEmitter implements IRendererNode {
     this.props.mountX = v;
     this.boundsDirty = true;
     this.markChildrenBoundsDirty();
-    updateNodeStyles(this);
+    updateTransformOnly(this);
   }
   get mountY() {
     return this.props.mountY;
@@ -1485,7 +1702,7 @@ export class DOMNode extends EventEmitter implements IRendererNode {
     this.props.mountY = v;
     this.boundsDirty = true;
     this.markChildrenBoundsDirty();
-    updateNodeStyles(this);
+    updateTransformOnly(this);
   }
   get pivot() {
     return this.props.pivot;
@@ -1525,7 +1742,7 @@ export class DOMNode extends EventEmitter implements IRendererNode {
     this.props.rotation = v;
     this.boundsDirty = true;
     this.markChildrenBoundsDirty();
-    updateNodeStyles(this);
+    updateTransformOnly(this);
   }
   get rtt() {
     return this.props.rtt;
@@ -1816,8 +2033,10 @@ export class DOMRendererMain implements IRendererMain {
   root: DOMNode;
   canvas: HTMLCanvasElement;
   stage: IRendererStage;
-  private eventListeners: Map<string, Set<(target: any, data: any) => void>> =
-    new Map();
+  private eventListeners: Map<
+    string,
+    Set<(target: unknown, data: unknown) => void>
+  > = new Map();
 
   constructor(
     public settings: DomRendererMainSettings,
@@ -1951,12 +2170,12 @@ export class DOMRendererMain implements IRendererMain {
   ): void;
   emit<K extends string | number>(
     event: Extract<K, string>,
-    target: any,
+    target: unknown,
     data: Parameters<any>[1],
   ): void;
   emit<K extends string | number>(
     event: Extract<K, string>,
-    targetOrData: any,
+    targetOrData: unknown,
     maybeData?: Parameters<any>[1],
   ): void {
     const listeners = this.eventListeners.get(event);

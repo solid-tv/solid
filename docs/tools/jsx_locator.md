@@ -6,7 +6,7 @@ The JSX Locator is a Babel plugin included in `@solidtv/solid` that automaticall
 
 Because the SolidJS JSX transform converts JSX into plain function calls before most Babel visitors run, a standard `JSXOpeningElement` visitor never fires. The plugin works around this by running a manual traversal inside `Program.enter`, which executes **before** the SolidJS plugin processes the file. This ensures the attributes are injected while the JSX AST is still intact.
 
-For each capitalized JSX element (i.e. a component, not a native tag like `<View>`), the plugin adds:
+For each capitalized JSX element (i.e. a component, not a native tag like `<view>`), the plugin adds:
 
 | Attribute         | Value                        | Example                              |
 | ----------------- | ---------------------------- | ------------------------------------ |

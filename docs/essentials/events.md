@@ -26,7 +26,7 @@ In addition to the lifecycle events from SolidTV, the SolidTV Renderer offers ad
 ### Example Usage:
 
 ```jsx
-<View
+<view
   onEvent={{
     loaded: (element, eventInfo) => {
       console.log('load was called');

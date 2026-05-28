@@ -55,9 +55,9 @@ https://medium.com/@chiefcll/lightning-3-the-basics-of-solidjs-e6e21d73205e
 ### Hello World
 
 ```jsx
-import { render, Text } from '@solidtv/solid';
+import { render } from '@solidtv/solid';
 
-render(() => <Text>Hello World</Text>);
+render(() => <text>Hello World</text>);
 ```
 
 For a more detailed Hello World guide check out the [Hello World](HelloWorld.md) guide.

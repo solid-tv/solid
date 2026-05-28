@@ -15,20 +15,20 @@ Below is an example illustrating how to use the `Visible` component to toggle th
 
 ```typescript
 import { createSignal } from "solid-js";
-import { View, Text, Visible } from "@solidtv/solid";
+import { Visible } from "@solidtv/solid";
 
 function App() {
   const [isVisible, setIsVisible] = createSignal(false);
 
   return (
-    <View>
-      <View autofocus onEnter={() => setIsVisible((prev) => !prev)}>
+    <view>
+      <view autofocus onEnter={() => setIsVisible((prev) => !prev)}>
         Toggle Visibility
-      </View>
+      </view>
       <Visible when={isVisible()}>
-        <Text>This message is conditionally visible.</Text>
+        <text>This message is conditionally visible.</text>
       </Visible>
-    </View>
+    </view>
   );
 }
 
@@ -38,7 +38,7 @@ export default App;
 In this example:
 
 - onEnter "Toggle Visibility" updates the `isVisible` signal.
-- The `Visible` component toggles the visibility of the `<Text>`.
+- The `Visible` component toggles the visibility of the `<text>`.
 
 ### Key Points
 

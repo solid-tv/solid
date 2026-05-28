@@ -5,14 +5,14 @@ The `<Portal>` component allows you to mount a component with a different parent
 ## Example
 
 ```jsx
-import { Portal, Text } from '@solidtv/solid';
+import { Portal } from '@solidtv/solid';
 import { GlobalHeader } from './components/globalHeader';
 
 const App = (props) => {
   return (
     <GlobalHeader id="globalHeader">
     <Portal mount="globalHeader">
-      <Text>Add some text to global header</Text>
+      <text>Add some text to global header</text>
     </Portal>
   );
 };

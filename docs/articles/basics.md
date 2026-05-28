@@ -2,7 +2,9 @@
 
 SolidTV is the fastest, full-featured frontend framework for building TV applications available today. It stands out with its superior performance, which is a game-changer when developing for low-power devices. That’s why choosing SolidTV is an excellent choice for building high-performance TV apps.
 
-![SolidTV](../images/basics/solid-lightning.svg)
+<p>
+  <img src="https://assets.solidjs.com/banner?project=Library&type=solidtv" alt="SolidTV" />
+</p>
 
 ## Quick Start
 
@@ -31,7 +33,7 @@ You’ll also see that we’re using TypeScript by default (hence `.ts` and `.ts
 Let’s take a peek inside `index.tsx` to see some of the SolidTV-specific configurations.
 
 ```jsx
-// Default font settings for all <Text> nodes
+// Default font settings for all <text> nodes
 Config.fontSettings.fontFamily = 'Roboto';
 Config.fontSettings.color = 0xffffffff;
 
@@ -50,12 +52,12 @@ Config.rendererOptions = {
 
 Here, we’re setting up a few important things:
 
-- We’re defaulting font settings for all `<Text>` nodes.
+- We’re defaulting font settings for all `<text>` nodes.
 - The `rendererOptions` allow us to pass options to the SolidTV renderer, including the number of image workers, font engines, and pixel ratios.
 
-## Routing with SolidTV Router
+## Routing with SolidJS Router
 
-Routing in SolidTV is handled with the popular [SolidTV Router](https://github.com/solidjs/solid-router), why write your own? It’s robust, fast, and flexible.
+Routing in SolidTV is handled with the popular [SolidJS Router](https://github.com/solidjs/solid-router). It’s robust, fast, and flexible.
 
 ```jsx
 // Lazy load routes easily with lazy
@@ -63,7 +65,7 @@ const TextPage = lazy(() => import('./pages/Text'));
 
 // Create the renderer and load fonts
 const { render } = createRenderer();
-loadFonts(fonts);
+await loadFonts(fonts);
 
 // Render the app using the HashRouter from SolidRouter
 render(() => (
@@ -132,20 +134,20 @@ SolidTV embraces JSX for templating, which makes the development process feel su
 
 ```jsx
 return (
-  <View
+  <view
     ref={window.APP}
     onAnnouncer={() => (announcer.enabled = !announcer.enabled)}
     onLast={() => history.back()}
     onText={() => navigate('/text')}
     onMenu={() => navigate('/')}
   >
-    <View color={0x071423ff} />
+    <view color={0x071423ff} />
     {props.children}
-  </View>
+  </view>
 );
 ```
 
-Here, our `<View>` is handling all sorts of actions, like toggling the announcer or navigating between routes. It’s also a great example of how key events naturally bubble up through the DOM, with parent components catching unhandled events from their children. This is our main App wrapper, and `props.children` is filled with a Page from the router.
+Here, our `<view>` is handling all sorts of actions, like toggling the announcer or navigating between routes. It’s also a great example of how key events naturally bubble up through the DOM, with parent components catching unhandled events from their children. This is our main App wrapper, and `props.children` is filled with a Page from the router.
 
 ## Page Components
 
@@ -153,7 +155,7 @@ Pages in SolidTV are nothing more than components themselves—simple functions 
 
 ```jsx
 const HelloWorld = (props) => {
-  return <Text>Hello World</Text>;
+  return <text>Hello World</text>;
 };
 
 export default HelloWorld;
@@ -161,16 +163,16 @@ export default HelloWorld;
 
 See how simple that is? The `HelloWorld` page is just a function that receives `props` (an object with key-value pairs) to pass around. There’s no need to define what those props are ahead of time; just treat them like a dynamic object. And the best part? There’s no performance overhead for calling these functions. You can create as many components as you want and use them freely without worrying about extra resource consumption. SolidTV’s reactivity engine ensures everything is blazing fast.
 
-## Core Components: `<View>` and `<Text>`
+## Core Elements: `<view>` and `<text>`
 
-There are two key components that you’ll rely on when building apps in SolidTV: `<View>` and `<Text>`. These correspond to the core SolidTV renderer primitives (everything's a node or text in the renderer). Let's build a simple button:
+There are two key intrinsic elements that you’ll rely on when building apps in SolidTV: `<view>` and `<text>`. These correspond to the core SolidTV renderer primitives (everything's a node or text in the renderer) and require no imports. Let's build a simple button:
 
 ```jsx
-<View width={300} height={150} color="#4169e1" borderRadius={24}>
-  <Text textAlign="center" contain="both" lineHeight={150} width={300}>
+<view width={300} height={150} color="#4169e1" borderRadius={24}>
+  <text textAlign="center" contain="both" lineHeight={150} width={300}>
     Hello World
-  </Text>
-</View>
+  </text>
+</view>
 ```
 
 Each attribute gets passed straight through to the SolidTV renderer. And remember, since SolidTV is rendering to a canvas, every element is positioned like `position: absolute` would be in HTML/CSS, giving you precise control over layout. Everything has an `x` and a `y` position which default to 0,0 if not present. We've made a simple button:
@@ -184,11 +186,11 @@ Reusability is one of the things that makes frontend frameworks so much fun. Let
 ```jsx
 export function Button(props) {
   return (
-    <View {...props} width={300} height={150} color="#4169e1" borderRadius={24}>
-      <Text textAlign="center" contain="both" lineHeight={150} width={300}>
+    <view {...props} width={300} height={150} color="#4169e1" borderRadius={24}>
+      <text textAlign="center" contain="both" lineHeight={150} width={300}>
         {props.children}
-      </Text>
-    </View>
+      </text>
+    </view>
   );
 }
 ```
@@ -200,7 +202,6 @@ Now we have a simple button component that accepts props, making it easy to cust
 We can improve our button’s flexibility by introducing a style object. This also has the benefit of keeping our styles separate from the UI, similar to how CSS works with HTML. We could import our styles from another file or leave them inline - choice is yours.
 
 ```jsx
-import { View, Text } from '@solidtv/solid';
 const buttonStyle = {
   width: 300,
   height: 150,
@@ -217,9 +218,9 @@ const textStyle = {
 };
 export function Button(props) {
   return (
-    <View {...props} style={buttonStyle}>
-      <Text style={textStyle}>{props.children}</Text>
-    </View>
+    <view {...props} style={buttonStyle}>
+      <text style={textStyle}>{props.children}</text>
+    </view>
   );
 }
 ```
@@ -247,7 +248,6 @@ One problem we have no is all the buttons are a set size... let's fix that.
 Flex is a fundamental tool for building layouts. By using [flex implementation](https://solid-tv.github.io/solid/#/flow/layout?id=flex) for Solid, we can create layouts that are responsive and easy to manage. Let’s make a button that resizes based on the size of it's text:
 
 ```jsx
-import { View, Text } from '@solidtv/solid';
 const buttonStyle = {
   display: 'flex',
   height: 150,
@@ -264,9 +264,9 @@ const textStyle = {
 
 export function Button(props) {
   return (
-    <View {...props} style={buttonStyle}>
-      <Text style={textStyle}>{props.children}</Text>
-    </View>
+    <view {...props} style={buttonStyle}>
+      <text style={textStyle}>{props.children}</text>
+    </view>
   );
 }
 ```
@@ -287,11 +287,11 @@ const SublineContainer = {
     justifyContent: "flexStart",
 }
 
-<View style={SublineContainer}>
-  <Text style={Subline}>Subline Text</Text>
-  <View width={28} height={28} src={'/assets/rt-popcorn.png'} />
-  <Text style={Subline}>More Text</Text>
-</View>
+<view style={SublineContainer}>
+  <text style={Subline}>Subline Text</text>
+  <view width={28} height={28} src={'/assets/rt-popcorn.png'} />
+  <text style={Subline}>More Text</text>
+</view>
 ```
 
 ![Popcorn in between text](../images/basics/popcorn.png)
@@ -347,9 +347,9 @@ export function Button(props) {
   };
 
   return (
-    <View {...props} style={buttonStyle}>
-      <Text>{props.children}</Text>
-    </View>
+    <view {...props} style={buttonStyle}>
+      <text>{props.children}</text>
+    </view>
   );
 }
 ```

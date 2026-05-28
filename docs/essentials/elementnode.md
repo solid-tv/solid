@@ -6,11 +6,11 @@ All JSX code is compiled into `ElementNode` class objects, which extend the Soli
 
 ```jsx
 let container;
-<View ref={container} width={300} height={100}>
-  <View width={100} height={100} color={'#FF0000'} />;
-  <View width={100} height={100} color={'#00FF00'} />;
-  <View width={100} height={100} color={'#0000FF'} />;
-</View>;
+<view ref={container} width={300} height={100}>
+  <view width={100} height={100} color={'#FF0000'} />;
+  <view width={100} height={100} color={'#00FF00'} />;
+  <view width={100} height={100} color={'#0000FF'} />;
+</view>;
 ```
 
 The above code creates an `ElementNode` with 3 children `ElementNode`s. By using Solid's `ref`, we gain direct access to the underlying node instance, allowing us to control the renderer directly.
@@ -61,7 +61,7 @@ function moveRight(this: ElementNode, e: KeyboardEvent, container: ElementNode, 
   }
 }
 
-<View
+<view
   ref={container}
   width={300}
   height={100}
@@ -69,10 +69,10 @@ function moveRight(this: ElementNode, e: KeyboardEvent, container: ElementNode, 
   onRight={moveRight}
   selected={0}
 >
-  <View width={100} height={100} color={'#FF0000'} autofocus />;
-  <View width={100} height={100} color={'#00FF00'} />;
-  <View width={100} height={100} color={'#0000FF'} />;
-</View>;
+  <view width={100} height={100} color={'#FF0000'} autofocus />;
+  <view width={100} height={100} color={'#00FF00'} />;
+  <view width={100} height={100} color={'#0000FF'} />;
+</view>;
 ```
 
 In the `moveLeft` and `moveRight` functions, we manually update the `selected` property, which tracks the focused child element. The `setFocus` method is used to apply focus to the newly selected child.
@@ -94,7 +94,7 @@ const blockStyle = {
   },
 };
 
-<View
+<view
   ref={container}
   width={300}
   height={100}
@@ -102,10 +102,10 @@ const blockStyle = {
   onRight={moveRight}
   selected={0}
 >
-  <View style={blockStyle} color={'#FF0000'} autofocus />;
-  <View style={blockStyle} color={'#00FF00'} />;
-  <View style={blockStyle} color={'#0000FF'} />;
-</View>;
+  <view style={blockStyle} color={'#FF0000'} autofocus />;
+  <view style={blockStyle} color={'#00FF00'} />;
+  <view style={blockStyle} color={'#0000FF'} />;
+</view>;
 ```
 
 Now, when a block gains focus, its `alpha` value will animate smoothly from 0.3 to 1. Read more about [states](./states.md).

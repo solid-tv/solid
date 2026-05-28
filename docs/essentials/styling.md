@@ -24,9 +24,9 @@ createEffect(() => {
 
 const [alpha, setAlpha] = createSignal(1);
 
-<View ref={columnRef} alpha={alpha()} y={90} style={Column}>
+<view ref={columnRef} alpha={alpha()} y={90} style={Column}>
   // ...add some children
-</View>;
+</view>;
 ```
 
 The `style` attribute accepts an object of properties that are passed to the SolidTV Renderer when the component is initially created. Once set, the `style` object remains **read-only** and will not be reapplied if it changes after the initial creation. This read-only nature allows the `style` object to be reused across multiple components. However, properties specified directly in the JSX will take precedence over those in the `style` object, enabling you to override styles for individual components. After the component is created, you can update properties via signals or imperatively using a reference to the component.
@@ -250,7 +250,7 @@ The following props are aliases to help with layout and ShaderEffects:
 
 ### Component Defaults
 
-`<View>` components without specified width and height values will inherit the dimensions of their parent, adjusted by their `x` and `y` values. If `x` and `y` are not specified, they default to 0, 0. The `<Text>` component does not require any properties. When placed inside a flex container, the `<Text>` component will automatically update its width and height upon loading.
+`<view>` elements without specified width and height values will inherit the dimensions of their parent, adjusted by their `x` and `y` values. If `x` and `y` are not specified, they default to 0, 0. The `<text>` element does not require any properties. When placed inside a flex container, the `<text>` element will automatically update its width and height upon loading.
 
 ### Colors
 
@@ -283,7 +283,7 @@ const style = {
 ```jsx
 import { deg2Rad } from '@solidtv/solid';
 
-<View
+<view
   effects={{
     linearGradient: {
       angle: deg2Rad(225),
@@ -297,7 +297,7 @@ import { deg2Rad } from '@solidtv/solid';
 ```
 
 ```jsx
-<View
+<view
   width={300}
   height={300}
   effects={{

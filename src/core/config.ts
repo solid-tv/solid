@@ -24,10 +24,29 @@ import {
 export const isDev = !!(import.meta.env && import.meta.env.DEV);
 
 /** Whether the DOM renderer is used instead of `@solidtv/renderer` */
-export const DOM_RENDERING = globalThis.SOLIDTV_DOM_RENDERING === true;
+export const DOM_RENDERING =
+  typeof SOLIDTV_DOM_RENDERING !== 'undefined' &&
+  SOLIDTV_DOM_RENDERING === true;
 
 /** Whether element shaders are enabled */
-export const SHADERS_ENABLED = globalThis.SOLIDTV_DISABLE_SHADERS !== true;
+export const SHADERS_ENABLED =
+  typeof SOLIDTV_DISABLE_SHADERS === 'undefined' ||
+  SOLIDTV_DISABLE_SHADERS !== true;
+
+/**
+ * True when the DOM renderer is both built in (`DOM_RENDERING`) and turned on
+ * at runtime (`Config.domRendererEnabled`). `Config.domRendererEnabled` is
+ * mutable up until the renderer starts, so this is a function rather than a
+ * constant.
+ *
+ * NOTE: do not use this to gate code paths whose dead-code elimination matters
+ * (e.g. branches that reference DOM-renderer-only modules). Bundlers don't
+ * inline this call, so the gated branch — and its imports — stay live. In
+ * those spots inline `DOM_RENDERING && Config.domRendererEnabled` so the
+ * `DOM_RENDERING` build constant can collapse the branch.
+ */
+export const isDomRendererActive = () =>
+  DOM_RENDERING && Config.domRendererEnabled;
 
 /**
   RUNTIME LIGHTNING CONFIGURATION \
@@ -44,7 +63,6 @@ export interface Config {
   animationsEnabled: boolean;
   fontSettings: Partial<TextProps>;
   rendererOptions?: Partial<RendererMainSettings> | DomRendererMainSettings;
-  setActiveElement: (elm: ElementNode) => void;
   focusStateKey: DollarString;
   lockStyles?: boolean;
   fontWeightAlias?: Record<string, number | string>;
@@ -79,7 +97,6 @@ export const Config: Config = {
     bold: 700,
     black: 900,
   },
-  setActiveElement: () => {},
   focusStateKey: '$focus',
   lockStyles: true,
   rendererOptions: {},

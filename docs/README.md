@@ -1,8 +1,8 @@
 <p>
-  <img src="https://assets.solidjs.com/banner?project=Library&type=solid-lightning" alt="SolidTVJS" />
+  <img src="https://assets.solidjs.com/banner?project=Library&type=solidtv" alt="SolidTV" />
 </p>
 
-`@solidtv/solid` is an integration for the [SolidTV Renderer](https://github.com/lightning-js/renderer) built with [SolidTV](https://www.solidjs.com/) [Universal Renderer](https://github.com/solidjs/solid/releases/tag/v1.2.0). It allows you to declaratively construct lightning nodes with SolidTV reactive primitives. It includes everything you need to rapidly build the performant TV Apps.
+`@solidtv/solid` is an integration for the [SolidTV Renderer](https://github.com/solid-tv/renderer) built with [SolidJS](https://www.solidjs.com/) [Universal Renderer](https://github.com/solidjs/solid/releases/tag/v1.2.0). It allows you to declaratively construct WebGL nodes with SolidJS reactive primitives. It includes everything you need to rapidly build performant TV Apps.
 
 ## Starter Template
 

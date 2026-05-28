@@ -17,7 +17,7 @@ const [holdRight, releaseRight] = useHold({
   performOnEnterImmediately: true,
 });
 
-<View onRight={holdRight} onRightRelease={releaseRight} />;
+<view onRight={holdRight} onRightRelease={releaseRight} />;
 ```
 
 ---

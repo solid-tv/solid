@@ -45,7 +45,7 @@ function resetFocusStack() {
   clearFocusStack();
 }
 
-<View forwardFocus={restoreFocus} onBlur={storeFocus}>
+<view forwardFocus={restoreFocus} onBlur={storeFocus}>
 ```
 
 ## API
@@ -76,10 +76,10 @@ function MyComponent() {
   const { storeFocus, restoreFocus, clearFocusStack } = useFocusStack();
 
   return (
-    <View>
+    <view>
       <LeftNav onFocus={storeFocus} />
       <Button onClick={restoreFocus}>Restore Focus</Button>
-    </View>
+    </view>
   );
 }
 ```

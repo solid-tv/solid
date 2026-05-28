@@ -18,7 +18,7 @@ export type UseHoldProps = {
  *   performOnEnterImmediately: true
  * });
  *
- * <View
+ * <view
  *   onRight={holdRight}
  *   onRightRelease={releaseRight}
  * />

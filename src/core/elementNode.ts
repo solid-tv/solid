@@ -6,6 +6,8 @@ import {
   type AnimationSettings,
   type ElementText,
   type Styles,
+  type AnimationEvents,
+  type AnimationEventHandler,
   AddColorString,
   TextProps,
   type OnEvent,
@@ -23,7 +25,6 @@ const calculateFlex = import.meta.env?.VITE_USE_NEW_FLEX
 import {
   log,
   isArray,
-  isFunc,
   keyExists,
   isINode,
   isElementNode,
@@ -32,7 +33,12 @@ import {
   isFunction,
   spliceItem,
 } from './utils.js';
-import { Config, DOM_RENDERING, isDev, SHADERS_ENABLED } from './config.js';
+import {
+  Config,
+  isDev,
+  SHADERS_ENABLED,
+  isDomRendererActive,
+} from './config.js';
 import type {
   RendererMain,
   INode,
@@ -52,6 +58,7 @@ import {
   setActiveElement,
   FocusNode,
 } from './focusManager.js';
+import { initClickInspector } from './clickInspector.js';
 
 import {
   IRendererNode,
@@ -75,9 +82,20 @@ let postMutationQueued = false;
 let nextActiveElement: ElementNode | null = null;
 let deferredFocusElement: ElementNode | null = null;
 const layoutQueue = new Set<ElementNode>();
-export const elementDeleteQueue: ElementNode[] = [];
+const elementDeleteQueue: ElementNode[] = [];
 
-export function schedulePostMutation() {
+export function enqueueDelete(node: ElementNode, n: number): void {
+  if (node._queueDelete === undefined) {
+    node._queueDelete = n;
+    if (elementDeleteQueue.push(node) === 1) {
+      schedulePostMutation();
+    }
+  } else {
+    node._queueDelete += n;
+  }
+}
+
+function schedulePostMutation() {
   if (postMutationQueued) return;
   postMutationQueued = true;
   if ('reprocessUpdates' in renderer.stage && renderer.stage.reprocessUpdates) {
@@ -92,7 +110,7 @@ function runPostMutation() {
   // Phase 1: delete-flush
   if (elementDeleteQueue.length > 0) {
     for (const el of elementDeleteQueue) {
-      if (Number(el._queueDelete) < 0) {
+      if ((el._queueDelete ?? 0) < 0) {
         el.destroy();
       }
       el._queueDelete = undefined;
@@ -144,16 +162,25 @@ function buildFontTemplate() {
         _fontFamilyIdx = tpl.length;
         _fontFamilyWithWeight = `${fs.fontFamily}${fs.fontWeight || ''}`;
       }
-      tpl.push([key, (fs as any)[key]]);
+      tpl.push([key, fs[key]]);
     }
   }
   _fontTemplate = tpl;
 }
 
+const EFFECT_SHADER_KEYS = [
+  'border',
+  'borderTop',
+  'borderRight',
+  'borderBottom',
+  'borderLeft',
+  'shadow',
+] as const satisfies ReadonlyArray<keyof StyleEffects>;
+
 const parseAndAssignShaderProps = (
   prefix: string,
-  obj: Record<string, any>,
-  props: Record<string, any> = {},
+  obj: Record<string, unknown>,
+  props: Record<string, unknown> = {},
 ) => {
   if (!obj) return;
 
@@ -197,7 +224,7 @@ function getPropertyAlias(name: string) {
   return name;
 }
 
-export const LightningRendererNumberProps = [
+const LightningRendererNumberProps = [
   'alpha',
   'color',
   'colorTop',
@@ -279,6 +306,8 @@ declare global {
   }
 }
 
+initClickInspector();
+
 export type RendererNode = AddColorString<
   Partial<
     NewOmit<
@@ -294,7 +323,6 @@ export interface ElementNode extends RendererNode, FocusNode {
   // Properties
   /** @internal for managing series of insertions and deletions */
   _queueDelete?: number;
-  preserve?: boolean;
   _animationQueue?:
     | Array<{
         props: Partial<INodeAnimateProps<CoreShaderNode>>;
@@ -673,7 +701,18 @@ export interface ElementNode extends RendererNode, FocusNode {
     | Record<string, AnimationSettings | undefined | true | false>
     | true
     | false;
-
+  /**
+   * Optional handlers for animation events.
+   *
+   * Available animation events:
+   * - 'animating': Fired when the animation starts.
+   * - 'stopped': Fired (via setTimeout for the animation duration) when the animation completes.
+   *
+   * Each event handler is optional and maps to a corresponding event.
+   *
+   * @see https://lightning-tv.github.io/solid/#/essentials/transitions?id=animation-callbacks
+   */
+  onAnimation?: Partial<Record<AnimationEvents, AnimationEventHandler>>;
   /** Optional handler for when the element is created and rendered.
    *
    * @see https://lightning-tv.github.io/solid/#/flow/ondestroy
@@ -685,7 +724,7 @@ export interface ElementNode extends RendererNode, FocusNode {
    *
    * @see https://lightning-tv.github.io/solid/#/flow/ondestroy
    */
-  onDestroy?: (this: ElementNode, el: ElementNode) => Promise<any> | void;
+  onDestroy?: (this: ElementNode, el: ElementNode) => Promise<void> | void;
   /**
    * Optional handlers for when the element is rendered—after creation and when switching parents.
    *
@@ -790,6 +829,25 @@ export class ElementNode {
     return this.lng.shader;
   }
 
+  /**
+   * Commit a built shader-props target back to `this.lng.shader`. When the
+   * node is already rendered we either convert the props into a real shader
+   * (first time) or self-assign so the DOM renderer's setter reapplies style;
+   * pre-render we just attach the bag for the upcoming `render()`.
+   */
+  _writeShaderTarget(target: unknown) {
+    if (this.rendered) {
+      if (!this.lng.shader) {
+        this.lng.shader = Config.convertToShader(this, target as StyleEffects);
+      } else if (isDomRendererActive()) {
+        // eslint-disable-next-line no-self-assign -- lng.shader is a setter, force style update
+        this.lng.shader = this.lng.shader;
+      }
+    } else {
+      this.lng.shader = target;
+    }
+  }
+
   set effects(v: StyleEffects) {
     if (!SHADERS_ENABLED) return;
     let target = this.lng.shader || {};
@@ -798,27 +856,11 @@ export class ElementNode {
     }
     if (v.rounded) target.radius = v.rounded.radius;
     if (v.borderRadius) target.radius = v.borderRadius;
-    if (v.border) parseAndAssignShaderProps('border', v.border, target);
-    if (v.borderTop)
-      parseAndAssignShaderProps('borderTop', v.borderTop, target);
-    if (v.borderRight)
-      parseAndAssignShaderProps('borderRight', v.borderRight, target);
-    if (v.borderBottom)
-      parseAndAssignShaderProps('borderBottom', v.borderBottom, target);
-    if (v.borderLeft)
-      parseAndAssignShaderProps('borderLeft', v.borderLeft, target);
-    if (v.shadow) parseAndAssignShaderProps('shadow', v.shadow, target);
-
-    if (this.rendered) {
-      if (!this.lng.shader) {
-        this.lng.shader = Config.convertToShader(this, target);
-      } else if (DOM_RENDERING && Config.domRendererEnabled) {
-        // eslint-disable-next-line no-self-assign -- lng.shader is a setter, force style update
-        this.lng.shader = this.lng.shader;
-      }
-    } else {
-      this.lng.shader = target;
+    for (const k of EFFECT_SHADER_KEYS) {
+      if (v[k]) parseAndAssignShaderProps(k, v[k], target);
     }
+
+    this._writeShaderTarget(target);
   }
 
   set id(id: string) {
@@ -873,7 +915,7 @@ export class ElementNode {
       (Config.fontWeightAlias &&
         (Config.fontWeightAlias[v as string] as number | string)) ??
       v;
-    (this.lng as any).fontFamily =
+    (this.lng as ElementNode).fontFamily =
       `${this.fontFamily || Config.fontSettings?.fontFamily}${weight}`;
   }
 
@@ -883,7 +925,7 @@ export class ElementNode {
 
   set fontFamily(v) {
     this._fontFamily = v;
-    (this.lng as any).fontFamily = v;
+    (this.lng as ElementNode).fontFamily = v;
   }
 
   get fontFamily() {
@@ -977,26 +1019,47 @@ export class ElementNode {
           { [name]: value },
           animationSettings,
         );
+        this._fireAnimationEvents(name, value, animationSettings);
         return animationController.start();
       }
 
-      return (this.lng as any).animateProp(
+      const result = (this.lng as INode).animateProp(
         name,
         value,
         animationSettings || this.animationSettings || {},
       );
+      this._fireAnimationEvents(name, value, animationSettings);
+      return result;
     }
 
     (this.lng[name as keyof (IRendererNode | INode)] as number | string) =
       value;
   }
 
+  _fireAnimationEvents(
+    name: string,
+    value: number,
+    animationSettings?: AnimationSettings,
+  ) {
+    if (!this.onAnimation) return;
+    const settings = animationSettings || this.animationSettings;
+    const { animating, stopped } = this.onAnimation;
+    if (animating) {
+      animating.call(this, name, value);
+    }
+    if (stopped) {
+      const total = (settings?.duration ?? 0) + (settings?.delay ?? 0);
+      setTimeout(() => stopped.call(this, name, value), total);
+    }
+  }
+
   animate(
     props: Partial<INodeAnimateProps<CoreShaderNode>>,
     animationSettings?: AnimationSettings,
   ): IAnimationController {
-    isDev &&
+    if (isDev) {
       assertTruthy(this.rendered, 'Node must be rendered before animating');
+    }
     return (this.lng as IRendererNode).animate(
       props,
       animationSettings || this.animationSettings || {},
@@ -1057,7 +1120,7 @@ export class ElementNode {
     if (this.rendered) {
       // can be 0
       if (this.forwardFocus !== undefined) {
-        if (isFunc(this.forwardFocus)) {
+        if (isFunction(this.forwardFocus)) {
           if (this.forwardFocus.call(this, this) !== false) {
             return;
           }
@@ -1106,7 +1169,7 @@ export class ElementNode {
       // If onDestroy returns a promise, wait for it to resolve before destroying
       // Useful with animations waitUntilStopped method which returns promise
       if (destroyPromise instanceof Promise) {
-        destroyPromise.then(() => this._destroy());
+        void destroyPromise.then(() => this._destroy());
       } else {
         this._destroy();
       }
@@ -1237,6 +1300,14 @@ export class ElementNode {
     return this.alpha === 0;
   }
 
+  get preserve(): boolean {
+    return this._queueDelete === 0;
+  }
+
+  set preserve(v: boolean) {
+    this._queueDelete = v ? 0 : undefined;
+  }
+
   /**
    * Sets the autofocus state of the element.
    * When set to a truthy value, the element will automatically gain focus.
@@ -1245,7 +1316,7 @@ export class ElementNode {
    * @param val - A value to determine if the element should autofocus.
    *              A truthy value enables autofocus, otherwise disables it.
    */
-  set autofocus(val: any) {
+  set autofocus(val: boolean | undefined) {
     this._autofocus = val;
     // Defer setFocus so children render first (forwardFocus needs them).
     // The post-mutation focus phase calls setFocus on this element.
@@ -1296,7 +1367,7 @@ export class ElementNode {
     return this._requiresLayout;
   }
 
-  set updateLayoutOn(v: any) {
+  set updateLayoutOn(_v: unknown) {
     this.updateLayout();
   }
 
@@ -1306,7 +1377,7 @@ export class ElementNode {
 
   updateLayout() {
     if (this.hasChildren) {
-      isDev && log('Layout: ', this);
+      if (isDev) log('Layout: ', this);
 
       if (this.display === 'flex' && this.flexGrow && this.width === 0) {
         return;
@@ -1315,7 +1386,7 @@ export class ElementNode {
       const flexChanged = this.display === 'flex' && calculateFlex(this);
       layoutQueue.delete(this);
       const onLayoutChanged =
-        isFunc(this.onLayout) && this.onLayout.call(this, this);
+        isFunction(this.onLayout) && this.onLayout.call(this, this);
 
       if ((flexChanged || onLayoutChanged) && this.parent) {
         addToLayoutQueue(this.parent);
@@ -1327,7 +1398,7 @@ export class ElementNode {
           if (c.display === 'flex' && isElementNode(c)) {
             // calculating directly to prevent infinite loops recalculating parents
             calculateFlex(c);
-            isFunc(c.onLayout) && c.onLayout.call(c, c);
+            isFunction(c.onLayout) && c.onLayout.call(c, c);
             addToLayoutQueue(this);
           }
         });
@@ -1336,7 +1407,18 @@ export class ElementNode {
   }
 
   _stateChanged() {
-    isDev && log('State Changed: ', this, this.states);
+    if (isDev) log('State Changed: ', this, this.states);
+
+    if (isDev) {
+      const div = (this.lng as IRendererNode)?.div;
+      if (div) {
+        if (this.states.length > 0) {
+          div.dataset.states = this.states.join(' ');
+        } else {
+          delete div.dataset.states;
+        }
+      }
+    }
 
     if (this.forwardStates) {
       // apply states to children first
@@ -1542,7 +1624,7 @@ export class ElementNode {
         props.shader = Config.convertToShader(node, props.shader);
       }
 
-      isDev && log('Rendering: ', this, props);
+      if (isDev) log('Rendering: ', this, props);
 
       node.lng = renderer.createTextNode(
         props as Partial<ITextNodeProps> & Partial<IRendererTextNodeProps>,
@@ -1582,7 +1664,7 @@ export class ElementNode {
         props.shader = Config.convertToShader(node, props.shader);
       }
 
-      isDev && log('Rendering: ', this, props);
+      if (isDev) log('Rendering: ', this, props);
 
       node.lng = renderer.createNode(
         props as Partial<INodeProps<any>> & Partial<IRendererNodeProps>,
@@ -1593,7 +1675,7 @@ export class ElementNode {
 
         for (const child of node.children) {
           if (isElementNode(child) && isINode(child.lng)) {
-            child.lng.parent = node.lng as any;
+            child.lng.parent = node.lng as INode;
           }
         }
       }
@@ -1621,15 +1703,20 @@ export class ElementNode {
     }
 
     // L3 Inspector adds div to the lng object
-    const div: HTMLElement | undefined = (node.lng as any)?.div;
-    if (div) div.element = node;
+    const div: HTMLElement | undefined = (node.lng as IRendererNode)?.div;
+    if (isDev && div) {
+      div.element = node;
+      if (node._states && node._states.length > 0) {
+        div.dataset.states = node._states.join(' ');
+      }
+    }
 
     if (node._type === NodeType.Element) {
       // only element nodes will have children that need rendering
       const numChildren = node.children.length;
       for (let i = 0; i < numChildren; i++) {
         const c = node.children[i];
-        isDev && assertTruthy(c, 'Child is undefined');
+        if (isDev) assertTruthy(c, 'Child is undefined');
         // Text elements sneak in from Solid creating tracked nodes
         if (isElementNode(c)) {
           c.render();
@@ -1642,7 +1729,7 @@ export class ElementNode {
       schedulePostMutation();
     }
 
-    node._autofocus && node.setFocus();
+    if (node._autofocus) node.setFocus();
   }
 }
 
@@ -1721,16 +1808,7 @@ export function shaderAccessor<T extends Record<string, any> | number>(
         parseAndAssignShaderProps(key, value, target);
       }
 
-      if (this.rendered) {
-        if (!this.lng.shader) {
-          this.lng.shader = Config.convertToShader(this, target);
-        } else if (DOM_RENDERING && Config.domRendererEnabled) {
-          // eslint-disable-next-line no-self-assign -- lng.shader is a setter, force style update
-          this.lng.shader = this.lng.shader;
-        }
-      } else {
-        this.lng.shader = target;
-      }
+      this._writeShaderTarget(target);
 
       if (animationSettings) {
         this.animate({ shaderProps: target }, animationSettings).start();

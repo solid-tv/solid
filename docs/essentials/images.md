@@ -3,10 +3,10 @@
 It's very easy to display images in your SolidTV App:
 
 ```jsx
-<View width={200} height={200} src={imgSrc} />
+<view width={200} height={200} src={imgSrc} />
 ```
 
-Just give any `View` tag a src to an image. Be sure to also give it a width and height for it to display properly. If you want to load images from filesystem, make sure to include them in the `public/` directory. Learn more about [Static Asset Handling](https://vitejs.dev/guide/assets) from Vite.
+Just give any `<view>` tag a src to an image. Be sure to also give it a width and height for it to display properly. If you want to load images from filesystem, make sure to include them in the `public/` directory. Learn more about [Static Asset Handling](https://vitejs.dev/guide/assets) from Vite.
 
 > If you lazy load images (src isn't known at time initial node is created), then you'll need to set color=0xffffffff otherwise the image won't be visible.
 
@@ -36,7 +36,7 @@ For the best performance, it's important to keep your source images as small as 
   - `type: 'contain'`: Scales the image to fit within the space without cropping.
 
 ```jsx
-<View
+<view
   src={props.imgSrc}
   width={100}
   textureOptions={{
@@ -71,7 +71,7 @@ const Thumbnail = (props) => (
     failed: handleFail,
   };
 
-  <View
+  <view
     width={200}
     height={200}
     // Add loading background color
@@ -87,7 +87,7 @@ const Thumbnail = (props) => (
 You also have the option to _colorize_ an image. Just add a `color` attribute. You can use a single color, or apply a gradient.
 
 ```jsx
-<View
+<view
   width={200}
   height={200}
   src={imgSrc}

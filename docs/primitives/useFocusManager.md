@@ -46,7 +46,7 @@ There is also an `onFocusChanged(hasFocus, currentFocusedElm, prevFocusedElm, no
 
 ```jsx
 const [hasFocus, setHasFocus] = createSignal(false);
-return <View onFocusChanged={setHasFocus}>{/* use hasFocus() */}</View>;
+return <view onFocusChanged={setHasFocus}>{/* use hasFocus() */}</view>;
 ```
 
 ### Key Handling
@@ -251,10 +251,10 @@ const App = () => {
   });
 
   return (
-    <View>
+    <view>
       <Button onEnter={() => console.log('Enter pressed')}>Button 1</Button>
       {/* More components... */}
-    </View>
+    </view>
   );
 };
 

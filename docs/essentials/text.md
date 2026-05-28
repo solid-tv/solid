@@ -1,16 +1,16 @@
 # Displaying Text
 
-We've already seen the `<Text>` Tag in action, but here it is again.
+We've already seen the `<text>` Tag in action, but here it is again.
 
 ```jsx
-<Text>Hello There</Text>
+<text>Hello There</text>
 ```
 
-Anytime you want to display text in the Application you need to wrap it in a `<Text>` tag. You can specify all the normal node props like x, y, width, height, etc as well as text specific properties:
+Anytime you want to display text in the Application you need to wrap it in a `<text>` tag. You can specify all the normal node props like x, y, width, height, etc as well as text specific properties:
 
-### Available attributes on the Text tag
+### Available attributes on the text tag
 
-The Text-tag accepts the following attributes:
+The `<text>` tag accepts the following attributes:
 
 - `color` - the color to display for the text, defaults to `white` and can be any of the supported Blits color formats (HTML, hexadecimal or rgb(a))
 - `contain` - the strategy for containing text within the bounds, can be `none` (default), `width`, or `both`.
@@ -33,11 +33,11 @@ Tags for Canvas Text Rendering (Not Recommended)
 
 ## Default Text Config
 
-You can set the default options for all `<Text>` nodes before Rendering the App in your index:
+You can set the default options for all `<text>` nodes before Rendering the App in your index:
 
 ```jsx
 import { Config } from '@solidtv/solid';
-// Set defaults for all <Text>
+// Set defaults for all <text>
 Config.fontSettings.fontFamily = 'Ubuntu';
 Config.fontSettings.color = 0xffffffff;
 Config.fontSettings.fontSize = 30;
@@ -74,11 +74,11 @@ Then you'll need to register the custom font in the AppCoreExtensions file:
 } as const];
 
 // must be called after createRenderer but before render
-loadFonts(fonts);
+await loadFonts(fonts);
 ```
 
 From this moment on you'll be able to use the font `ComicSans` anywhere in your App:
 
 ```xml
-<Text fontFamily="ComicSans">I'm Comic Sans font!</Text>
+<text fontFamily="ComicSans">I'm Comic Sans font!</text>
 ```

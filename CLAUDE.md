@@ -4,7 +4,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What This Is
 
-SolidTV (`@solidtv/solid`) — a SolidJS-based UI framework for building TV applications over WebGL/Canvas (not DOM). Navigation is directional (arrow keys/remote), not pointer-based. UI is built with `<View>`, `<Text>`, `<Row>`, `<Column>` — never DOM elements like `<div>`.
+SolidTV (`@solidtv/solid`) — a SolidJS-based UI framework for building TV applications over WebGL/Canvas (not DOM). Navigation is directional (arrow keys/remote), not pointer-based. UI is built with `<view>`, `<text>`, `<Row>`, `<Column>` — never DOM elements like `<div>`.
+
+## Code Writing Rules
+
+1. Don’t assume. Don’t hide confusion. Surface tradeoffs.
+2. Minimum code that solves the problem. Nothing speculative.
+3. Touch only what you must. Clean up only your own mess.
+4. Define success criteria. Loop until verified.
 
 ## Commands
 
@@ -24,7 +31,7 @@ Run a single test file: `npx vitest tests/flex.spec.ts`
 
 ### Rendering Pipeline
 
-- `src/render.ts` — Creates a SolidJS universal renderer (`solid-js/universal`) with custom node operations (`solidOpts.ts`). Exports `View`, `Text`, `Dynamic`, `createRenderer`, and re-exports SolidJS flow components (`For`, `Show`, `Switch`, etc.).
+- `src/render.ts` — Creates a SolidJS universal renderer (`solid-js/universal`) with custom node operations (`solidOpts.ts`). Exports `Dynamic`, `createRenderer`, and re-exports SolidJS flow components (`For`, `Show`, `Switch`, etc.). The core `<view>` and `<text>` intrinsic elements are registered with the renderer.
 - `src/core/elementNode.ts` — `ElementNode` is the core node abstraction. Manages properties, children, flex layout, focus, states, animations, and syncs to the underlying `@solidtv/renderer` INode.
 - `src/core/focusManager.ts` — Handles keyboard/remote input, focus path traversal, and key mapping. Focus walks the component tree via `onUp`/`onDown`/`onLeft`/`onRight`/`onEnter` handlers.
 - `src/core/config.ts` — Runtime `Config` object (debug flags, animation settings, font defaults, focus state key).
@@ -38,7 +45,7 @@ Run a single test file: `npx vitest tests/flex.spec.ts`
 
 ### Entry Points (package exports)
 
-- `@solidtv/solid` — main: View, Text, renderer, core node types
+- `@solidtv/solid` — main: `<view>`/`<text>` intrinsic elements, renderer, core node types
 - `@solidtv/solid/primitives` — layout components (Row, Column, Grid, Virtual, VirtualGrid), focus utilities, announcer, router helpers, Lazy/KeepAlive/Preserve
 - `@solidtv/solid/devtools` — devtools integration
 - `@solidtv/solid/shaders` — shader exports

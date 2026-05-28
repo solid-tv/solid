@@ -11,7 +11,7 @@ To ensure that elements are rendered on the screen correctly, they must have the
 
 If width and height values are not specified, components will inherit these dimensions from their parent, minus their `x` and `y` values. The default values for `x` and `y` are 0, 0.
 
-The `<Text>` component does not require any of these properties, as it will use the default text properties found in `Config`. The height of a `<Text>` node equals it's `lineHeight` or `fontSize` and the width is calculated after it's rendered.
+The `<text>` element does not require any of these properties, as it will use the default text properties found in `Config`. The height of a `<text>` node equals it's `lineHeight` or `fontSize` and the width is calculated after it's rendered.
 
 ## Flex
 
@@ -32,8 +32,6 @@ Because the engines are conditionally evaluated at build time via `import.meta.e
 ### Example
 
 ```jsx
-import { View, Text } from '@solidtv/solid';
-
 const RowStyles = {
   display: 'flex',
   justifyContent: 'flexStart',
@@ -43,15 +41,15 @@ const RowStyles = {
   y: 400,
 };
 
-<View style={RowStyles}>
-  <Text>TV Shows</Text>
-  <Text>Movies</Text>
-  <Text>Sports</Text>
-  <Text>News</Text>
-</View>;
+<view style={RowStyles}>
+  <text>TV Shows</text>
+  <text>Movies</text>
+  <text>Sports</text>
+  <text>News</text>
+</view>;
 ```
 
-When a `View` with `display: flex` contains text nodes as children, it automatically sets up a listener for the text to load, sets the width and height of the text elements, and then calls `updateLayout` on the container to recalculate the flex layout.
+When a `<view>` with `display: flex` contains text nodes as children, it automatically sets up a listener for the text to load, sets the width and height of the text elements, and then calls `updateLayout` on the container to recalculate the flex layout.
 
 ### Flex Properties
 
@@ -78,10 +76,10 @@ When a `View` with `display: flex` contains text nodes as children, it automatic
 Flex grow is useful for laying out items where one item you may not know the size and you want the other items to take up the remainder of the space:
 
 ```jsx
-<View width={600} display="flex" gap={20} height={42} y={100} x={150}>
-  <Text fontSize={42}>Flex Grow</Text>
-  <View flexGrow={1} height={4} y={19} color={'#ff3000'} />
-</View>
+<view width={600} display="flex" gap={20} height={42} y={100} x={150}>
+  <text fontSize={42}>Flex Grow</text>
+  <view flexGrow={1} height={4} y={19} color={'#ff3000'} />
+</view>
 ```
 
 Produces:
@@ -90,12 +88,12 @@ Produces:
 We can also have multiple elements with flexGrow property. Flex will divide up the remaining space and give flexGrow \* size to each item.
 
 ```jsx
-<View width={600} display="flex" gap={20} height={42} y={100} x={150}>
-  <Text fontSize={42}>Flex Grow</Text>
-  <View flexGrow={1} height={4} y={19} color={'#ff3000'} />
-  <View flexGrow={3} height={4} y={19} color={'#ff30ff'} />
-  <View flexGrow={1} height={4} y={19} color={'#003C0F'} />
-</View>
+<view width={600} display="flex" gap={20} height={42} y={100} x={150}>
+  <text fontSize={42}>Flex Grow</text>
+  <view flexGrow={1} height={4} y={19} color={'#ff3000'} />
+  <view flexGrow={3} height={4} y={19} color={'#ff30ff'} />
+  <view flexGrow={1} height={4} y={19} color={'#003C0F'} />
+</view>
 ```
 
 Produces:

@@ -18,7 +18,7 @@ import {
   type Component,
 } from 'solid-js';
 import type { SolidNode } from './types.js';
-import { activeElement, setActiveElement } from './activeElement.js';
+import { activeElement } from './core/focusManager.js';
 
 const solidRenderer = solidCreateRenderer<SolidNode>(nodeOpts);
 
@@ -37,8 +37,6 @@ export function createRenderer(
   const options = rendererOptions || Config.rendererOptions;
 
   renderer = startLightningRenderer(options!, node || 'app');
-  //Prevent this from happening automatically
-  Config.setActiveElement = setActiveElement;
   rootNode.lng = renderer.root!;
   rootNode.rendered = true;
   renderer.on('idle', () => {
@@ -134,6 +132,7 @@ export function Dynamic<T extends Record<string, any>>(
 
       case 'string': {
         const el = createElement(component);
+        (el as { componentName?: string }).componentName = component;
         spread(el, others);
         return el;
       }
@@ -145,12 +144,18 @@ export function Dynamic<T extends Record<string, any>>(
 }
 
 // Dont use JSX as it creates circular dependencies and causes trouble with the playground.
+/**
+ * @deprecated Use the lowercase `<view>` intrinsic element instead. The `View` component will be removed in a future release.
+ */
 export const View = (props: NodeProps) => {
   const el = createElement('node');
   spread(el, props, false);
   return el as unknown as JSXElement;
 };
 
+/**
+ * @deprecated Use the lowercase `<text>` intrinsic element instead. The `Text` component will be removed in a future release.
+ */
 export const Text = (props: TextProps) => {
   const el = createElement('text');
   spread(el, props, false);

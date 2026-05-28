@@ -54,7 +54,7 @@ createEffect(() => {
   // toggle disabled on / off
   myButton.states.toggle('$disabled');
 });
-<View ref={myButton} style={Button} />;
+<view ref={myButton} style={Button} />;
 ```
 
 Note: states always use the values in the style object. If you have a button with a base color, and a disabled and focus state which both change the color, the value applied to the button will be determined from the style object. You won't be able to set the color of the button on the JSX `<Button color={???}>` because as the states change, we need to determine which color to apply. If you need this functionality, you should pass in the color to the style object.
@@ -92,7 +92,7 @@ If an element is both focused and active, the `$focus` styles will take preceden
 You can also override the global `stateOrder` on a per-element basis by using the `stateOrder` attribute:
 
 ```jsx
-<View stateOrder={['$active', '$focus']}>...</View>
+<view stateOrder={['$active', '$focus']}>...</view>
 ```
 
 This is useful if you have a specific component that needs a different specificity than the rest of the application.
@@ -135,9 +135,9 @@ function Button(props) {
   };
 
   return (
-    <View {...props} forwardStates style={ButtonContainer}>
-      <Text style={ButtonText}>{props.children}</Text>
-    </View>
+    <view {...props} forwardStates style={ButtonContainer}>
+      <text style={ButtonText}>{props.children}</text>
+    </view>
   );
 }
 ```

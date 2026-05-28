@@ -1,5 +1,5 @@
 import { type Component, createRenderEffect, createSignal } from 'solid-js';
-import { renderer, type NodeProps } from '@solidtv/solid';
+import { ImageTexture, renderer, type NodeProps } from '@solidtv/solid';
 import { Config } from '../core/config.js';
 
 export interface ImageProps extends NodeProps {
@@ -10,7 +10,7 @@ export interface ImageProps extends NodeProps {
 }
 
 export const Image: Component<ImageProps> = (props) => {
-  const [texture, setTexture] = createSignal<any>(null);
+  const [texture, setTexture] = createSignal<ImageTexture | null>(null);
   const [src, setSrc] = createSignal<string | null>(props.placeholder || null);
 
   createRenderEffect(() => {

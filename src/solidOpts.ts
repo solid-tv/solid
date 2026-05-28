@@ -5,30 +5,9 @@ import {
   TextNode,
   log,
   type ElementText,
-  elementDeleteQueue,
-  schedulePostMutation,
+  enqueueDelete,
 } from './core/index.js';
 import type { SolidNode, SolidRendererOptions } from './types.js';
-
-Object.defineProperty(ElementNode.prototype, 'preserve', {
-  get(): boolean | undefined {
-    return this._queueDelete === 0;
-  },
-  set(v: boolean) {
-    this._queueDelete = v ? 0 : undefined;
-  },
-});
-
-function pushDeleteQueue(node: ElementNode, n: number): void {
-  if (node._queueDelete === undefined) {
-    node._queueDelete = n;
-    if (elementDeleteQueue.push(node) === 1) {
-      schedulePostMutation();
-    }
-  } else {
-    node._queueDelete += n;
-  }
-}
 
 export default {
   createElement(name: string): ElementNode {
@@ -45,7 +24,7 @@ export default {
     assertTruthy(parent);
     parent.text = parent.getText();
   },
-  setProperty(node: ElementNode, name: string, value: any = true): void {
+  setProperty(node: ElementNode, name: string, value: any): void {
     node[name] = value;
   },
   insertNode(parent: ElementNode, node: SolidNode, anchor: SolidNode): void {
@@ -59,7 +38,7 @@ export default {
         node.render(true);
       }
       if (prevParent !== undefined) {
-        pushDeleteQueue(node, 1);
+        enqueueDelete(node, 1);
       }
     } else if (isElementText(parent)) {
       // TextNodes can be placed outside of <text> nodes when <Show> is used as placeholder
@@ -75,7 +54,7 @@ export default {
     parent.removeChild(node);
 
     if (node instanceof ElementNode) {
-      pushDeleteQueue(node, -1);
+      enqueueDelete(node, -1);
     } else if (isElementText(parent)) {
       // TextNodes can be placed outside of <text> nodes when <Show> is used as placeholder
       parent.text = parent.getText();

@@ -5,28 +5,28 @@
 ## Usage
 
 ```tsx
-import { createTag, View, Text } from '@solidtv/solid';
+import { createTag } from '@solidtv/solid';
 import { onCleanup } from 'solid-js';
 
 const App = () => {
   const DramaTag = createTag(
-    <View color={'#ff0000ff'} borderRadius={8} display="flex" padding={8}>
-      <Text>Drama</Text>
-    </View>,
+    <view color={'#ff0000ff'} borderRadius={8} display="flex" padding={8}>
+      <text>Drama</text>
+    </view>,
   );
 
   const NewEpisodeTag = createTag(
-    <View
+    <view
       color={'#fff'}
       borderRadius={8}
       display="flex"
       padding={8}
       effects={{ rounded: { radius: [10, 0, 10, 0] } }}
     >
-      <Text color={'#000'} fontWeight={400}>
+      <text color={'#000'} fontWeight={400}>
         New Episode
-      </Text>
-    </View>,
+      </text>
+    </view>,
   );
 
   onCleanup(() => {
@@ -35,7 +35,7 @@ const App = () => {
   });
 
   return (
-    <View
+    <view
       x={150}
       y={200}
       display="flex"
@@ -46,7 +46,7 @@ const App = () => {
     >
       <DramaTag />
       <NewEpisodeTag />
-    </View>
+    </view>
   );
 };
 ```

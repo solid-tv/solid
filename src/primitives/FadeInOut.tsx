@@ -1,4 +1,4 @@
-import { ElementNode, NodeProps, View } from '@solidtv/solid';
+import { ElementNode, NodeProps } from '@solidtv/solid';
 import { Show } from 'solid-js';
 
 interface Props {
@@ -52,7 +52,7 @@ export function FadeInOut(props: Props & NodeProps) {
 
   return (
     <Show when={props.when} keyed>
-      <View {...props} onDestroy={onDestroy} onCreate={onCreate} />
+      <view {...props} onDestroy={onDestroy} onCreate={onCreate} />
     </Show>
   );
 }

@@ -7,7 +7,7 @@ Most TVs have a 16:9 aspect ratio, so the scaling is handled proportionally usin
 Here is how you can set up and use screen resolution in your application:
 
 ```jsx
-import { render, Config, Text } from '@solidtv/solid';
+import { render, Config } from '@solidtv/solid';
 
 Config.rendererOptions = {
   appWidth: 1920,
@@ -17,7 +17,7 @@ Config.rendererOptions = {
   deviceLogicalPixelRatio: window.innerHeight / 1080,
 };
 
-render(() => <Text>Hello World</Text>);
+render(() => <text>Hello World</text>);
 ```
 
 ### Explanation:

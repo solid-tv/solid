@@ -6,15 +6,15 @@ The shader prop allows you to specify a custom shader. Most of the common use on
 const RoundedRectangle = ['RoundedRectangle', { radius: 6 }];
 function Button(props) {
   return (
-    <View
+    <view
       {...props}
       forwardStates
       style={buttonStyles.container}
       shader={RoundedRectangle}
     >
-      <View style={buttonStyles.topBar} shader={RoundedRectangle}></View>
-      <Text style={buttonStyles.text}>{props.children}</Text>
-    </View>
+      <view style={buttonStyles.topBar} shader={RoundedRectangle}></view>
+      <text style={buttonStyles.text}>{props.children}</text>
+    </view>
   );
 }
 ```
@@ -44,7 +44,7 @@ const style = {
 ```jsx
 import { deg2Rad } from '@solidtv/solid';
 
-<View
+<view
   effects={{
     linearGradient: {
       angle: deg2Rad(225),
@@ -58,7 +58,7 @@ import { deg2Rad } from '@solidtv/solid';
 ```
 
 ```jsx
-<View
+<view
   width={300}
   height={300}
   effects={{

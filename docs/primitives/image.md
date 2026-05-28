@@ -1,6 +1,6 @@
 # `Image`
 
-A component for displaying images that gracefully handles loading, placeholder, and fallback states. This has a bit of overhead so only use when you have placeholder image as well. Otherwise simple use a `<View src={someImage} />`
+A component for displaying images that gracefully handles loading, placeholder, and fallback states. This has a bit of overhead so only use when you have placeholder image as well. Otherwise simple use a `<view src={someImage} />`
 
 ### Usage
 

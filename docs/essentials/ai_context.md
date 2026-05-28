@@ -6,9 +6,9 @@
 
 - **Environment:** TV app development over WebGL (not the DOM). No pointer input; interaction is directional (Up/Down/Left/Right).
 - **Reactivity:** Uses SolidTV primitives (`createSignal`, `createEffect`, `createMemo`).
-- **Primitives:** UI is built using custom components like `<View>`, `<Text>`, `<Row>`, `<Column>`.
+- **Primitives:** UI is built using the intrinsic elements `<view>` and `<text>` (no import needed — they're registered with the renderer) plus layout components like `<Row>` and `<Column>` from `@solidtv/solid/primitives`.
 - **Patterns:** Always use functional components and modern TypeScript/JSX. Avoid classes.
-- **Assumption:** Always frame answers within the context of SolidTV + SolidTV TV environment.
+- **Assumption:** Always frame answers within the context of SolidTV environment.
 
 ## 2. Layout & Positioning
 
@@ -76,7 +76,7 @@
 
 ```tsx
 // Missing dimensions, invalid colors, using styles, directional padding
-<View
+<view
   style={{
     backgroundColor: 'red',
     paddingLeft: 20,
@@ -84,8 +84,8 @@
     display: 'flex',
   }}
 >
-  <Text textColor="white">Hello</Text>
-</View>
+  <text textColor="white">Hello</text>
+</view>
 ```
 
 **✅ Correct:**
@@ -94,7 +94,7 @@
 const [focused, setFocused] = createSignal(false);
 
 // Uses direct props, hex colors, clear dimensions, and focus tracking
-<View
+<view
   width={400}
   height={200}
   color={focused() ? '#ffff00ff' : '#ff0000ff'}
@@ -103,6 +103,6 @@ const [focused, setFocused] = createSignal(false);
   display="flex"
   onFocusChanged={setFocused}
 >
-  <Text color="#ffffffff">Hello</Text>
-</View>;
+  <text color="#ffffffff">Hello</text>
+</view>;
 ```

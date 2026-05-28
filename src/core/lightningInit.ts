@@ -14,6 +14,8 @@ export function startLightningRenderer(
   options: lng.RendererMainSettings | DomRendererMainSettings,
   rootId: string | HTMLElement = 'app',
 ) {
+  // Inlined (not isDomRendererActive()) so bundlers can fold DOM_RENDERING to
+  // false and drop the DOMRendererMain branch + import in WebGL builds.
   const enableDomRenderer = DOM_RENDERING && Config.domRendererEnabled;
 
   renderer = enableDomRenderer
@@ -23,6 +25,7 @@ export function startLightningRenderer(
 }
 
 export async function loadFonts(fonts: FontLoadOptions[]) {
+  // Inlined so the loadFontToDom branch + import tree-shake in WebGL builds.
   const enableDomRenderer = DOM_RENDERING && Config.domRendererEnabled;
   await Promise.all(
     fonts.map((font) => {

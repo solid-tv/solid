@@ -51,7 +51,7 @@ Example of handling clicks:
 ```jsx
 const MyButton = (props) => {
   return (
-    <View
+    <view
       {...props}
       onMouseClick={(e, elm) => {
         console.log('Clicked!', elm);

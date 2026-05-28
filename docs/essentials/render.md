@@ -1,34 +1,34 @@
-## Introduction to Rendering in SolidTV with SolidTV TV
+## Introduction to Rendering in SolidTV
 
-In this snippet, we are utilizing SolidTV in conjunction with SolidTV TV to render a simple "Hello World" text on the screen. SolidTV is a declarative JavaScript library for creating user interfaces, renowned for its performance and fine-grained reactivity. SolidTV TV is a framework for building high-performance, animated TV applications. By combining these technologies, we can create dynamic and visually appealing interfaces optimized for TV environments.
+In this snippet, we are utilizing SolidTV to render a simple "Hello World" text on the screen. SolidTV is a declarative JavaScript library for creating user interfaces, renowned for its performance and fine-grained reactivity. SolidTV is a framework for building high-performance, animated TV applications. By combining these technologies, we can create dynamic and visually appealing interfaces optimized for TV environments.
 
 ```jsx
-import { render, Text } from '@solidtv/solid';
+import { render } from '@solidtv/solid';
 
-render(() => <Text>Hello World</Text>);
+render(() => <text>Hello World</text>);
 ```
 
-## Understanding the Integration of SolidTV and SolidTV TV
+## Understanding the Integration of SolidJS & SolidTV
 
-It's very important to understand the concepts of SolidTV as that is the primary library for building the UI. SolidTV provides the foundation for creating reactive and efficient user interfaces, while the SolidTV TV integration merely links SolidTV with the SolidTV Renderer to create Canvas drawing. This combination allows for the creation of high-performance TV applications with smooth animations and responsive designs.
+It's very important to understand the concepts of SolidJS as that is the primary library for building the UI. SolidJS provides the foundation for creating reactive and efficient user interfaces, while the SolidTV integration merely links SolidJS with the SolidTV Renderer to create Canvas drawing. This combination allows for the creation of high-performance TV applications with smooth animations and responsive designs.
 
-### Key Concepts in SolidTV
+### Key Concepts in SolidJS
 
-To effectively use this integration, familiarize yourself with the core concepts of SolidTV:
+To effectively use this integration, familiarize yourself with the core concepts of SolidJS:
 
-- **Reactivity**: SolidTV uses fine-grained reactivity to update the DOM. This means that only the parts of the DOM that need to change are updated, resulting in highly efficient rendering.
-- **Components**: Components are the building blocks of a SolidTV application. They are functions that return JSX and can manage their own state and lifecycle.
-- **JSX**: SolidTV uses JSX, a syntax extension for JavaScript that allows you to write HTML-like code within JavaScript. This makes it easy to define UI components declaratively.
-- **State Management**: SolidTV provides reactive primitives such as signals, stores, and context to manage state within your application.
+- **Reactivity**: SolidJS uses fine-grained reactivity to update the DOM. This means that only the parts of the DOM that need to change are updated, resulting in highly efficient rendering.
+- **Components**: Components are the building blocks of a SolidJS application. They are functions that return JSX and can manage their own state and lifecycle.
+- **JSX**: SolidJS uses JSX, a syntax extension for JavaScript that allows you to write HTML-like code within JavaScript. This makes it easy to define UI components declaratively.
+- **State Management**: SolidJS provides reactive primitives such as signals, stores, and context to manage state within your application.
 
-You can learn more about SolidTV from their [documentation](https://docs.solidjs.com/).
+You can learn more about SolidJS from their [documentation](https://docs.solidjs.com/).
 
 ## Configuring the Renderer
 
 Before calling the Render function, you can set rendererOptions.
 
 ```jsx
-import { render, Config, Text } from '@solidtv/solid';
+import { render, Config } from '@solidtv/solid';
 import { WebGlCoreRenderer, SdfTextRenderer } from '@solidtv/renderer/webgl';
 import { Inspector } from '@solidtv/renderer/inspector';
 
@@ -46,7 +46,7 @@ Config.rendererOptions = {
   deviceLogicalPixelRatio: 1,
   devicePhysicalPixelRatio: 1,
 };
-render(() => <Text>Hello World</Text>);
+render(() => <text>Hello World</text>);
 ```
 
 For the latest renderer options read the official [renderer documentation](https://www.solid-tv.github.io/solid//api/renderer/interfaces/Renderer.RendererMainSettings.html)
@@ -116,7 +116,7 @@ Besides `rendererOptions`, the `Config` object exposes several properties specif
   Default configurations for animations.
   - _Default_: `{ duration: 250, easing: 'ease-in-out' }`
 - **fontSettings**: `Partial<TextProps>`
-  Default settings for all `<Text>` nodes globally.
+  Default settings for all `<text>` nodes globally.
   - _Default_: `{ fontFamily: 'Ubuntu', fontSize: 100 }`
 - **fontWeightAlias**: `Record<string, number | string>`
   Maps font-weight names to specific font files or numeric values (e.g., `{ thin: 100, bold: 700 }`).

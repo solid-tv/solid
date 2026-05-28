@@ -22,11 +22,11 @@ export default function DeviceInfo() {
     .catch(() => setDeviceMake('Error retrieving device info'));
 
   return (
-    <View>
-      <Text x={100} y={100} size={40}>
+    <view>
+      <text x={100} y={100} size={40}>
         Device Make: {deviceMake()}
-      </Text>
-    </View>
+      </text>
+    </view>
   );
 }
 ```
@@ -52,11 +52,11 @@ export default function AppLifecycle() {
   });
 
   return (
-    <View>
-      <Text x={100} y={100} size={40}>
+    <view>
+      <text x={100} y={100} size={40}>
         App State: {state()}
-      </Text>
-    </View>
+      </text>
+    </view>
   );
 }
 ```
@@ -81,11 +81,11 @@ export default function UserAccount() {
     .catch(() => setAccountId('Error retrieving account ID'));
 
   return (
-    <View>
-      <Text x={100} y={100} size={40}>
+    <view>
+      <text x={100} y={100} size={40}>
         Account ID: {accountId()}
-      </Text>
-    </View>
+      </text>
+    </view>
   );
 }
 ```
@@ -110,11 +110,11 @@ export default function LocationInfo() {
     .catch(() => setLocation('Error retrieving location'));
 
   return (
-    <View>
-      <Text x={100} y={100} size={40}>
+    <view>
+      <text x={100} y={100} size={40}>
         {location()}
-      </Text>
-    </View>
+      </text>
+    </view>
   );
 }
 ```
