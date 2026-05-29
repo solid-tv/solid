@@ -100,8 +100,17 @@ function createVirtual<T>(
     delta: number,
     prev: SliceState,
   ): SliceState {
+    // Hoist every memo read used inside this function — they're constants for
+    // the duration of one slice computation, and pulling them up keeps the
+    // switch branches focused on the actual math.
     const total = itemCount();
     const vc = visibleCount();
+    const buf = bufferSize();
+    const si = scrollIndex();
+    const allItems = items();
+    const wrap = !!props.wrap;
+    const mode = scrollType();
+
     if (total === 0 || vc === 0)
       return {
         start: 0,
@@ -116,7 +125,7 @@ function createVirtual<T>(
     if (total <= vc) {
       return {
         start: 0,
-        slice: items() as T[],
+        slice: allItems as T[],
         selected: utils.clamp(c, 0, total - 1),
         delta,
         shiftBy: 0,
@@ -125,16 +134,15 @@ function createVirtual<T>(
       };
     }
 
-    const buf = bufferSize();
     const length = vc + buf;
     let start = prev.start;
     let selected = prev.selected;
     let atStart = prev.atStart;
     let shiftBy = -delta;
 
-    switch (scrollType()) {
+    switch (mode) {
       case 'always':
-        if (props.wrap) {
+        if (wrap) {
           start = utils.mod(c - 1, total);
           selected = 1;
         } else {
@@ -158,10 +166,10 @@ function createVirtual<T>(
         break;
 
       case 'auto':
-        if (props.wrap) {
+        if (wrap) {
           if (delta === 0) {
-            selected = scrollIndex() || 1;
-            start = utils.mod(c - (scrollIndex() || 1), total);
+            selected = si || 1;
+            start = utils.mod(c - (si || 1), total);
           } else {
             start = utils.mod(c - (prev.selected || 1), total);
           }
@@ -188,11 +196,11 @@ function createVirtual<T>(
             }
           } else if (delta > 0) {
             // Moving right
-            if (prev.selected < scrollIndex()) {
+            if (prev.selected < si) {
               start = prev.start;
               selected = prev.selected + 1;
               shiftBy = 0;
-            } else if (prev.selected === scrollIndex() || atStart) {
+            } else if (prev.selected === si || atStart) {
               start = prev.start;
               selected = prev.selected + 1;
               atStart = false;
@@ -206,16 +214,16 @@ function createVirtual<T>(
               shiftBy = 0;
             } else {
               start = prev.start + 1;
-              selected = Math.max(prev.selected, scrollIndex() + 1);
+              selected = Math.max(prev.selected, si + 1);
             }
           } else {
             // Initial setup
             if (c > 0) {
               start = Math.min(
-                c - (scrollIndex() || 1),
+                c - (si || 1),
                 total - vc - buf,
               );
-              selected = Math.max(scrollIndex() || 1, c - start);
+              selected = Math.max(si || 1, c - start);
               shiftBy = total - c < 3 ? c - total : -1;
               atStart = false;
             } else {
@@ -240,7 +248,7 @@ function createVirtual<T>(
           1,
           vc + (atStart ? -1 : 0),
         );
-        if (props.wrap) {
+        if (wrap) {
           if (delta > 0) {
             if (prev.selected < startScrolling) {
               selected = prev.selected + 1;
@@ -314,12 +322,12 @@ function createVirtual<T>(
 
     let newSlice = prev.slice;
     if (start !== prev.start || newSlice.length === 0) {
-      newSlice = props.wrap
+      newSlice = wrap
         ? (Array.from(
             { length },
-            (_, i) => items()[utils.mod(start + i, total)],
+            (_, i) => allItems[utils.mod(start + i, total)],
           ) as T[])
-        : items().slice(start, start + length);
+        : allItems.slice(start, start + length);
     }
 
     const state: SliceState = {
@@ -377,6 +385,10 @@ function createVirtual<T>(
   }
 
   let originalPosition: number | undefined;
+  // Tracks whether we've already fired onEndReached for the current "in-zone"
+  // state. Resets when the cursor moves back out of the threshold, so callers
+  // get exactly one call per crossing instead of one per keypress.
+  let endReachedFired = false;
   const onSelectedChanged: lngp.OnSelectedChanged = function (
     _idx,
     elm,
@@ -414,11 +426,15 @@ function createVirtual<T>(
     setSlice(newState);
     elm.selected = newState.selected;
 
-    if (
-      props.onEndReachedThreshold !== undefined &&
-      cursor() >= itemCount() - props.onEndReachedThreshold
-    ) {
-      props.onEndReached?.();
+    if (props.onEndReachedThreshold !== undefined) {
+      const crossed =
+        cursor() >= itemCount() - props.onEndReachedThreshold;
+      if (crossed && !endReachedFired) {
+        endReachedFired = true;
+        props.onEndReached?.();
+      } else if (!crossed && endReachedFired) {
+        endReachedFired = false;
+      }
     }
 
     if (newState.shiftBy === 0) return;
@@ -561,6 +577,8 @@ function createVirtual<T>(
   s.createEffect(
     s.on(items, () => {
       if (!viewRef || !derivedDims()) return;
+      // "End" moves when data changes; allow onEndReached to fire again.
+      endReachedFired = false;
       let c = cursor();
       if (c >= itemCount()) {
         c = Math.max(0, itemCount() - 1);
