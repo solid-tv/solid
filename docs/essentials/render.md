@@ -136,3 +136,95 @@ Besides `rendererOptions`, the `Config` object exposes several properties specif
   Enables locking on styles to prevent unintended overrides.
 - **convertToShader**: `(node: ElementNode, v: StyleEffects) => IRendererShader`
   A customizable function that determines how styling effects translate to shaders on an ElementNode.
+
+## Handling Renderer Events
+
+The SolidTV renderer is an `EventEmitter`. Bootstrap it with `createRenderer`, which returns the `renderer` instance, and subscribe to its lifecycle and error events with the standard `renderer.on(event, handler)` API:
+
+```jsx
+import { createRenderer } from '@solidtv/solid';
+
+const { renderer, render } = createRenderer();
+
+render(() => <App />);
+```
+
+Two of these events signal unrecoverable GPU conditions the application is responsible for handling: `contextLost` and `outOfMemory`. In both cases the engine cannot rebuild its in-flight GL resources in place, so the supported recovery is for the app to reload.
+
+### `contextLost`
+
+Fired when the underlying WebGL context is lost — e.g. on low-RAM devices running Chromium 123+ after the app has been backgrounded. The render loop stops and the scene graph is dead, so reload to rebuild it.
+
+```ts
+renderer.on('contextLost', () => {
+  // A lost WebGL context leaves a dead scene graph that cannot recover in
+  // place. Reload to rebuild it. If the viewer was deep in a route that won't
+  // survive a reload (e.g. a full-screen player), send them somewhere safe
+  // first.
+  const redirect = resolveContextLostRedirect(window.location.hash);
+  if (redirect != null) {
+    window.location.hash = redirect;
+  }
+  window.location.reload();
+});
+```
+
+### `outOfMemory`
+
+Fired when the renderer detects a real `GL_OUT_OF_MEMORY` from the GPU (probed once per frame). This is the only certain signal that the texture-memory estimate has overshot the device's real VRAM budget: a texture upload has already failed and the driver may soon drop the context. The renderer deliberately does **not** change anything itself — recovery is application policy.
+
+The recommended response is to lower the texture-memory `criticalThreshold`, persist it, and reload so the next launch calibrates to the device's real budget. The event payload carries `memUsed` (estimated texture memory in use at the moment of failure) and `criticalThreshold` (the threshold currently in effect). Because the upload failed, the real budget is at or below `memUsed`, which makes it a good basis for the next threshold.
+
+```ts
+// Namespace the storage key per app. TV devices that run from the filesystem
+// (file://) have a null/opaque origin, so a bare key can collide across apps —
+// including the path keeps each app's calibration separate.
+const STORAGE_KEY = `myapp:criticalThreshold:${location.pathname}`;
+
+// Never calibrate so low the UX breaks. Pick a floor that matches your app.
+const DEFAULT_CRITICAL = 200e6;
+const MIN_THRESHOLD = Math.round(DEFAULT_CRITICAL * 0.7);
+
+let handlingOOM = false;
+renderer.on('outOfMemory', (_target, { memUsed, criticalThreshold }) => {
+  if (handlingOOM) {
+    return; // debounce — several uploads can fail in the same burst
+  }
+  handlingOOM = true;
+
+  // The OOM proves the real budget is <= memUsed. Drop to 90% of the lower of
+  // (estimate, current threshold), but never below the floor.
+  const ceiling = Math.min(memUsed, criticalThreshold);
+  const next = Math.max(Math.round(ceiling * 0.9), MIN_THRESHOLD);
+
+  try {
+    localStorage.setItem(STORAGE_KEY, String(next));
+  } catch (e) {
+    // storage may be blocked (e.g. file:// with storage disabled); reload
+    // anyway with the in-memory budget.
+  }
+  window.location.reload();
+});
+```
+
+Read the persisted threshold back when you configure the renderer, so each launch starts from the calibrated value:
+
+```jsx
+function readCriticalThreshold(): number {
+  const raw =
+    typeof localStorage !== 'undefined'
+      ? localStorage.getItem(STORAGE_KEY)
+      : null;
+  const stored = raw !== null ? parseInt(raw, 10) : NaN;
+  if (!Number.isNaN(stored) && stored > 0) {
+    return Math.max(stored, MIN_THRESHOLD);
+  }
+  return DEFAULT_CRITICAL;
+}
+
+Config.rendererOptions = {
+  textureMemory: {
+    criticalThreshold: readCriticalThreshold(),
+  },
+};
+```
