@@ -118,14 +118,10 @@ function isCanvas(
   return 'stage' in shManager && shManager.stage.renderer.mode === 'canvas';
 }
 
-function canUseShaders(): boolean {
-  return SHADERS_ENABLED && !isDomRendererActive();
-}
-
 export function registerDefaultShaderRounded(
   shManager: IRendererShaderManager,
 ) {
-  if (canUseShaders())
+  if (SHADERS_ENABLED && !isDomRendererActive())
     shManager.registerShaderType(
       'rounded',
       isCanvas(shManager)
@@ -134,7 +130,7 @@ export function registerDefaultShaderRounded(
     );
 }
 export function registerDefaultShaderShadow(shManager: CoreShaderManager) {
-  if (canUseShaders())
+  if (SHADERS_ENABLED && !isDomRendererActive())
     shManager.registerShaderType(
       'shadow',
       isCanvas(shManager)
@@ -145,7 +141,7 @@ export function registerDefaultShaderShadow(shManager: CoreShaderManager) {
 export function registerDefaultShaderRoundedWithBorder(
   shManager: CoreShaderManager,
 ) {
-  if (canUseShaders())
+  if (SHADERS_ENABLED && !isDomRendererActive())
     shManager.registerShaderType(
       'roundedWithBorder',
       isCanvas(shManager)
@@ -156,7 +152,7 @@ export function registerDefaultShaderRoundedWithBorder(
 export function registerDefaultShaderRoundedWithShadow(
   shManager: CoreShaderManager,
 ) {
-  if (canUseShaders())
+  if (SHADERS_ENABLED && !isDomRendererActive())
     shManager.registerShaderType(
       'roundedWithShadow',
       isCanvas(shManager)
@@ -167,7 +163,7 @@ export function registerDefaultShaderRoundedWithShadow(
 export function registerDefaultShaderRoundedWithBorderAndShadow(
   shManager: CoreShaderManager,
 ) {
-  if (canUseShaders())
+  if (SHADERS_ENABLED && !isDomRendererActive())
     shManager.registerShaderType(
       'roundedWithBorderWithShadow',
       isCanvas(shManager)
@@ -176,7 +172,7 @@ export function registerDefaultShaderRoundedWithBorderAndShadow(
     );
 }
 export function registerDefaultShaderHolePunch(shManager: CoreShaderManager) {
-  if (canUseShaders())
+  if (SHADERS_ENABLED && !isDomRendererActive())
     shManager.registerShaderType(
       'holePunch',
       isCanvas(shManager)
@@ -187,7 +183,7 @@ export function registerDefaultShaderHolePunch(shManager: CoreShaderManager) {
 export function registerDefaultShaderRadialGradient(
   shManager: CoreShaderManager,
 ) {
-  if (canUseShaders())
+  if (SHADERS_ENABLED && !isDomRendererActive())
     shManager.registerShaderType(
       'radialGradient',
       isCanvas(shManager)
@@ -198,7 +194,7 @@ export function registerDefaultShaderRadialGradient(
 export function registerDefaultShaderLinearGradient(
   shManager: CoreShaderManager,
 ) {
-  if (canUseShaders())
+  if (SHADERS_ENABLED && !isDomRendererActive())
     shManager.registerShaderType(
       'linearGradient',
       isCanvas(shManager)
@@ -208,7 +204,7 @@ export function registerDefaultShaderLinearGradient(
 }
 
 export function registerDefaultShaders(shManager: CoreShaderManager) {
-  if (canUseShaders()) {
+  if (SHADERS_ENABLED && !isDomRendererActive()) {
     registerDefaultShaderRounded(shManager);
     registerDefaultShaderShadow(shManager);
     registerDefaultShaderRoundedWithBorder(shManager);
