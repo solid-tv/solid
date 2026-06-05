@@ -19,10 +19,12 @@ const RowStyles: NodeStyles = {
   gap: 30,
 };
 
-function scrollToIndex(this: ElementNode, index: number) {
+function scrollToIndex(this: ElementNode, index: number, options?: {noFocus?: boolean}) {
   this.selected = index;
   scrollRow(index, this);
-  this.children[index]?.setFocus();
+  if (!options?.noFocus) {
+    this.children[index]?.setFocus();
+  }
 }
 
 const onLeft = handleNavigation('left');
