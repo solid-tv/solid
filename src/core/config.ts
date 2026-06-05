@@ -9,6 +9,7 @@ import {
   type ElementNode,
   convertToShader as defaultConvertToShader,
 } from './elementNode.js';
+import { setActiveElement as setActiveElementSignal } from './activeElement.js';
 import {
   DomRendererMainSettings,
   IRendererShader,
@@ -63,6 +64,14 @@ export interface Config {
   animationsEnabled: boolean;
   fontSettings: Partial<TextProps>;
   rendererOptions?: Partial<RendererMainSettings> | DomRendererMainSettings;
+  /**
+   * Hook the focus manager calls to publish the active element. Defaults to
+   * writing the {@link activeElement} signal directly; a custom focus manager
+   * (or the built-in `useFocusManager`) may reassign this — e.g. to run the
+   * write inside a captured Solid owner context. This is the seam that keeps
+   * the `activeElement` signal decoupled from focus-manager logic.
+   */
+  setActiveElement: (elm: ElementNode) => void;
   focusStateKey: DollarString;
   lockStyles?: boolean;
   fontWeightAlias?: Record<string, number | string>;
@@ -84,6 +93,7 @@ export const Config: Config = {
     easing: 'ease-in-out',
   },
   convertToShader: defaultConvertToShader,
+  setActiveElement: (elm) => setActiveElementSignal(elm),
   fontSettings: {
     fontFamily: 'Ubuntu',
     fontSize: 100,

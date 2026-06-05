@@ -18,7 +18,7 @@ import {
   type Component,
 } from 'solid-js';
 import type { SolidNode } from './types.js';
-import { activeElement } from './core/focusManager.js';
+import { activeElement } from './core/activeElement.js';
 
 const solidRenderer = solidCreateRenderer<SolidNode>(nodeOpts);
 

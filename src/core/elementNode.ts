@@ -55,7 +55,7 @@ import { assertTruthy } from '@solidtv/renderer/utils';
 import { NodeType, TextNode } from './nodeTypes.js';
 import {
   ForwardFocusHandler,
-  setActiveElement,
+  setActiveElementCore,
   FocusNode,
 } from './focusManager.js';
 import { initClickInspector } from './clickInspector.js';
@@ -130,7 +130,7 @@ function runPostMutation() {
 
   // Phase 3: focus.  setFocus() may have evaluated forwardFocus pre-render
   // (when no children existed yet); deferredFocusElement re-runs setFocus
-  // here once the subtree has rendered, then setActiveElement is applied.
+  // here once the subtree has rendered, then setActiveElementCore is applied.
   if (deferredFocusElement !== null) {
     const el = deferredFocusElement;
     deferredFocusElement = null;
@@ -138,7 +138,7 @@ function runPostMutation() {
   } else if (nextActiveElement !== null) {
     const element = nextActiveElement;
     nextActiveElement = null;
-    setActiveElement(element);
+    setActiveElementCore(element);
   }
 }
 

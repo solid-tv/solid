@@ -9,10 +9,10 @@ import type {
   KeyMap,
 } from './focusKeyTypes.js';
 import { isFunction } from './utils.js';
-
-export const [activeElement, setActiveElementSignal] = createSignal<
-  ElementNode | undefined
->(undefined);
+import {
+  activeElement,
+  setActiveElement as setActiveElementSignal,
+} from './activeElement.js';
 
 let _signalWrapper: (cb: () => void) => void = (cb) => cb();
 
@@ -204,14 +204,27 @@ export const printFocusHistory = (count: number): void => {
 
 // ---------------------------------------------------------------------------
 
-export const setActiveElement = (elm: ElementNode) => {
+/**
+ * Built-in "apply focus" routine: diffs the focus path, fires
+ * `onFocus`/`onBlur`/`onFocusChanged`, records history, then publishes the
+ * active element through the `Config.setActiveElement` hook.
+ *
+ * This is what `ElementNode.setFocus()` ultimately invokes. It is intentionally
+ * *not* the public `setActiveElement` export — that name is the raw signal
+ * setter (see {@link ./activeElement.ts}). Keeping them separate is what stops
+ * a custom `Config.setActiveElement` (wired to a setter) from recursing back
+ * through the focus-path logic.
+ */
+export const setActiveElementCore = (elm: ElementNode) => {
   const prev = activeElement();
   if (elm === prev) return;
   updateFocusPath(elm, prev);
   recordFocusHistory(elm, prev);
   // Reset key attribution so programmatic focus changes show '—' for key fields
   _pendingHistoryKey = { keyPressed: undefined, mappedKey: undefined };
-  _signalWrapper(() => setActiveElementSignal(elm));
+  // Publish through the swappable hook rather than writing the signal directly,
+  // so the active-element signal stays decoupled from this focus manager.
+  Config.setActiveElement(elm);
 };
 
 export const [focusPath, setFocusPath] = createSignal<ElementNode[]>([]);
@@ -493,6 +506,11 @@ export const useFocusManager = (
     runWithOwner(owner, cb);
   };
   _signalWrapper = ownerContext;
+  // Drive the active-element signal inside this owner so its effect subscribers
+  // have a parent for cleanup. Consumers replacing the focus manager can wire
+  // Config.setActiveElement themselves instead of calling useFocusManager.
+  Config.setActiveElement = (elm) =>
+    ownerContext(() => setActiveElementSignal(elm));
 
   const delay = keyHoldOptions?.holdThreshold || DEFAULT_KEY_HOLD_THRESHOLD;
   const runKeyEvent = handleKeyEvents.bind(null, delay);
