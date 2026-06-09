@@ -15,6 +15,8 @@ export type VirtualProps<T> = lng.NewOmit<lngp.RowProps, 'children'> & {
   displaySize: number;
   bufferSize?: number;
   wrap?: boolean;
+  /** With `wrap`, defers wrap behavior until the first right press. Ignored when `selected` is non-zero at mount. */
+  skipInitialWrap?: boolean;
   scrollIndex?: number;
   onEndReached?: () => void;
   onEndReachedThreshold?: number;
@@ -38,11 +40,18 @@ function createVirtual<T>(
   const itemCount = s.createMemo(() => items().length);
   const scrollType = s.createMemo(() => props.scroll || 'auto');
 
+  const initiallyLocked =
+    !!props.skipInitialWrap &&
+    !!props.wrap &&
+    (props.selected ?? 0) === 0;
+  const [wrapUnlocked, setWrapUnlocked] = s.createSignal(!initiallyLocked);
+  const effectiveWrap = s.createMemo(() => !!props.wrap && wrapUnlocked());
+
   const selected = () => {
     if (itemCount() <= props.displaySize) {
       return utils.clamp(props.selected || 0, 0, Math.max(0, itemCount() - 1));
     }
-    if (props.wrap) {
+    if (props.wrap && !initiallyLocked) {
       return Math.max(bufferSize(), scrollIndex());
     }
     return utils.clamp(props.selected || 0, 0, Math.max(0, itemCount() - 1));
@@ -139,7 +148,7 @@ function createVirtual<T>(
 
     switch (scrollType()) {
       case 'always':
-        if (props.wrap) {
+        if (effectiveWrap()) {
           start = utils.mod(c - 1, total);
           selected = 1;
         } else {
@@ -163,7 +172,7 @@ function createVirtual<T>(
         break;
 
       case 'auto':
-        if (props.wrap) {
+        if (effectiveWrap()) {
           if (delta === 0) {
             selected = scrollIndex() || 1;
             start = utils.mod(c - (scrollIndex() || 1), total);
@@ -252,7 +261,7 @@ function createVirtual<T>(
           1,
           props.displaySize + (atStart ? -1 : 0),
         );
-        if (props.wrap) {
+        if (effectiveWrap()) {
           if (delta > 0) {
             if (prev.selected < startScrolling) {
               selected = prev.selected + 1;
@@ -327,11 +336,11 @@ function createVirtual<T>(
 
     let newSlice = prev.slice;
     if (start !== prev.start || newSlice.length === 0) {
-      newSlice = props.wrap
+      newSlice = effectiveWrap()
         ? (Array.from(
-            { length },
-            (_, i) => items()[utils.mod(start + i, total)],
-          ) as T[])
+          { length },
+          (_, i) => items()[utils.mod(start + i, total)],
+        ) as T[])
         : items().slice(start, start + length);
     }
 
@@ -411,13 +420,13 @@ function createVirtual<T>(
 
     const rawDelta = idx - (lastIdx ?? 0);
     const windowLen = elm?.children?.length ?? props.displaySize + bufferSize();
-    const delta = props.wrap
+    const delta = effectiveWrap()
       ? normalizeDeltaForWindow(rawDelta, windowLen)
       : rawDelta;
 
     setCursor((c) => {
       const next = c + delta;
-      return props.wrap
+      return effectiveWrap()
         ? utils.mod(next, total)
         : utils.clamp(next, 0, total - 1);
     });
@@ -425,6 +434,8 @@ function createVirtual<T>(
     const newState = computeSlice(cursor(), delta, slice());
     setSlice(newState);
     elm.selected = newState.selected;
+
+    if (!wrapUnlocked() && rawDelta > 0) setWrapUnlocked(true);
 
     if (
       props.onEndReachedThreshold !== undefined &&
@@ -492,10 +503,10 @@ function createVirtual<T>(
     });
   };
 
-  let doOnce = false;
+  let doOnce = initiallyLocked;
   s.createEffect(
-    s.on([() => props.wrap, items], () => {
-      if (!viewRef || itemCount() === 0 || !props.wrap || doOnce) return;
+    s.on([effectiveWrap, items], () => {
+      if (!viewRef || itemCount() === 0 || !effectiveWrap() || doOnce) return;
       doOnce = true;
       if (itemCount() <= props.displaySize) {
         queueMicrotask(() => {
@@ -542,6 +553,7 @@ function createVirtual<T>(
       ref={lngp.chainRefs((el) => {
         viewRef = el as lngp.NavigableElement;
       }, props.ref)}
+      wrap={effectiveWrap()}
       selected={selected()}
       cursor={cursor()}
       forwardFocus={/* @once */ lngp.navigableForwardFocus}
@@ -549,18 +561,18 @@ function createVirtual<T>(
       onSelectedChanged={/* @once */ onSelectedChanged}
       style={
         /* @once */ lng.combineStyles(
-          props.style,
-          component === lngp.Row
-            ? {
-                display: 'flex',
-                gap: 30,
-              }
-            : {
-                display: 'flex',
-                flexDirection: 'column',
-                gap: 30,
-              },
-        )
+        props.style,
+        component === lngp.Row
+          ? {
+            display: 'flex',
+            gap: 30,
+          }
+          : {
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 30,
+          },
+      )
       }
     >
       <List each={slice().slice}>{props.children}</List>
