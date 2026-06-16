@@ -28,6 +28,7 @@ export interface ScrollableElement extends ElementNode {
   _targetPosition?: number;
   _screenOffset?: number;
   _initialPosition?: number;
+  scrollStopLast?: boolean;
 }
 
 // From the renderer, not exported
@@ -185,7 +186,11 @@ export function withScrolling(isRow: boolean): Scroller {
       nextPosition = Math.min(Math.max(centerPosition, maxOffset), offset);
     } else if (!nextElement) {
       // If at the last element, align to end
-      nextPosition = isIncrementing ? maxOffset : offset;
+      if (componentRef.scrollStopLast && isIncrementing) {
+        nextPosition = rootPosition - selectedSize - gap;
+      } else {
+        nextPosition = isIncrementing ? maxOffset : offset;
+      }
     } else if (scroll === 'auto') {
       if (componentRef.scrollIndex && componentRef.scrollIndex > 0) {
         // Prevent scrolling if the selected item is within the last scrollIndex items
@@ -213,8 +218,13 @@ export function withScrolling(isRow: boolean): Scroller {
     }
 
     // Prevent container from moving beyond bounds
+    const isScrollStopLastCase =
+      componentRef.scrollStopLast && !nextElement && isIncrementing;
     nextPosition =
-      isIncrementing && scroll !== 'always' && scroll !== 'bounded'
+      isIncrementing &&
+      scroll !== 'always' &&
+      scroll !== 'bounded' &&
+      !isScrollStopLastCase
         ? Math.max(nextPosition, maxOffset)
         : Math.min(nextPosition, offset);
 

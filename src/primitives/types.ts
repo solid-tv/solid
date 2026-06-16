@@ -25,6 +25,12 @@ export interface NavigableProps extends NodeProps {
   /** When auto scrolling, item index at which scrolling begins */
   scrollIndex?: number;
 
+  /**
+   * When true and scroll is 'edge' or 'auto', the last item keeps the same
+   * position as the second-to-last instead of scrolling to remove trailing space.
+   */
+  scrollStopLast?: boolean;
+
   /** The initial index */
   selected?: number;
 
