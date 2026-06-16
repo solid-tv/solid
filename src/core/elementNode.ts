@@ -33,12 +33,8 @@ import {
   isFunction,
   spliceItem,
 } from './utils.js';
-import {
-  Config,
-  isDev,
-  SHADERS_ENABLED,
-  isDomRendererActive,
-} from './config.js';
+import { isDev, SHADERS_ENABLED } from './env.js';
+import { Config, isDomRendererActive } from './config.js';
 import type {
   RendererMain,
   INode,
