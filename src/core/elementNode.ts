@@ -330,7 +330,7 @@ export interface ElementNode extends RendererNode, FocusNode {
   _animationQueueSettings?: AnimationSettings;
   _animationRunning?: boolean;
   _animationSettings?: AnimationSettings;
-  _autofocus?: boolean;
+  _autofocus?: any;
   _containsFlexGrow?: boolean | null;
   _hasRenderedChildren?: boolean;
   _effects?: Record<string, any>;
@@ -1316,7 +1316,7 @@ export class ElementNode {
    * @param val - A value to determine if the element should autofocus.
    *              A truthy value enables autofocus, otherwise disables it.
    */
-  set autofocus(val: boolean | undefined) {
+  set autofocus(val: any) {
     this._autofocus = val;
     // Defer setFocus so children render first (forwardFocus needs them).
     // The post-mutation focus phase calls setFocus on this element.
