@@ -20,10 +20,12 @@ const ColumnStyles: NodeStyles = {
   gap: 30,
 };
 
-function scrollToIndex(this: ElementNode, index: number) {
+function scrollToIndex(this: ElementNode, index: number, options?: {noFocus?: boolean}) {
   this.selected = index;
   scrollColumn(index, this);
-  this.children[index]?.setFocus();
+  if (!options?.noFocus) {
+    this.children[index]?.setFocus();
+  }
 }
 
 const onUp = handleNavigation('up');
