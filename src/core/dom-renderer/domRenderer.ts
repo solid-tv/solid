@@ -519,9 +519,14 @@ function updateNodeStyles(node: DOMNode | DOMText) {
           }
           hasDivBgTint = true;
         }
-      } else if (gradient) {
-        // use gradient as a mask when no tint is applied
-        maskStyle += `mask-image: ${gradient};`;
+      } else {
+        if (gradient) {
+          // use gradient as a mask when no tint is applied
+          maskStyle += `mask-image: ${gradient};`;
+        }
+        if (props.placeholderColor !== 0) {
+          bgStyle += `background-color: ${colorToRgba(props.placeholderColor)};`;
+        }
       }
 
       const imgStyleParts = [
@@ -1243,6 +1248,7 @@ function resolveNodeDefaults(
     w: props.w ?? 0,
     h: props.h ?? 0,
     alpha: props.alpha ?? 1,
+    ignoreParentAlpha: props.ignoreParentAlpha ?? false,
     autosize: props.autosize ?? false,
     boundsMargin: props.boundsMargin ?? null,
     clipping: props.clipping ?? false,
@@ -1278,6 +1284,7 @@ function resolveNodeDefaults(
     pivotY: props.pivotY ?? props.pivot ?? 0.5,
     rotation: props.rotation ?? 0,
     rtt: props.rtt ?? false,
+    placeholderColor: props.placeholderColor ?? 0,
     data: {},
     imageType: props.imageType,
   };
@@ -1804,6 +1811,22 @@ export class DOMNode extends EventEmitter implements IRendererNode {
     this.props.boundsMargin = value;
     this.boundsDirty = true;
     this.markChildrenBoundsDirty();
+  }
+
+  get ignoreParentAlpha(): boolean {
+    return this.props.ignoreParentAlpha;
+  }
+  set ignoreParentAlpha(v: boolean) {
+    this.props.ignoreParentAlpha = v;
+    updateNodeStyles(this);
+  }
+
+  get placeholderColor(): number {
+    return this.props.placeholderColor;
+  }
+  set placeholderColor(v: number) {
+    this.props.placeholderColor = v;
+    updateNodeStyles(this);
   }
 
   get absX(): number {

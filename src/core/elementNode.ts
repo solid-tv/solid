@@ -271,6 +271,7 @@ const LightningRendererNonAnimatingProps = [
   'fontStretch',
   'fontStyle',
   'group',
+  'ignoreParentAlpha',
   'imageType',
   'letterSpacing',
   'maxHeight',
@@ -278,6 +279,7 @@ const LightningRendererNonAnimatingProps = [
   'maxWidth',
   'offsetY',
   'overflowSuffix',
+  'placeholderColor',
   'preventCleanup',
   'rtt',
   'scrollable',
@@ -793,6 +795,8 @@ export class ElementNode {
       shader: undefined,
       clipping: undefined,
       text: undefined,
+      ignoreParentAlpha: undefined,
+      placeholderColor: undefined,
     };
     this.children = [];
 
