@@ -33,7 +33,7 @@ export interface ScrollableElement extends ElementNode {
 
 // From the renderer, not exported
 const InViewPort = 8 as const;
-const isNotShown = (node: ElementNode | ElementText) => {
+const isNotShown = (node: ElementNode | ElementText): boolean => {
   return (node.lng.renderState as number) !== InViewPort;
 };
 /*
