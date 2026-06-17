@@ -1,5 +1,6 @@
-import { Config, isDev } from './config.js';
+import { Config } from './config.js';
 import { isElementNode } from './utils.js';
+import { isDev } from './env.js';
 import type { ElementNode } from './elementNode.js';
 import { IRendererNode } from './dom-renderer/domRendererTypes.js';
 

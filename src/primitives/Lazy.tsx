@@ -136,9 +136,9 @@ function createLazy<T>(
     Array.isArray(props.each) ? props.each.slice(0, offset()) : [],
   );
 
-  function lazyScrollToIndex(this: lngp.NavigableElement, index: number) {
+  function lazyScrollToIndex(this: lngp.NavigableElement, index: number, options?: {noFocus?: boolean}) {
     setOffset(Math.max(index, 0) + buffer())
-    queueMicrotask(() => viewRef.scrollToIndex(index));
+    queueMicrotask(() => viewRef.scrollToIndex(index, options));
   }
 
   const updateOffset = (_event: KeyboardEvent, container: lng.ElementNode) => {

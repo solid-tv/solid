@@ -22,17 +22,8 @@ import {
   See `vite-env.d.ts` for environment variable type definitions.
 */
 
-export const isDev = !!(import.meta.env && import.meta.env.DEV);
-
-/** Whether the DOM renderer is used instead of `@solidtv/renderer` */
-export const DOM_RENDERING =
-  typeof SOLIDTV_DOM_RENDERING !== 'undefined' &&
-  SOLIDTV_DOM_RENDERING === true;
-
-/** Whether element shaders are enabled */
-export const SHADERS_ENABLED =
-  typeof SOLIDTV_DISABLE_SHADERS === 'undefined' ||
-  SOLIDTV_DISABLE_SHADERS !== true;
+export { isDev, DOM_RENDERING, SHADERS_ENABLED } from './env.js';
+import { DOM_RENDERING } from './env.js';
 
 /**
  * True when the DOM renderer is both built in (`DOM_RENDERING`) and turned on
