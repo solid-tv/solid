@@ -41,7 +41,7 @@ export async function loadFonts(fonts: FontLoadOptions[]) {
       if ('fontUrl' in font) {
         if (enableDomRenderer) {
           loadFontToDom(font);
-        } else if (renderer.stage.renderer.mode !== 'webgl') {
+        } else {
           return renderer.stage.loadFont('canvas', font);
         }
       }
