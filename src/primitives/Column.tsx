@@ -1,9 +1,5 @@
 import { type Component } from 'solid-js';
-import {
-  ElementNode,
-  combineStyles,
-  type NodeStyles,
-} from '@solidtv/solid';
+import { ElementNode, combineStyles, type NodeStyles } from '@solidtv/solid';
 import {
   navigableForwardFocus,
   handleNavigation,
@@ -20,7 +16,11 @@ const ColumnStyles: NodeStyles = {
   gap: 30,
 };
 
-function scrollToIndex(this: ElementNode, index: number, options?: {noFocus?: boolean}) {
+function scrollToIndex(
+  this: ElementNode,
+  index: number,
+  options?: { noFocus?: boolean },
+): void {
   this.selected = index;
   scrollColumn(index, this);
   if (!options?.noFocus) {
