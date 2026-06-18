@@ -1,58 +1,55 @@
 import { renderer } from './lightningInit.js';
 import {
+  AddColorString,
+  type AnimationEventHandler,
+  type AnimationEvents,
+  type AnimationSettings,
   type BorderRadius,
   type BorderStyle,
-  type StyleEffects,
-  type AnimationSettings,
-  type ElementText,
-  type Styles,
-  type AnimationEvents,
-  type AnimationEventHandler,
-  AddColorString,
-  TextProps,
-  type OnEvent,
-  NewOmit,
-  SingleBorderStyle,
   type DollarString,
+  type ElementText,
+  NewOmit,
+  type OnEvent,
+  SingleBorderStyle,
+  type StyleEffects,
+  type Styles,
+  TextProps,
 } from './intrinsicTypes.js';
 import States, { type NodeStates } from './states.js';
 import calculateFlexOld from './flex.js';
 import calculateFlexNew from './flexLayout.js';
-
-const calculateFlex = import.meta.env?.VITE_USE_NEW_FLEX
-  ? calculateFlexNew
-  : calculateFlexOld;
 import {
-  log,
   isArray,
-  keyExists,
-  isINode,
   isElementNode,
   isElementText,
-  logRenderTree,
   isFunction,
+  isINode,
+  isTextNode,
+  keyExists,
+  log,
+  logRenderTree,
   spliceItem,
 } from './utils.js';
 import { isDev, SHADERS_ENABLED } from './env.js';
 import { Config, isDomRendererActive } from './config.js';
 import type {
-  RendererMain,
+  CoreShaderNode,
+  IAnimationController,
   INode,
   INodeAnimateProps,
-  IAnimationController,
+  INodeProps,
+  ITextNodeProps,
   LinearGradientProps,
   RadialGradientProps,
+  RendererMain,
   ShadowProps,
-  CoreShaderNode,
-  ITextNodeProps,
-  INodeProps,
 } from '@solidtv/renderer';
 import { assertTruthy } from '@solidtv/renderer/utils';
 import { NodeType, TextNode } from './nodeTypes.js';
 import {
+  FocusNode,
   ForwardFocusHandler,
   setActiveElementCore,
-  FocusNode,
 } from './focusManager.js';
 import { initClickInspector } from './clickInspector.js';
 
@@ -64,6 +61,10 @@ import {
   IRendererTextNode,
   IRendererTextNodeProps,
 } from './dom-renderer/domRendererTypes.js';
+
+const calculateFlex = import.meta.env?.VITE_USE_NEW_FLEX
+  ? calculateFlexNew
+  : calculateFlexOld;
 
 // Unified post-mutation scheduler.
 //
@@ -1640,27 +1641,19 @@ export class ElementNode {
       if (!props.texture) {
         // Set width and height to parent less offset
         if (isNaN(props.w as number)) {
-          // A flex container that sizes its width to its children (contain on the
-          // main axis) should default to 1 rather than filling its parent, so it
-          // shrinks to fit content once layout runs.
-          let flexFitsWidth = false;
-          if (node.display === 'flex') {
-            const flexDirection = node.flexDirection || 'row';
-            const isFlexRow =
-              flexDirection === 'row' || flexDirection === 'row-reverse';
-            flexFitsWidth = isFlexRow && node.flexBoundary !== 'fixed';
-          }
-
-          if (node.flexGrow || flexFitsWidth) {
-            props.w = 0;
-          } else {
-            props.w = parentWidth - props.x;
-          }
+          const defaultWidth =
+            this.display === 'flex' && this.flexDirection === 'row'
+              ? 0
+              : parentWidth - props.x;
+          props.w = node.flexGrow ? 0 : defaultWidth;
           node._calcWidth = true;
         }
 
         if (isNaN(props.h as number)) {
-          props.h = parentHeight - props.y;
+          props.h =
+            this.display === 'flex' && this.flexDirection === 'column'
+              ? 0
+              : parentHeight - props.y;
           node._calcHeight = true;
         }
 
