@@ -1407,6 +1407,23 @@ export class ElementNode {
     }
   }
 
+  _isFlexRow() {
+    // default flexDirection is row if not specified
+    return (
+      this.display === 'flex' &&
+      this.flexDirection !== 'column' &&
+      this.flexDirection !== 'column-reverse'
+    );
+  }
+
+  _isFlexColumn() {
+    return (
+      this.display === 'flex' &&
+      this.flexDirection !== 'column' &&
+      this.flexDirection !== 'column-reverse'
+    );
+  }
+
   _stateChanged() {
     if (isDev) log('State Changed: ', this, this.states);
 
@@ -1637,23 +1654,17 @@ export class ElementNode {
         }
       }
     } else {
-      // If its not an image or texture apply some defaults
+      // If it's not an image or texture apply some defaults
       if (!props.texture) {
-        // Set width and height to parent less offset
+        // Set width and height to parent less offset. If it's a flex, we let the flexLayout handle the calculations
         if (isNaN(props.w as number)) {
-          const defaultWidth =
-            this.display === 'flex' && this.flexDirection === 'row'
-              ? 0
-              : parentWidth - props.x;
+          const defaultWidth = this._isFlexRow() ? 0 : parentWidth - props.x;
           props.w = node.flexGrow ? 0 : defaultWidth;
           node._calcWidth = true;
         }
 
         if (isNaN(props.h as number)) {
-          props.h =
-            this.display === 'flex' && this.flexDirection === 'column'
-              ? 0
-              : parentHeight - props.y;
+          props.h = this._isFlexColumn() ? 0 : parentHeight - props.y;
           node._calcHeight = true;
         }
 
