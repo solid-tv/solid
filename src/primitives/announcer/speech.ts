@@ -58,12 +58,24 @@ function addChildrenToAriaDiv(phrase: AriaLabel) {
  * @description This function is triggered finally when the speak series is finished and we are to speak the aria labels
  */
 function focusElementForAria() {
+  // Nothing new to announce (e.g. a canceled series). Leave whatever the live
+  // region currently holds in place so an in-progress screen reader isn't cut off.
+  if (ariaLabelPhrases.length === 0) {
+    return;
+  }
+
   const element = createAriaElement();
 
   if (!element) {
     console.error(`ARIA div not found: ${ARIA_PARENT_ID}`);
     return;
   }
+
+  // Replace-on-next-write: drop the previous announcement's nodes, then inject
+  // the current label. The label stays in the assertive live region until the
+  // *next* announcement replaces it — rather than being torn down on a timer —
+  // so on-device TV screen readers have time to finish reading it.
+  cleanAriaLabelParent();
 
   for (const object of ariaLabelPhrases) {
     const span = document.createElement('span');
@@ -74,12 +86,7 @@ function focusElementForAria() {
     element.appendChild(span);
   }
 
-  // Cleanup
-  setTimeout(() => {
-    ariaLabelPhrases = [];
-    cleanAriaLabelParent();
-    focusCanvas();
-  }, 100);
+  ariaLabelPhrases = [];
 }
 
 /**
@@ -92,14 +99,6 @@ function cleanAriaLabelParent(): void {
       parentTag.removeChild(parentTag.firstChild);
     }
   }
-}
-
-/**
- * @description Focus the canvas element
- */
-function focusCanvas(): void {
-  const canvas = document.getElementById('app')?.firstChild as HTMLElement;
-  canvas?.focus();
 }
 
 /**
@@ -299,19 +298,14 @@ function speakSeries(
 
       if (root) {
         if (aria) {
-          const element = createAriaElement();
-
-          if (element) {
-            ariaLabelPhrases = [];
-            cleanAriaLabelParent();
-            element.focus();
-            focusCanvas();
-          }
-
-          return;
+          // Replace-on-next-write: don't tear down the live region here. The
+          // current label stays until the next announcement replaces it, so the
+          // screen reader can finish. Just drop any partially accumulated
+          // phrases from this canceled series.
+          ariaLabelPhrases = [];
+        } else {
+          synth.cancel(); // Cancel all ongoing speech
         }
-
-        synth.cancel(); // Cancel all ongoing speech
       }
       nestedSeriesResults.forEach((nestedSeriesResult) => {
         nestedSeriesResult.cancel();

@@ -27,6 +27,10 @@ export function startLightningRenderer(
 export async function loadFonts(fonts: FontLoadOptions[]) {
   // Inlined so the loadFontToDom branch + import tree-shake in WebGL builds.
   const enableDomRenderer = DOM_RENDERING && Config.domRendererEnabled;
+  const hasCanvas =
+    !enableDomRenderer &&
+    'textRenderers' in renderer.stage &&
+    !!(renderer.stage as lng.Stage).textRenderers.canvas;
   await Promise.all(
     fonts.map((font) => {
       // WebGL — SDF
@@ -41,7 +45,7 @@ export async function loadFonts(fonts: FontLoadOptions[]) {
       if ('fontUrl' in font) {
         if (enableDomRenderer) {
           loadFontToDom(font);
-        } else if (renderer.stage.renderer.mode !== 'webgl') {
+        } else if (hasCanvas) {
           return renderer.stage.loadFont('canvas', font);
         }
       }
