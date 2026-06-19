@@ -1,4 +1,4 @@
-import { type INode, type Point } from '@solidtv/renderer';
+import { type INode } from '@solidtv/renderer';
 import { Config, isDev } from './config.js';
 import type { Styles, ElementText } from './intrinsicTypes.js';
 import { ElementNode } from './elementNode.js';
@@ -155,7 +155,9 @@ const node${i} = renderer.createNode(props${i});
   return output;
 }
 
-export interface Rect extends Point {
+export interface Rect {
+  x: number;
+  y: number;
   width: number;
   height: number;
 }

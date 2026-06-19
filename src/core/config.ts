@@ -9,6 +9,7 @@ import {
   type ElementNode,
   convertToShader as defaultConvertToShader,
 } from './elementNode.js';
+import { setActiveElement as setActiveElementSignal } from './activeElement.js';
 import {
   DomRendererMainSettings,
   IRendererShader,
@@ -21,17 +22,8 @@ import {
   See `vite-env.d.ts` for environment variable type definitions.
 */
 
-export const isDev = !!(import.meta.env && import.meta.env.DEV);
-
-/** Whether the DOM renderer is used instead of `@solidtv/renderer` */
-export const DOM_RENDERING =
-  typeof SOLIDTV_DOM_RENDERING !== 'undefined' &&
-  SOLIDTV_DOM_RENDERING === true;
-
-/** Whether element shaders are enabled */
-export const SHADERS_ENABLED =
-  typeof SOLIDTV_DISABLE_SHADERS === 'undefined' ||
-  SOLIDTV_DISABLE_SHADERS !== true;
+export { isDev, DOM_RENDERING, SHADERS_ENABLED } from './env.js';
+import { DOM_RENDERING } from './env.js';
 
 /**
  * True when the DOM renderer is both built in (`DOM_RENDERING`) and turned on
@@ -63,6 +55,14 @@ export interface Config {
   animationsEnabled: boolean;
   fontSettings: Partial<TextProps>;
   rendererOptions?: Partial<RendererMainSettings> | DomRendererMainSettings;
+  /**
+   * Hook the focus manager calls to publish the active element. Defaults to
+   * writing the {@link activeElement} signal directly; a custom focus manager
+   * (or the built-in `useFocusManager`) may reassign this — e.g. to run the
+   * write inside a captured Solid owner context. This is the seam that keeps
+   * the `activeElement` signal decoupled from focus-manager logic.
+   */
+  setActiveElement: (elm: ElementNode) => void;
   focusStateKey: DollarString;
   lockStyles?: boolean;
   fontWeightAlias?: Record<string, number | string>;
@@ -84,6 +84,7 @@ export const Config: Config = {
     easing: 'ease-in-out',
   },
   convertToShader: defaultConvertToShader,
+  setActiveElement: (elm) => setActiveElementSignal(elm),
   fontSettings: {
     fontFamily: 'Ubuntu',
     fontSize: 100,

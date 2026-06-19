@@ -1642,7 +1642,22 @@ export class ElementNode {
       if (!props.texture) {
         // Set width and height to parent less offset
         if (isNaN(props.w as number)) {
-          props.w = node.flexGrow ? 0 : parentWidth - props.x;
+          // A flex container that sizes its width to its children (contain on the
+          // main axis) should default to 1 rather than filling its parent, so it
+          // shrinks to fit content once layout runs.
+          let flexFitsWidth = false;
+          if (node.display === 'flex') {
+            const flexDirection = node.flexDirection || 'row';
+            const isFlexRow =
+              flexDirection === 'row' || flexDirection === 'row-reverse';
+            flexFitsWidth = isFlexRow && node.flexBoundary !== 'fixed';
+          }
+
+          if (node.flexGrow || flexFitsWidth) {
+            props.w = 0;
+          } else {
+            props.w = parentWidth - props.x;
+          }
           node._calcWidth = true;
         }
 

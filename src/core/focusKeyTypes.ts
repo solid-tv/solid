@@ -40,20 +40,20 @@ export interface FocusNode {
 export type KeyNameOrKeyCode = string | number;
 
 export interface DefaultKeyMap {
-  Left: KeyNameOrKeyCode | KeyNameOrKeyCode[];
-  Right: KeyNameOrKeyCode | KeyNameOrKeyCode[];
-  Up: KeyNameOrKeyCode | KeyNameOrKeyCode[];
-  Down: KeyNameOrKeyCode | KeyNameOrKeyCode[];
-  Enter: KeyNameOrKeyCode | KeyNameOrKeyCode[];
-  Last: KeyNameOrKeyCode | KeyNameOrKeyCode[];
+  Left: KeyNameOrKeyCode | KeyNameOrKeyCode[] | null;
+  Right: KeyNameOrKeyCode | KeyNameOrKeyCode[] | null;
+  Up: KeyNameOrKeyCode | KeyNameOrKeyCode[] | null;
+  Down: KeyNameOrKeyCode | KeyNameOrKeyCode[] | null;
+  Enter: KeyNameOrKeyCode | KeyNameOrKeyCode[] | null;
+  Last: KeyNameOrKeyCode | KeyNameOrKeyCode[] | null;
 }
 
 export interface KeyMap extends DefaultKeyMap {
-  [key: string]: KeyNameOrKeyCode | KeyNameOrKeyCode[];
+  [key: string]: KeyNameOrKeyCode | KeyNameOrKeyCode[] | null;
 }
 
 export interface DefaultKeyHoldMap {
-  EnterHold: KeyNameOrKeyCode | KeyNameOrKeyCode[];
+  EnterHold: KeyNameOrKeyCode | KeyNameOrKeyCode[] | null;
 }
 
 export type EventHandlers<Map> = {

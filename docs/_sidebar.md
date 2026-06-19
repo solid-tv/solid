@@ -56,6 +56,7 @@
   - [RDK Firebolt Integration](/deploy/firebolt.md)
   - [Tizen/Samsung](/deploy/tizen.md)
   - [WebOS/LG](/deploy/lg.md)
+  - [Android TV](/deploy/androidtv.md)
   - [Legacy Devices](/deploy/legacy.md)
 - Tooling
   - [SolidTV Devtools](/tools/solid_devtools.md)
