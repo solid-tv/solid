@@ -45,7 +45,7 @@ export type UseHoldProps = {
  */
 
 export function useHold(props: UseHoldProps) {
-  const holdThreshold = createMemo(() => props.holdThreshold ?? 550);
+  const holdThreshold = createMemo(() => props.holdThreshold ?? 500);
   const performOnEnterImmediately = createMemo(
     () => props.performOnEnterImmediately ?? false,
   );
