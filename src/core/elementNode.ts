@@ -1620,7 +1620,11 @@ export class ElementNode {
       }
 
       // Can you put effects on Text nodes? Need to confirm...
-      if (SHADERS_ENABLED && props.shader && !props.shader.program) {
+      if (
+        SHADERS_ENABLED &&
+        props.shader &&
+        !('program' in props.shader || 'render' in props.shader) // If not a raw shader
+      ) {
         props.shader = Config.convertToShader(node, props.shader);
       }
 
@@ -1675,7 +1679,11 @@ export class ElementNode {
         }
       }
 
-      if (SHADERS_ENABLED && props.shader && !props.shader.program) {
+      if (
+        SHADERS_ENABLED &&
+        props.shader &&
+        !('program' in props.shader || 'render' in props.shader) // If not a raw shader
+      ) {
         props.shader = Config.convertToShader(node, props.shader);
       }
 
