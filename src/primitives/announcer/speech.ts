@@ -17,7 +17,15 @@ type AriaLabel = { text: string; lang: string };
 const ARIA_PARENT_ID = 'aria-parent';
 let ariaLabelPhrases: AriaLabel[] = [];
 
-/* global SpeechSynthesisErrorEvent */
+// An Error carrying the structured speech-synthesis error code (e.g.
+// "interrupted", "canceled", "network"). We reject with this instead of the
+// raw SpeechSynthesisErrorEvent so callers can classify the failure without
+// depending on the SpeechSynthesisErrorEvent global, which isn't defined on
+// every TV browser.
+interface SpeechError extends Error {
+  error?: string;
+}
+
 function flattenStrings(series: SpeechType[] = []): SpeechType[] {
   const flattenedSeries = [];
 
@@ -153,11 +161,48 @@ function speak(
       resolve();
     };
     utterance.onerror = (e) => {
-      reject(new Error(`Speech synthesis error: ${e.error}`));
+      const error: SpeechError = new Error(
+        `Speech synthesis error: ${e.error}`,
+      );
+      // Preserve the code so speakSeries can tell benign interruptions
+      // ("interrupted"/"canceled") apart from real failures ("network", etc.).
+      error.error = e.error;
+      reject(error);
     };
     utterances.push(utterance);
     synth.speak(utterance);
   });
+}
+
+/**
+ * @description Classify a caught speech error and apply back-off.
+ * Returns the retries remaining after handling. `interrupted`/`canceled` are
+ * benign — a newer announcement cancelled or replaced the in-flight one (see
+ * synth.cancel()), which happens constantly during directional navigation — so
+ * we stop retrying without surfacing them. `network` errors back off and retry.
+ * Anything else is genuinely unexpected and is rethrown.
+ */
+async function handleSpeechError(
+  e: unknown,
+  retriesLeft: number,
+  totalRetries: number,
+): Promise<number> {
+  const code = (e as SpeechError | undefined)?.error;
+
+  if (code === 'network') {
+    retriesLeft--;
+    console.warn(
+      `Speech synthesis network error. Retries left: ${retriesLeft}`,
+    );
+    await delay(500 * (totalRetries - retriesLeft));
+    return retriesLeft;
+  }
+
+  if (code === 'canceled' || code === 'interrupted') {
+    return 0; // benign — stop retrying, don't propagate
+  }
+
+  throw e;
 }
 
 function speakSeries(
@@ -203,25 +248,11 @@ function speakSeries(
               else await speak(phrase, utterances, lang, voice);
               retriesLeft = 0; // Exit retry loop on success
             } catch (e) {
-              if (e instanceof SpeechSynthesisErrorEvent) {
-                if (e.error === 'network') {
-                  retriesLeft--;
-                  console.warn(
-                    `Speech synthesis network error. Retries left: ${retriesLeft}`,
-                  );
-                  await delay(500 * (totalRetries - retriesLeft));
-                } else if (
-                  e.error === 'canceled' ||
-                  e.error === 'interrupted'
-                ) {
-                  // Cancel or interrupt error (ignore)
-                  retriesLeft = 0;
-                } else {
-                  throw new Error(`SpeechSynthesisErrorEvent: ${e.error}`);
-                }
-              } else {
-                throw e;
-              }
+              retriesLeft = await handleSpeechError(
+                e,
+                retriesLeft,
+                totalRetries,
+              );
             }
           }
         } else if (phrase instanceof SpeechSynthesisUtterance) {
@@ -241,25 +272,11 @@ function speakSeries(
                 retriesLeft = 0; // Exit retry loop on success
               }
             } catch (e) {
-              if (e instanceof SpeechSynthesisErrorEvent) {
-                if (e.error === 'network') {
-                  retriesLeft--;
-                  console.warn(
-                    `Speech synthesis network error. Retries left: ${retriesLeft}`,
-                  );
-                  await delay(500 * (totalRetries - retriesLeft));
-                } else if (
-                  e.error === 'canceled' ||
-                  e.error === 'interrupted'
-                ) {
-                  // Cancel or interrupt error (ignore)
-                  retriesLeft = 0;
-                } else {
-                  throw new Error(`SpeechSynthesisErrorEvent: ${e.error}`);
-                }
-              } else {
-                throw e;
-              }
+              retriesLeft = await handleSpeechError(
+                e,
+                retriesLeft,
+                totalRetries,
+              );
             }
           }
         } else if (typeof phrase === 'function') {
