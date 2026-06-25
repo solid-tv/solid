@@ -1,5 +1,6 @@
 import * as lngr from '@solidtv/renderer';
-import * as lngr_shaders from '@solidtv/renderer/webgl/shaders';
+import * as lngr_canvas_shaders from '@solidtv/renderer/canvas/shaders';
+import * as lngr_webgl_shaders from '@solidtv/renderer/webgl/shaders';
 
 import type {
   HolePunchProps as ShaderHolePunchProps,
@@ -9,6 +10,7 @@ import type {
   ShadowProps as ShaderShadowProps,
 } from '@solidtv/renderer';
 import { type WebGlShaderType as WebGlShader } from '@solidtv/renderer/webgl';
+import { type CanvasShaderType as CanvasShader } from '@solidtv/renderer/canvas';
 export {
   ShaderHolePunchProps,
   ShaderLinearGradientProps,
@@ -17,6 +19,7 @@ export {
   ShaderShadowProps,
 };
 export { WebGlShader };
+export { CanvasShader };
 
 import { SHADERS_ENABLED, isDomRendererActive } from './config.js';
 import type { CoreShaderManager } from './intrinsicTypes.js';
@@ -50,31 +53,21 @@ export type ShaderRoundedWithBorderAndShadowProps = ShaderRoundedProps &
   ShaderShadowPrefixedProps &
   ShaderBorderPrefixedProps;
 
-export type ShaderRounded = WebGlShader<ShaderRoundedProps>;
-export type ShaderShadow = WebGlShader<ShaderShadowProps>;
-export type ShaderRoundedWithBorder = WebGlShader<ShaderRoundedWithBorderProps>;
-export type ShaderRoundedWithShadow = WebGlShader<ShaderRoundedWithShadowProps>;
+export type RendererShader<Props extends object> =
+  | WebGlShader<Props>
+  | CanvasShader<Props>;
+
+export type ShaderRounded = RendererShader<ShaderRoundedProps>;
+export type ShaderShadow = RendererShader<ShaderShadowProps>;
+export type ShaderRoundedWithBorder =
+  RendererShader<ShaderRoundedWithBorderProps>;
+export type ShaderRoundedWithShadow =
+  RendererShader<ShaderRoundedWithShadowProps>;
 export type ShaderRoundedWithBorderAndShadow =
-  WebGlShader<ShaderRoundedWithBorderAndShadowProps>;
-export type ShaderHolePunch = WebGlShader<ShaderHolePunchProps>;
-export type ShaderRadialGradient = WebGlShader<ShaderRadialGradientProps>;
-export type ShaderLinearGradient = WebGlShader<ShaderLinearGradientProps>;
-
-export const defaultShaderRounded: ShaderRounded = lngr_shaders.Rounded;
-export const defaultShaderShadow: ShaderShadow = lngr_shaders.Shadow;
-export const defaultShaderRoundedWithShadow: ShaderRoundedWithShadow =
-  lngr_shaders.RoundedWithShadow;
-// TODO: lngr_shaders.RoundedWithBorderAndShadow doesn't support border-gap
-export const defaultShaderRoundedWithBorderAndShadow =
-  lngr_shaders.RoundedWithBorderAndShadow as ShaderRoundedWithBorderAndShadow;
-export const defaultShaderHolePunch: ShaderHolePunch = lngr_shaders.HolePunch;
-export const defaultShaderRadialGradient: ShaderRadialGradient =
-  lngr_shaders.RadialGradient;
-export const defaultShaderLinearGradient: ShaderLinearGradient =
-  lngr_shaders.LinearGradient;
-
-export const defaultShaderRoundedWithBorder =
-  lngr_shaders.RoundedWithBorder as ShaderRoundedWithBorder;
+  RendererShader<ShaderRoundedWithBorderAndShadowProps>;
+export type ShaderHolePunch = RendererShader<ShaderHolePunchProps>;
+export type ShaderRadialGradient = RendererShader<ShaderRadialGradientProps>;
+export type ShaderLinearGradient = RendererShader<ShaderLinearGradientProps>;
 
 function calcFactoredRadiusArray(
   radius: Vec4,
@@ -119,15 +112,31 @@ function toValidVec4(value: unknown): Vec4 {
   return [0, 0, 0, 0];
 }
 
+function isCanvas(
+  shManager: CoreShaderManager | IRendererShaderManager,
+): boolean {
+  return 'stage' in shManager && shManager.stage.renderer.mode === 'canvas';
+}
+
 export function registerDefaultShaderRounded(
   shManager: IRendererShaderManager,
 ) {
   if (SHADERS_ENABLED && !isDomRendererActive())
-    shManager.registerShaderType('rounded', defaultShaderRounded);
+    shManager.registerShaderType(
+      'rounded',
+      isCanvas(shManager)
+        ? lngr_canvas_shaders.Rounded
+        : lngr_webgl_shaders.Rounded,
+    );
 }
 export function registerDefaultShaderShadow(shManager: CoreShaderManager) {
   if (SHADERS_ENABLED && !isDomRendererActive())
-    shManager.registerShaderType('shadow', defaultShaderShadow);
+    shManager.registerShaderType(
+      'shadow',
+      isCanvas(shManager)
+        ? lngr_canvas_shaders.Shadow
+        : lngr_webgl_shaders.Shadow,
+    );
 }
 export function registerDefaultShaderRoundedWithBorder(
   shManager: CoreShaderManager,
@@ -135,7 +144,9 @@ export function registerDefaultShaderRoundedWithBorder(
   if (SHADERS_ENABLED && !isDomRendererActive())
     shManager.registerShaderType(
       'roundedWithBorder',
-      defaultShaderRoundedWithBorder,
+      isCanvas(shManager)
+        ? lngr_canvas_shaders.RoundedWithBorder
+        : lngr_webgl_shaders.RoundedWithBorder,
     );
 }
 export function registerDefaultShaderRoundedWithShadow(
@@ -144,7 +155,9 @@ export function registerDefaultShaderRoundedWithShadow(
   if (SHADERS_ENABLED && !isDomRendererActive())
     shManager.registerShaderType(
       'roundedWithShadow',
-      defaultShaderRoundedWithShadow,
+      isCanvas(shManager)
+        ? lngr_canvas_shaders.RoundedWithShadow
+        : lngr_webgl_shaders.RoundedWithShadow,
     );
 }
 export function registerDefaultShaderRoundedWithBorderAndShadow(
@@ -153,24 +166,41 @@ export function registerDefaultShaderRoundedWithBorderAndShadow(
   if (SHADERS_ENABLED && !isDomRendererActive())
     shManager.registerShaderType(
       'roundedWithBorderWithShadow',
-      defaultShaderRoundedWithBorderAndShadow,
+      isCanvas(shManager)
+        ? lngr_canvas_shaders.RoundedWithBorderAndShadow
+        : lngr_webgl_shaders.RoundedWithBorderAndShadow,
     );
 }
 export function registerDefaultShaderHolePunch(shManager: CoreShaderManager) {
   if (SHADERS_ENABLED && !isDomRendererActive())
-    shManager.registerShaderType('holePunch', defaultShaderHolePunch);
+    shManager.registerShaderType(
+      'holePunch',
+      isCanvas(shManager)
+        ? lngr_canvas_shaders.HolePunch
+        : lngr_webgl_shaders.HolePunch,
+    );
 }
 export function registerDefaultShaderRadialGradient(
   shManager: CoreShaderManager,
 ) {
   if (SHADERS_ENABLED && !isDomRendererActive())
-    shManager.registerShaderType('radialGradient', defaultShaderRadialGradient);
+    shManager.registerShaderType(
+      'radialGradient',
+      isCanvas(shManager)
+        ? lngr_canvas_shaders.RadialGradient
+        : lngr_webgl_shaders.RadialGradient,
+    );
 }
 export function registerDefaultShaderLinearGradient(
   shManager: CoreShaderManager,
 ) {
   if (SHADERS_ENABLED && !isDomRendererActive())
-    shManager.registerShaderType('linearGradient', defaultShaderLinearGradient);
+    shManager.registerShaderType(
+      'linearGradient',
+      isCanvas(shManager)
+        ? lngr_canvas_shaders.LinearGradient
+        : lngr_webgl_shaders.LinearGradient,
+    );
 }
 
 export function registerDefaultShaders(shManager: CoreShaderManager) {
