@@ -459,7 +459,7 @@ function createVirtual<T>(
           },
         ).start();
       } else {
-        this.lng[axis] = this.lng[axis]! + childSize * slice().shiftBy;
+        this.lng[axis] = (prevChildPos - active[axis]) + childSize * slice().shiftBy;
       }
     });
   };
