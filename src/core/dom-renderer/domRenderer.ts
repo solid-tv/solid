@@ -857,15 +857,28 @@ function updateNodeStyles(node: DOMNode | DOMText) {
 
           node.imgEl.addEventListener('error', () => {
             node.imageLoading = false;
+
+            const failedSrc =
+              node.imgEl?.dataset.pendingSrc || node.lazyImagePendingSrc || '';
+
+            const fallback = node.props.fallbackImage;
+            if (
+              fallback &&
+              node.imgEl &&
+              node.imgEl.dataset.rawSrc !== fallback
+            ) {
+              node.imgEl.dataset.pendingSrc = fallback;
+              node.imgEl.dataset.rawSrc = fallback;
+              node.imgEl.src = fallback;
+              return;
+            }
+
             node.showBackgroundLayer();
             if (node.imgEl) {
               node.imgEl.removeAttribute('src');
               node.imgEl.style.display = 'none';
               node.imgEl.removeAttribute('data-rawSrc');
             }
-
-            const failedSrc =
-              node.imgEl?.dataset.pendingSrc || node.lazyImagePendingSrc || '';
 
             const payload: lng.NodeTextureFailedPayload = {
               type: 'texture',
@@ -977,14 +990,27 @@ function updateNodeStyles(node: DOMNode | DOMText) {
 
         node.imgEl.addEventListener('error', () => {
           node.imageLoading = false;
+
+          const failedSrc =
+            node.imgEl?.dataset.pendingSrc || node.lazyImagePendingSrc || '';
+
+          const fallback = node.props.fallbackImage;
+          if (
+            fallback &&
+            node.imgEl &&
+            node.imgEl.dataset.rawSrc !== fallback
+          ) {
+            node.imgEl.dataset.pendingSrc = fallback;
+            node.imgEl.dataset.rawSrc = fallback;
+            node.imgEl.src = fallback;
+            return;
+          }
+
           if (node.imgEl) {
             node.imgEl.removeAttribute('src');
             node.imgEl.style.display = 'none';
             node.imgEl.removeAttribute('data-rawSrc');
           }
-
-          const failedSrc =
-            node.imgEl?.dataset.pendingSrc || node.lazyImagePendingSrc || '';
 
           const payload: lng.NodeTextureFailedPayload = {
             type: 'texture',
@@ -1285,6 +1311,7 @@ function resolveNodeDefaults(
     rotation: props.rotation ?? 0,
     rtt: props.rtt ?? false,
     placeholderColor: props.placeholderColor ?? 0,
+    fallbackImage: props.fallbackImage ?? null,
     data: {},
     imageType: props.imageType,
   };
@@ -1827,6 +1854,15 @@ export class DOMNode extends EventEmitter implements IRendererNode {
   set placeholderColor(v: number) {
     this.props.placeholderColor = v;
     updateNodeStyles(this);
+  }
+
+  get fallbackImage(): string | null {
+    return this.props.fallbackImage ?? null;
+  }
+
+  set fallbackImage(v: string | null) {
+    if (this.props.fallbackImage === v) return;
+    this.props.fallbackImage = v;
   }
 
   get absX(): number {
