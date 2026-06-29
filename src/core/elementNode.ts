@@ -1648,7 +1648,18 @@ export class ElementNode {
             const flexDirection = node.flexDirection || 'row';
             const isFlexRow =
               flexDirection === 'row' || flexDirection === 'row-reverse';
-            flexFitsWidth = isFlexRow && node.flexBoundary !== 'fixed';
+            const needsWidthForJustify = [
+              'center',
+              'flex-end',
+              'space-between',
+              'space-around',
+              'space-evenly',
+            ].includes(node.justifyContent as string);
+
+            flexFitsWidth =
+              isFlexRow &&
+              node.flexBoundary !== 'fixed' &&
+              !needsWidthForJustify;
           }
 
           if (node.flexGrow || flexFitsWidth) {
