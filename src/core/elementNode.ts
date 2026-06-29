@@ -1620,7 +1620,10 @@ export class ElementNode {
       }
 
       // Can you put effects on Text nodes? Need to confirm...
-      if (SHADERS_ENABLED && props.shader && !props.shader.program) {
+      // A built shader node (WebGL, Canvas, or the DOM test fake) always has a
+      // `shaderType`; a raw StyleEffects props object never does. Only convert
+      // the latter — a built shader is already ready to render.
+      if (SHADERS_ENABLED && props.shader && !('shaderType' in props.shader)) {
         props.shader = Config.convertToShader(node, props.shader);
       }
 
@@ -1692,7 +1695,7 @@ export class ElementNode {
         }
       }
 
-      if (SHADERS_ENABLED && props.shader && !props.shader.program) {
+      if (SHADERS_ENABLED && props.shader && !('shaderType' in props.shader)) {
         props.shader = Config.convertToShader(node, props.shader);
       }
 
