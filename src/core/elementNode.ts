@@ -758,6 +758,16 @@ export interface ElementNode extends RendererNode, FocusNode {
   onEvent?: OnEvent;
 
   /**
+   * Callback event for when the element is clicked with a mouse.
+   * Triggered when `useMouse` is running.
+   */
+  onMouseClick?: (
+    this: ElementNode,
+    event: MouseEvent,
+    node: ElementNode,
+  ) => void;
+
+  /**
    * The individual padding on each side of an element, acting as an override to the `padding` array property.
    * `paddingTop`, `paddingRight`, `paddingBottom`, `paddingLeft`.
    * Only in the new flex engine.
