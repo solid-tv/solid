@@ -144,11 +144,17 @@ function createLazy<T>(
   const updateOffset = (_event: KeyboardEvent, container: lng.ElementNode) => {
     const maxOffset = props.each ? props.each.length : 0;
     const selected = container.selected || 0;
-    const rendered = offset(); // == container.children.length
+    // The rendered edge is the actual child count, not offset(): the two
+    // diverge when an item renders empty (no node inserted) or renders
+    // multiple top-level nodes. `selected` indexes into children, so the
+    // proximity check must use child units.
+    const rendered = container.children.length;
 
-    // Already mounted everything, or still far enough from the rendered edge
-    // that the buffer covers the next selection — no work to do.
-    if (rendered >= maxOffset || selected < rendered - buffer()) return;
+    // Already mounted everything (offset is in data units — a diverged child
+    // count must neither stop mounting early nor keep it running forever),
+    // or still far enough from the rendered edge that the buffer covers the
+    // next selection — no work to do.
+    if (offset() >= maxOffset || selected < rendered - buffer()) return;
 
     const bump = () => setOffset((prev) => Math.min(prev + 1, maxOffset));
 
