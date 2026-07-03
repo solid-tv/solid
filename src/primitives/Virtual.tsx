@@ -12,16 +12,18 @@ import {
 
 export type VirtualProps<T> = lng.NewOmit<lngp.RowProps, 'children'> & {
   each: readonly T[] | undefined | null | false;
-  displaySize: number;
-  bufferSize?: number;
   wrap?: boolean;
   scrollIndex?: number;
   onEndReached?: () => void;
   onEndReachedThreshold?: number;
   debugInfo?: boolean;
-  factorScale?: boolean;
-  uniformSize?: boolean;
   children: (item: s.Accessor<T>, index: s.Accessor<number>) => s.JSX.Element;
+};
+
+type DerivedDims = {
+  visibleCount: number;
+  bufferSize: number;
+  itemSize: number;
 };
 
 function createVirtual<T>(
@@ -31,29 +33,36 @@ function createVirtual<T>(
 ) {
   const isRow = component === lngp.Row;
   const axis = isRow ? 'x' : 'y';
+  const sizeDim = isRow ? 'width' : 'height';
   const [cursor, setCursor] = s.createSignal(props.selected ?? 0);
-  const bufferSize = s.createMemo(() => props.bufferSize || 2);
   const scrollIndex = s.createMemo(() => props.scrollIndex || 0);
   const items = s.createMemo(() => props.each || []);
   const itemCount = s.createMemo(() => items().length);
   const scrollType = s.createMemo(() => props.scroll || 'auto');
 
+  // Derived from a single measurement of the container + first child.
+  // `undefined` means we haven't measured yet — slice rendering stays in probe mode.
+  const [derivedDims, setDerivedDims] = s.createSignal<DerivedDims | undefined>();
+  const visibleCount = () => derivedDims()?.visibleCount ?? 0;
+  const bufferSize = () => derivedDims()?.bufferSize ?? 2;
+
   const selected = () => {
-    if (itemCount() <= props.displaySize) {
-      return utils.clamp(props.selected || 0, 0, Math.max(0, itemCount() - 1));
+    const vc = visibleCount();
+    const total = itemCount();
+    if (!vc) {
+      return utils.clamp(props.selected || 0, 0, Math.max(0, total - 1));
+    }
+    if (total <= vc) {
+      return utils.clamp(props.selected || 0, 0, Math.max(0, total - 1));
     }
     if (props.wrap) {
       return Math.max(bufferSize(), scrollIndex());
     }
-    return utils.clamp(props.selected || 0, 0, Math.max(0, itemCount() - 1));
+    return utils.clamp(props.selected || 0, 0, Math.max(0, total - 1));
   };
 
-  let cachedScaledSize: number | undefined;
   let targetPosition: number | undefined;
   let cachedAnimationController: lng.IAnimationController | undefined;
-  const uniformSize = s.createMemo(() => {
-    return props.uniformSize !== false;
-  });
 
   type SliceState = {
     start: number;
@@ -82,24 +91,8 @@ function createVirtual<T>(
     return delta;
   }
 
-  function computeSize(selected: number = 0) {
-    if (uniformSize() && cachedScaledSize) {
-      return cachedScaledSize;
-    } else if (viewRef) {
-      const gap = viewRef.gap || 0;
-      const dimension = isRow ? 'width' : 'height'; // This can't be moved up as it depends on viewRef
-      const prevSelectedChild = viewRef.children[selected];
-
-      if (prevSelectedChild instanceof lng.ElementNode) {
-        const itemSize = prevSelectedChild[dimension] || 0;
-        const focusStyle = prevSelectedChild.style?.focus as lng.NodeStyles;
-        const scale = focusStyle?.scale ?? prevSelectedChild.scale ?? 1;
-        const scaledSize = itemSize * (props.factorScale ? scale : 1) + gap;
-        cachedScaledSize = scaledSize;
-        return scaledSize;
-      }
-    }
-    return 0;
+  function computeSize() {
+    return derivedDims()?.itemSize ?? 0;
   }
 
   function computeSlice(
@@ -107,8 +100,18 @@ function createVirtual<T>(
     delta: number,
     prev: SliceState,
   ): SliceState {
+    // Hoist every memo read used inside this function — they're constants for
+    // the duration of one slice computation, and pulling them up keeps the
+    // switch branches focused on the actual math.
     const total = itemCount();
-    if (total === 0)
+    const vc = visibleCount();
+    const buf = bufferSize();
+    const si = scrollIndex();
+    const allItems = items();
+    const wrap = !!props.wrap;
+    const mode = scrollType();
+
+    if (total === 0 || vc === 0)
       return {
         start: 0,
         slice: [],
@@ -119,10 +122,10 @@ function createVirtual<T>(
         cursor: 0,
       };
 
-    if (total <= props.displaySize) {
+    if (total <= vc) {
       return {
         start: 0,
-        slice: items() as T[],
+        slice: allItems as T[],
         selected: utils.clamp(c, 0, total - 1),
         delta,
         shiftBy: 0,
@@ -131,63 +134,59 @@ function createVirtual<T>(
       };
     }
 
-    const length = props.displaySize + bufferSize();
+    const length = vc + buf;
     let start = prev.start;
     let selected = prev.selected;
     let atStart = prev.atStart;
     let shiftBy = -delta;
 
-    switch (scrollType()) {
+    switch (mode) {
       case 'always':
-        if (props.wrap) {
+        if (wrap) {
           start = utils.mod(c - 1, total);
           selected = 1;
         } else {
           start = utils.clamp(
-            c - bufferSize(),
+            c - buf,
             0,
-            Math.max(0, total - props.displaySize - bufferSize()),
+            Math.max(0, total - vc - buf),
           );
           if (delta === 0 && c > 3) {
             shiftBy = c < 3 ? -c : -2;
             selected = 2;
           } else {
             selected =
-              c < bufferSize()
+              c < buf
                 ? c
-                : c >= total - props.displaySize
-                  ? c - (total - props.displaySize) + bufferSize()
-                  : bufferSize();
+                : c >= total - vc
+                  ? c - (total - vc) + buf
+                  : buf;
           }
         }
         break;
 
       case 'auto':
-        if (props.wrap) {
+        if (wrap) {
           if (delta === 0) {
-            selected = scrollIndex() || 1;
-            start = utils.mod(c - (scrollIndex() || 1), total);
+            selected = si || 1;
+            start = utils.mod(c - (si || 1), total);
           } else {
             start = utils.mod(c - (prev.selected || 1), total);
           }
         } else {
           if (delta < 0) {
             // Moving left
-            if (prev.start > 0 && prev.selected >= props.displaySize) {
-              // Move selection left inside slice
+            if (prev.start > 0 && prev.selected >= vc) {
               start = prev.start;
               selected = prev.selected - 1;
             } else if (prev.start > 0) {
-              // Move selection left inside slice
               start = prev.start - 1;
               selected = prev.selected;
-              // shiftBy = 0;
             } else if (prev.start === 0 && !prev.atStart) {
               start = 0;
               selected = prev.selected - 1;
               atStart = true;
-            } else if (selected >= props.displaySize - 1) {
-              // Shift window left, keep selection pinned
+            } else if (selected >= vc - 1) {
               start = 0;
               selected = prev.selected - 1;
             } else {
@@ -197,12 +196,11 @@ function createVirtual<T>(
             }
           } else if (delta > 0) {
             // Moving right
-            if (prev.selected < scrollIndex()) {
-              // Move selection right inside slice
+            if (prev.selected < si) {
               start = prev.start;
               selected = prev.selected + 1;
               shiftBy = 0;
-            } else if (prev.selected === scrollIndex() || atStart) {
+            } else if (prev.selected === si || atStart) {
               start = prev.start;
               selected = prev.selected + 1;
               atStart = false;
@@ -210,24 +208,22 @@ function createVirtual<T>(
               start = 0;
               selected = 1;
               atStart = false;
-            } else if (prev.start >= total - props.displaySize) {
-              // At end: clamp slice, selection drifts right
+            } else if (prev.start >= total - vc) {
               start = prev.start;
               selected = c - start;
               shiftBy = 0;
             } else {
-              // Shift window right, keep selection pinned
               start = prev.start + 1;
-              selected = Math.max(prev.selected, scrollIndex() + 1);
+              selected = Math.max(prev.selected, si + 1);
             }
           } else {
             // Initial setup
             if (c > 0) {
               start = Math.min(
-                c - (scrollIndex() || 1),
-                total - props.displaySize - bufferSize(),
+                c - (si || 1),
+                total - vc - buf,
               );
-              selected = Math.max(scrollIndex() || 1, c - start);
+              selected = Math.max(si || 1, c - start);
               shiftBy = total - c < 3 ? c - total : -1;
               atStart = false;
             } else {
@@ -250,9 +246,9 @@ function createVirtual<T>(
       case 'edge': {
         const startScrolling = Math.max(
           1,
-          props.displaySize + (atStart ? -1 : 0),
+          vc + (atStart ? -1 : 0),
         );
-        if (props.wrap) {
+        if (wrap) {
           if (delta > 0) {
             if (prev.selected < startScrolling) {
               selected = prev.selected + 1;
@@ -280,7 +276,6 @@ function createVirtual<T>(
           }
         } else {
           if (delta === 0 && c > 0) {
-            //initial setup
             selected = c > startScrolling ? startScrolling : c;
             start = Math.max(0, c - startScrolling + 1);
             shiftBy = c > startScrolling ? -1 : 0;
@@ -327,12 +322,12 @@ function createVirtual<T>(
 
     let newSlice = prev.slice;
     if (start !== prev.start || newSlice.length === 0) {
-      newSlice = props.wrap
+      newSlice = wrap
         ? (Array.from(
             { length },
-            (_, i) => items()[utils.mod(start + i, total)],
+            (_, i) => allItems[utils.mod(start + i, total)],
           ) as T[])
-        : items().slice(start, start + length);
+        : allItems.slice(start, start + length);
     }
 
     const state: SliceState = {
@@ -363,7 +358,7 @@ function createVirtual<T>(
 
   function scrollToIndex(this: lng.ElementNode, index: number) {
     s.untrack(() => {
-      if (itemCount() === 0) return;
+      if (itemCount() === 0 || !derivedDims()) return;
 
       lastNavTime = performance.now();
       if (originalPosition !== undefined) {
@@ -390,6 +385,10 @@ function createVirtual<T>(
   }
 
   let originalPosition: number | undefined;
+  // Tracks whether we've already fired onEndReached for the current "in-zone"
+  // state. Resets when the cursor moves back out of the threshold, so callers
+  // get exactly one call per crossing instead of one per keypress.
+  let endReachedFired = false;
   const onSelectedChanged: lngp.OnSelectedChanged = function (
     _idx,
     elm,
@@ -407,10 +406,11 @@ function createVirtual<T>(
       props.onSelectedChanged.call(this, idx, this, active, lastIdx);
     }
 
-    if (noChange) return;
+    if (noChange || !derivedDims()) return;
 
     const rawDelta = idx - (lastIdx ?? 0);
-    const windowLen = elm?.children?.length ?? props.displaySize + bufferSize();
+    const windowLen =
+      elm?.children?.length ?? visibleCount() + bufferSize();
     const delta = props.wrap
       ? normalizeDeltaForWindow(rawDelta, windowLen)
       : rawDelta;
@@ -426,11 +426,15 @@ function createVirtual<T>(
     setSlice(newState);
     elm.selected = newState.selected;
 
-    if (
-      props.onEndReachedThreshold !== undefined &&
-      cursor() >= itemCount() - props.onEndReachedThreshold
-    ) {
-      props.onEndReached?.();
+    if (props.onEndReachedThreshold !== undefined) {
+      const crossed =
+        cursor() >= itemCount() - props.onEndReachedThreshold;
+      if (crossed && !endReachedFired) {
+        endReachedFired = true;
+        props.onEndReached?.();
+      } else if (!crossed && endReachedFired) {
+        endReachedFired = false;
+      }
     }
 
     if (newState.shiftBy === 0) return;
@@ -439,7 +443,7 @@ function createVirtual<T>(
 
     queueMicrotask(() => {
       elm.updateLayout();
-      const childSize = computeSize(slice().selected);
+      const childSize = computeSize();
 
       if (
         cachedAnimationController &&
@@ -465,7 +469,8 @@ function createVirtual<T>(
   };
 
   const updateSelected = ([sel, _items]: [number?, any?]) => {
-    if (!viewRef || sel === undefined || itemCount() === 0) return;
+    if (!viewRef || sel === undefined || itemCount() === 0 || !derivedDims())
+      return;
     const safeSel = utils.clamp(sel, 0, itemCount() - 1);
     const item = items()[safeSel];
     setCursor(safeSel);
@@ -483,7 +488,7 @@ function createVirtual<T>(
 
       if (newState.shiftBy === 0) return;
 
-      const childSize = computeSize(slice().selected);
+      const childSize = computeSize();
       // Original Position is offset to support scrollToIndex
       originalPosition = originalPosition ?? viewRef.lng[axis];
       targetPosition = targetPosition ?? viewRef.lng[axis];
@@ -492,12 +497,64 @@ function createVirtual<T>(
     });
   };
 
+  // Measure container + first probe child, derive visibleCount/bufferSize.
+  function measureAndInit() {
+    if (!viewRef || derivedDims() || itemCount() === 0) return;
+
+    // viewRef.updateLayout();
+    const containerSize = viewRef[sizeDim] || 0;
+    if (!containerSize) return;
+
+    const firstChild = viewRef.children[0];
+    if (!(firstChild instanceof lng.ElementNode)) return;
+
+    const childSize = firstChild[sizeDim] || 0;
+    if (!childSize) return;
+
+    const gap = viewRef.gap || 0;
+    const itemSize = childSize + gap;
+    const vc = Math.max(1, Math.floor(containerSize / itemSize));
+    const buf = Math.max(2, Math.ceil(vc * 0.3));
+
+    if (props.debugInfo) {
+      console.log('[Virtual] measured', {
+        containerSize,
+        childSize,
+        gap,
+        visibleCount: vc,
+        bufferSize: buf,
+      });
+    }
+
+    setDerivedDims({ visibleCount: vc, bufferSize: buf, itemSize });
+
+    const sel = utils.clamp(props.selected ?? 0, 0, itemCount() - 1);
+    setCursor(sel);
+    const initialState = computeSlice(sel, 0, slice());
+    setSlice(initialState);
+    viewRef.selected = initialState.selected;
+  }
+
+  // Re-attempt measurement when items first populate (covers async load).
+  s.createEffect(() => {
+    items();
+    if (!viewRef || derivedDims() || itemCount() === 0) return;
+    queueMicrotask(measureAndInit);
+  });
+
   let doOnce = false;
   s.createEffect(
     s.on([() => props.wrap, items], () => {
-      if (!viewRef || itemCount() === 0 || !props.wrap || doOnce) return;
+      if (
+        !viewRef ||
+        itemCount() === 0 ||
+        !props.wrap ||
+        doOnce ||
+        !derivedDims()
+      )
+        return;
       doOnce = true;
-      if (itemCount() <= props.displaySize) {
+      if (itemCount() <= visibleCount()) {
         queueMicrotask(() => {
           originalPosition = viewRef.lng[axis];
           targetPosition = viewRef.lng[axis];
@@ -506,7 +563,7 @@ function createVirtual<T>(
       }
       // offset just for wrap so we keep one item before
       queueMicrotask(() => {
-        const childSize = computeSize(slice().selected);
+        const childSize = computeSize();
         viewRef.lng[axis] = (viewRef.lng[axis] || 0) + childSize * -1;
         // Original Position is offset to support scrollToIndex
         originalPosition = viewRef.lng[axis];
@@ -519,7 +576,9 @@ function createVirtual<T>(
 
   s.createEffect(
     s.on(items, () => {
-      if (!viewRef) return;
+      if (!viewRef || !derivedDims()) return;
+      // "End" moves when data changes; allow onEndReached to fire again.
+      endReachedFired = false;
       let c = cursor();
       if (c >= itemCount()) {
         c = Math.max(0, itemCount() - 1);
@@ -531,6 +590,16 @@ function createVirtual<T>(
     }),
   );
 
+  // Before measurement completes, render just the first item so we have
+  // something to measure. Once derivedDims is set, render the real slice.
+  const renderedSlice = s.createMemo(() => {
+    if (!derivedDims()) {
+      const list = items();
+      return list.length > 0 ? ([list[0]] as T[]) : [];
+    }
+    return slice().slice;
+  });
+
   return (
     <view
       transitionLeft={isRow ? defaultTransitionBack : undefined}
@@ -541,12 +610,14 @@ function createVirtual<T>(
       {...keyHandlers}
       ref={lngp.chainRefs((el) => {
         viewRef = el as lngp.NavigableElement;
+        queueMicrotask(measureAndInit);
       }, props.ref)}
       selected={selected()}
       cursor={cursor()}
       forwardFocus={/* @once */ lngp.navigableForwardFocus}
       scrollToIndex={/* @once */ scrollToIndex}
       onSelectedChanged={/* @once */ onSelectedChanged}
+      flexBoundary='fixed'
       style={
         /* @once */ lng.combineStyles(
           props.style,
@@ -563,7 +634,7 @@ function createVirtual<T>(
         )
       }
     >
-      <List each={slice().slice}>{props.children}</List>
+      <List each={renderedSlice()}>{props.children}</List>
     </view>
   );
 }
