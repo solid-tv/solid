@@ -3,8 +3,13 @@ import * as lng from '@solidtv/solid';
 import * as lngp from '@solidtv/solid/primitives';
 import { List } from '@solid-primitives/list';
 import * as utils from '../utils.js';
+// Imported directly, not via lngp: this call runs at module init, and the
+// barrel's withScrolling binding is not yet initialized when the barrel is
+// the import entry (circular init — index.ts re-exports withScrolling after
+// VirtualGrid).
+import { withScrolling } from './utils/withScrolling.js';
 
-const columnScroll = lngp.withScrolling(false);
+const columnScroll = withScrolling(false);
 
 const rowStyles: lng.NodeStyles = {
   display: 'flex',
