@@ -21,8 +21,9 @@ function scrollToIndex(
   index: number,
   options?: { noFocus?: boolean },
 ): void {
+  const lastSelected = this.selected;
   this.selected = index;
-  scrollColumn(index, this);
+  scrollColumn(index, this, undefined, lastSelected === index ? undefined : lastSelected);
   if (!options?.noFocus) {
     this.children[index]?.setFocus();
   }
