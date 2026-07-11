@@ -19,9 +19,10 @@ const RowStyles: NodeStyles = {
   gap: 30,
 };
 
-function scrollToIndex(this: ElementNode, index: number, options?: {noFocus?: boolean}) {
+function scrollToIndex(this: ElementNode, index: number, options?: { noFocus?: boolean }) {
+  const lastSelected = this.selected;
   this.selected = index;
-  scrollRow(index, this);
+  scrollRow(index, this, undefined, lastSelected === index ? undefined : lastSelected);
   if (!options?.noFocus) {
     this.children[index]?.setFocus();
   }
