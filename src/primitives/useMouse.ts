@@ -128,7 +128,7 @@ function findElementByActiveElement(e: MouseEvent): ElementNode | null {
   let parent = active?.parent;
   while (parent) {
     if (
-      isFunction(parent.onMouseClick) &&
+      (isFunction(parent.onMouseClick) || isFunction(parent.onEnter)) &&
       testCollision(
         px,
         py,
