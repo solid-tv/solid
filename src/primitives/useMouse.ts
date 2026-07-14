@@ -171,7 +171,7 @@ function handleElementClick(
     clickedElement.onMouseClick(e, clickedElement);
     return;
   } else if (isFunction(clickedElement.onEnter)) {
-    clickedElement.onEnter();
+    clickedElement.onEnter(e, clickedElement, clickedElement);
     return;
   }
 
