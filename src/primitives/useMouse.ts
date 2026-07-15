@@ -10,7 +10,7 @@ import {
 import { makeEventListener } from '@solid-primitives/event-listener';
 import { useMousePosition } from '@solid-primitives/mouse';
 import { createScheduled, throttle } from '@solid-primitives/scheduled';
-import { createEffect, getOwner, runWithOwner } from 'solid-js';
+import { createEffect, createSignal, getOwner, runWithOwner } from 'solid-js';
 
 type CustomState = `$${string}`;
 
@@ -62,6 +62,41 @@ function createKeyboardEvent(
     bubbles: true,
   });
 }
+
+const [cursorVisible, setCursorVisible] = createSignal(false);
+
+let listening = false;
+
+// webOS dispatches `cursorStateChange` on `document` whenever the Magic Remote
+// pointer appears or disappears; `detail.visibility` is the new state.
+const handleCursorStateChange = (event: Event) => {
+  setCursorVisible(
+    Boolean(
+      (event as CustomEvent<{ visibility?: boolean }>).detail?.visibility,
+    ),
+  );
+};
+
+// A single, app-lifetime listener backs every caller so a page full of rails
+// does not attach one listener per rail. Attached lazily on first read.
+const ensureListening = () => {
+  if (listening || typeof document === 'undefined') return;
+  listening = true;
+  document.addEventListener(
+    'cursorStateChange',
+    handleCursorStateChange,
+    false,
+  );
+};
+
+/**
+ * Reactive accessor for webOS Magic Remote cursor visibility. `true` while the
+ * pointer is on screen, `false` otherwise.
+ */
+export const isCursorVisible = () => {
+  ensureListening();
+  return cursorVisible();
+};
 
 let scrollTimeout: ReturnType<typeof setTimeout>;
 const handleScroll = throttle((e: WheelEvent): void => {
@@ -167,14 +202,14 @@ function handleElementClick(
     pressedElementRef.current = null;
   }
 
+  // onMouseClick is mouse-specific, so call it directly.
   if (isFunction(clickedElement.onMouseClick)) {
     clickedElement.onMouseClick(e, clickedElement);
     return;
-  } else if (isFunction(clickedElement.onEnter)) {
-    clickedElement.onEnter(e, clickedElement, clickedElement);
-    return;
   }
 
+  // Otherwise focus the element and dispatch a synthetic Enter so the
+  // focusManager handles it exactly like a remote/keyboard Enter press:
   clickedElement.setFocus();
   setTimeout(() => {
     document.dispatchEvent(createKeyboardEvent('Enter', 13));
