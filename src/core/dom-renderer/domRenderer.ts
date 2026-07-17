@@ -1232,7 +1232,11 @@ function updateNodeData(node: DOMNode | DOMText) {
     if (keyValue === undefined) {
       node.div.removeAttribute('data-' + key);
     } else {
-      node.div.dataset[key] = String(keyValue);
+      // dataset[key] requires key to already be camelCase (DOMStringMap rejects hyphenated
+      // property names outright, e.g. "section-id" -- SyntaxError: not a valid property
+      // name). Our data props are passed as data-attribute-style keys (kebab-case), so use
+      // setAttribute directly instead, consistent with the removeAttribute branch above.
+      node.div.setAttribute('data-' + key, String(keyValue));
     }
   }
 }
