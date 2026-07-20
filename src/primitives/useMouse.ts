@@ -51,7 +51,7 @@ function createKeyboardEvent(
   keyCode: number,
   eventName: string = 'keydown',
 ): KeyboardEvent {
-  return new KeyboardEvent(eventName, {
+  const event = new KeyboardEvent(eventName, {
     key,
     keyCode,
     which: keyCode,
@@ -61,6 +61,18 @@ function createKeyboardEvent(
     metaKey: false,
     bubbles: true,
   });
+
+  // Chrome < 51 (LG webOS 3.x runs Chrome 38) ignores the key/keyCode/which
+  // members of KeyboardEventInit, so the event arrives with key '' / keyCode 0
+  // and the focusManager drops it. Force the values onto the instance so Magic
+  // Remote clicks and scrolls still map to keys on those devices.
+  if (event.key !== key || event.keyCode !== keyCode) {
+    Object.defineProperty(event, 'key', { get: () => key });
+    Object.defineProperty(event, 'keyCode', { get: () => keyCode });
+    Object.defineProperty(event, 'which', { get: () => keyCode });
+  }
+
+  return event;
 }
 
 const [cursorVisible, setCursorVisible] = createSignal(false);

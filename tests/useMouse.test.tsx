@@ -1,6 +1,7 @@
 import * as v from 'vitest';
 import * as lng from '@solidtv/solid';
 import { useMouse } from '../src/primitives/useMouse.js';
+import { useFocusManager } from '../src/core/focusManager.js';
 import { renderer } from './setup.js';
 
 const dispatchClick = (x: number, y: number) =>
@@ -411,6 +412,165 @@ v.describe('useMouse', () => {
 
     dispatchClick(100, 100);
     v.assert.notOk(btn.states.has('$pressed'), 'pressed cleared on click');
+    dispose();
+  });
+});
+
+v.describe('synthetic keyboard events (legacy KeyboardEvent constructors)', () => {
+  // Simulates Chrome < 51 (LG webOS 3.x), where the KeyboardEvent constructor
+  // exists but silently drops the key/keyCode/which members of the init dict.
+  class LegacyKeyboardEvent extends KeyboardEvent {
+    constructor(type: string, init?: KeyboardEventInit) {
+      super(type, { bubbles: init?.bubbles, cancelable: init?.cancelable });
+    }
+  }
+
+  const captureKeydown = () => {
+    const events: KeyboardEvent[] = [];
+    const listener = (e: Event) => events.push(e as KeyboardEvent);
+    document.addEventListener('keydown', listener);
+    return {
+      events,
+      stop: () => document.removeEventListener('keydown', listener),
+    };
+  };
+
+  v.afterEach(() => {
+    v.vi.unstubAllGlobals();
+  });
+
+  v.test('modern engine: click dispatches Enter via the constructor path (no defineProperty)', async () => {
+    let app!: lng.ElementNode;
+    let btn!: lng.ElementNode;
+
+    const dispose = renderer.render(() => {
+      const root = (
+        <view ref={app} width={1920} height={1080}>
+          <view
+            ref={btn}
+            x={100}
+            y={200}
+            width={300}
+            height={150}
+            onEnter={() => {}}
+          />
+        </view>
+      );
+      useMouse(app, 5);
+      return root;
+    });
+
+    await wait(20);
+    btn.setFocus();
+    await wait(20);
+    v.assert.equal(lng.activeElement(), btn);
+
+    // attach after the waits so stray delayed dispatches from prior tests
+    // have flushed
+    const capture = captureKeydown();
+    dispatchClick(150, 250);
+    await wait(20); // synthetic Enter is dispatched on a 1ms timeout
+
+    v.assert.equal(capture.events.length, 1, 'one Enter keydown dispatched');
+    const evt = capture.events[0]!;
+    v.assert.equal(evt.key, 'Enter');
+    v.assert.equal(evt.keyCode, 13);
+    v.assert.equal(evt.which, 13);
+    v.assert.isUndefined(
+      Object.getOwnPropertyDescriptor(evt, 'key'),
+      'constructor honored init members, so no own-property override',
+    );
+    v.assert.isUndefined(Object.getOwnPropertyDescriptor(evt, 'keyCode'));
+
+    capture.stop();
+    dispose();
+  });
+
+  v.test('legacy constructor: click still reports Enter/13 and reaches onEnter via the focus manager', async () => {
+    v.vi.stubGlobal('KeyboardEvent', LegacyKeyboardEvent);
+
+    let app!: lng.ElementNode;
+    let btn!: lng.ElementNode;
+    const onEnter = v.vi.fn();
+
+    const dispose = renderer.render(() => {
+      const root = (
+        <view ref={app} width={1920} height={1080}>
+          <view
+            ref={btn}
+            x={100}
+            y={200}
+            width={300}
+            height={150}
+            onEnter={onEnter}
+          />
+        </view>
+      );
+      useFocusManager();
+      useMouse(app, 5);
+      return root;
+    });
+
+    await wait(20);
+    btn.setFocus();
+    await wait(20);
+    v.assert.equal(lng.activeElement(), btn);
+
+    const capture = captureKeydown();
+    dispatchClick(150, 250);
+    await wait(20);
+
+    v.assert.equal(capture.events.length, 1, 'one Enter keydown dispatched');
+    const evt = capture.events[0]!;
+    v.assert.equal(evt.key, 'Enter', 'key forced onto instance');
+    v.assert.equal(evt.keyCode, 13, 'keyCode forced onto instance');
+    v.assert.equal(evt.which, 13, 'which forced onto instance');
+    v.assert.equal(
+      onEnter.mock.calls.length,
+      1,
+      'focus manager mapped the synthetic Enter to onEnter',
+    );
+
+    capture.stop();
+    dispose();
+  });
+
+  v.test('legacy constructor: wheel scroll still reports ArrowUp/38 and ArrowDown/40', async () => {
+    v.vi.stubGlobal('KeyboardEvent', LegacyKeyboardEvent);
+
+    let app!: lng.ElementNode;
+
+    const dispose = renderer.render(() => {
+      const root = (
+        <view ref={app} width={1920} height={1080}>
+          <view x={0} y={0} width={500} height={500} onFocus={() => {}} />
+        </view>
+      );
+      useMouse(app, 5);
+      return root;
+    });
+
+    await wait(20);
+    const capture = captureKeydown();
+    window.dispatchEvent(new WheelEvent('wheel', { deltaY: 100 }));
+    await wait(300); // module-level scroll handler is throttled at 250ms
+
+    v.assert.equal(capture.events.length, 1);
+    v.assert.equal(capture.events[0]!.key, 'ArrowDown');
+    v.assert.equal(capture.events[0]!.keyCode, 40);
+    v.assert.equal(capture.events[0]!.which, 40);
+
+    window.dispatchEvent(new WheelEvent('wheel', { deltaY: -100 }));
+    await wait(300);
+
+    v.assert.equal(capture.events.length, 2);
+    v.assert.equal(capture.events[1]!.key, 'ArrowUp');
+    v.assert.equal(capture.events[1]!.keyCode, 38);
+    v.assert.equal(capture.events[1]!.which, 38);
+
+    // let the trailing keyup timeout flush before other tests run
+    await wait(300);
+    capture.stop();
     dispose();
   });
 });
