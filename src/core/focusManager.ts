@@ -203,6 +203,57 @@ export const printFocusHistory = (count: number): void => {
 };
 
 // ---------------------------------------------------------------------------
+// Focus-loss recovery
+// ---------------------------------------------------------------------------
+
+/**
+ * An element is attached when every node up its parent chain is present in
+ * its parent's children array. `removeChild` doesn't clear `node.parent`,
+ * so a plain walk to the root can't detect removal — membership can.
+ */
+const isAttached = (elm: ElementNode): boolean => {
+  let current: ElementNode = elm;
+  while (current.parent) {
+    if (!current.parent.children.includes(current)) return false;
+    current = current.parent;
+  }
+  return true;
+};
+
+/**
+ * Called by the post-mutation scheduler after nodes were destroyed. If the
+ * active element was removed from the tree, refocus the nearest
+ * still-attached ancestor on its focus path — that ancestor's
+ * `forwardFocus`/`selected` logic then picks a sensible child. Without this,
+ * key events walk a stale focus path and navigation dead-ends.
+ */
+export const recoverActiveElement = (): void => {
+  const active = activeElement();
+  if (!active || isAttached(active)) return;
+
+  const fp = focusPath();
+  for (const ancestor of fp) {
+    if (ancestor !== active && ancestor.rendered && isAttached(ancestor)) {
+      if (isDev) {
+        console.warn(
+          `[solidtv] Focus lost: ${getElementLabel(active)} was removed from the tree while focused. Recovering focus via ancestor ${getElementLabel(ancestor)}. Run printFocusHistory(10) to see recent focus movement.`,
+          { lost: active, recoveredVia: ancestor },
+        );
+      }
+      ancestor.setFocus();
+      return;
+    }
+  }
+
+  if (isDev) {
+    console.warn(
+      `[solidtv] Focus lost: ${getElementLabel(active)} was removed from the tree while focused, and no attached ancestor remains to recover to. Key events will not fire until setFocus() is called on a rendered element.`,
+      { lost: active },
+    );
+  }
+};
+
+// ---------------------------------------------------------------------------
 
 /**
  * Built-in "apply focus" routine: diffs the focus path, fires
@@ -438,7 +489,13 @@ const propagateKeyPress = (
     if (lastHandlerSeen) {
       console.log(`Keypress bubbled, ${detail}`, lastHandlerSeen);
     } else {
-      console.log(`No event handler available for keypress: ${detail}`);
+      // Print the focus path leaf → root like a stack trace so it's obvious
+      // which elements had a chance to handle the key and didn't.
+      console.log(
+        `No event handler available for keypress: ${detail}\n  focus path: ${fp
+          .map(getElementLabel)
+          .join(' → ')}`,
+      );
     }
   }
 
@@ -523,7 +580,22 @@ export const useFocusManager = (
   document.addEventListener('keydown', keyPressHandler);
   document.addEventListener('keyup', keyUpHandler);
 
+  // Key events go nowhere until something is focused — the most common cause
+  // is a missing `autofocus` on the initial screen. Warn once if the app is
+  // still unfocused shortly after startup.
+  let autofocusCheckTimeout: number | undefined;
+  if (isDev) {
+    autofocusCheckTimeout = window.setTimeout(() => {
+      if (!activeElement()) {
+        console.warn(
+          '[solidtv] No element has focus 1s after useFocusManager() was called, so key events have nowhere to go. Set `autofocus` on an initial element or call setFocus().',
+        );
+      }
+    }, 1000);
+  }
+
   onCleanup(() => {
+    clearTimeout(autofocusCheckTimeout);
     document.removeEventListener('keydown', keyPressHandler);
     document.removeEventListener('keyup', keyUpHandler);
     for (const timeout of Object.values(keyHoldTimeouts)) {
