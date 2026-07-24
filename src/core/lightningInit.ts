@@ -1,4 +1,5 @@
 import * as lng from '@solidtv/renderer';
+import { prefetchFont } from '@solidtv/renderer';
 import { Config, DOM_RENDERING } from './config.js';
 import { DOMRendererMain, loadFontToDom } from './dom-renderer/domRenderer.js';
 import { DomRendererMainSettings } from './dom-renderer/domRendererTypes.js';
@@ -39,22 +40,6 @@ interface PendingFontLoad {
 }
 
 const pendingFontLoads: PendingFontLoad[] = [];
-
-/**
- * Stage-free font prefetch, added in a later renderer than the one this
- * package requires as a peer. Resolved off the namespace rather than imported
- * by name so an older renderer yields `undefined` instead of failing to link:
- * fonts then simply load at attach time, as they did before.
- */
-const prefetchFont = (
-  lng as {
-    prefetchFont?: (
-      font: Omit<FontLoadOptions, 'type'> & {
-        type?: SdfFontType | 'canvas';
-      },
-    ) => void;
-  }
-).prefetchFont;
 
 /**
  * Hand fonts to the stage. Requires a renderer.
@@ -150,9 +135,9 @@ export async function loadFonts(fonts: FontLoadOptions[]) {
       continue;
     }
 
-    if (prefetchFont !== undefined) {
-      prefetchFont(preferSdf ? font : { ...font, type: 'canvas' });
-    }
+    // Starts the download now; the stage-dependent half is owed until
+    // `createRenderer()` runs and `flushPendingFonts()` attaches it.
+    prefetchFont(preferSdf ? font : { ...font, type: 'canvas' });
     deferred.push(font);
   }
 

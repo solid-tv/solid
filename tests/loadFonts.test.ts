@@ -91,20 +91,18 @@ describe('loadFonts', () => {
     await expect(pending).rejects.toThrow('boom');
   });
 
-  it('keeps working against a renderer with no prefetch support', async () => {
-    const renderer = await import('@solidtv/renderer');
-    const original = Reflect.get(renderer, 'prefetchFont') as unknown;
-    Reflect.set(renderer, 'prefetchFont', undefined);
+  it('registers every alias of a multi-name font', async () => {
+    const init = await freshInit();
+    const aliased = { ...sdfFont, fontFamily: ['Roboto', 'Roboto500'] };
 
-    try {
-      const init = await freshInit();
-      const pending = init.loadFonts([sdfFont]);
-      init.startLightningRenderer({}, document.createElement('div'));
+    const pending = init.loadFonts([aliased]);
+    expect(prefetchFont).toHaveBeenCalledWith(aliased);
 
-      await pending;
-      expect(loadFont).toHaveBeenCalledWith('sdf', sdfFont);
-    } finally {
-      Reflect.set(renderer, 'prefetchFont', original);
-    }
+    init.startLightningRenderer({}, document.createElement('div'));
+    await pending;
+
+    // One descriptor, one load — the renderer registers every name from it.
+    expect(loadFont).toHaveBeenCalledTimes(1);
+    expect(loadFont).toHaveBeenCalledWith('sdf', aliased);
   });
 });

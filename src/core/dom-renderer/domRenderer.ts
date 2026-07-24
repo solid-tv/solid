@@ -2279,7 +2279,7 @@ export class DOMRendererMain implements IRendererMain {
 }
 
 export function loadFontToDom(font: FontLoadOptions): void {
-  // fontFamily: string;
+  // fontFamily: string | string[];
   // metrics?: FontMetrics;
   // fontUrl?: string;
   // atlasUrl?: string;
@@ -2294,16 +2294,27 @@ export function loadFontToDom(font: FontLoadOptions): void {
     return;
   }
 
-  const fontFace = new FontFace(font.fontFamily, `url(${font.fontUrl})`);
   const fontSet = document.fonts as FontFaceSet & {
     add?: (font: FontFace) => FontFaceSet;
   };
-  fontSet.add?.(fontFace);
 
-  fontFace
-    .load()
-    .then(scheduleContainTextNodesMeasurement)
-    .catch(() => {});
+  // One load may register the same file under several family names. Each name
+  // needs its own FontFace — the browser dedupes the download by URL — so that
+  // text referring to any of them resolves. Passing the array straight to
+  // FontFace would stringify it into a single bogus family.
+  const names = Array.isArray(font.fontFamily)
+    ? font.fontFamily
+    : [font.fontFamily];
+
+  for (let i = 0; i < names.length; i++) {
+    const fontFace = new FontFace(names[i]!, `url(${font.fontUrl})`);
+    fontSet.add?.(fontFace);
+
+    fontFace
+      .load()
+      .then(scheduleContainTextNodesMeasurement)
+      .catch(() => {});
+  }
 }
 
 export function isDomRenderer(
