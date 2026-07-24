@@ -61,9 +61,13 @@ export const {
   insert,
   spread,
   setProp,
-  mergeProps,
   use,
 } = solidRenderer;
+
+// Re-export a Proxy-free-safe mergeProps in place of the renderer's own so the
+// JSX compiler routes compiled spreads through it — fixes dropped spread props
+// on engines without Proxy (Chrome 38 / webOS 3). See ./mergeProps.ts.
+export { mergeProps } from './mergeProps.js';
 
 type Task = () => void;
 const taskQueue: Task[] = [];
