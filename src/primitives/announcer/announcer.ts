@@ -1,6 +1,19 @@
 import type { ElementNode } from '@solidtv/solid';
 import { untrack } from 'solid-js';
-import SpeechEngine, { type SeriesResult, type SpeechType } from './speech.js';
+import speakSeries, {
+  setSpeechEngine,
+  type SeriesResult,
+  type SpeechEngine,
+  type SpeechType,
+} from './speech.js';
+import {
+  createWebOSEngine,
+  detectSpeechPlatform,
+  isTizenVoiceGuideEnabled,
+  isWebOS,
+  webOSLunaRequest,
+  type SpeechPlatform,
+} from './platformEngines.js';
 import { debounce } from '@solid-primitives/scheduled';
 import { focusPath } from '../useFocusManager.js';
 
@@ -119,7 +132,7 @@ function textToSpeech(
     return;
   }
 
-  return (currentlySpeaking = SpeechEngine(toSpeak, aria, lang, voice));
+  return (currentlySpeaking = speakSeries(toSpeak, aria, lang, voice));
 }
 
 export interface Announcer {
@@ -138,6 +151,27 @@ export interface Announcer {
     focusDebounce?: number;
     focusChangeTimeout?: number;
   }) => void;
+  /**
+   * Replace the text-to-speech backend — for platforms with their own TTS
+   * (webOS Luna, Tizen, a native bridge) instead of the Web Speech API.
+   * Call with no argument to restore the default. Has no effect while
+   * `Announcer.aria` is true, since that path writes to an aria live region
+   * rather than speaking.
+   */
+  setSpeechEngine: (engine?: SpeechEngine | null) => void;
+  /**
+   * Detects the TV platform and switches the Announcer to that device's own
+   * speech output, returning what it picked. Safe to call anywhere — it reads
+   * globals, it doesn't speak.
+   *
+   * - LG (`webos`) — installs an engine driving the Luna TTS service, and
+   *   clears `aria`.
+   * - Samsung (`tizen`) — turns `aria` on. Samsung has no speak API; its Voice
+   *   Guide screen reader is the TTS and it reads the live region instead.
+   * - Anything else (`default`) — restores the Web Speech API engine and leaves
+   *   `aria` as configured.
+   */
+  detectSpeechEngine: () => SpeechPlatform;
   onFocusChange?: DebounceWithFlushFunction<ElementNode[]>;
   refresh: (depth?: number) => void;
 }
@@ -181,6 +215,39 @@ export const Announcer: Announcer = {
     if (Announcer.onFocusChange) {
       Announcer.onFocusChange(untrack(() => focusPath()));
     }
+  },
+  setSpeechEngine: setSpeechEngine,
+  detectSpeechEngine: function () {
+    const platform = detectSpeechPlatform();
+
+    if (platform === 'tizen') {
+      // Samsung's Voice Guide is the only TTS available to an app, and it
+      // reads the DOM rather than accepting strings.
+      setSpeechEngine();
+      Announcer.aria = true;
+
+      if (isTizenVoiceGuideEnabled() === false) {
+        console.warn(
+          'Announcer: Voice Guide is off in the TV settings, so announcements will be silent.',
+        );
+      }
+      return platform;
+    }
+
+    if (platform === 'webos') {
+      setSpeechEngine(createWebOSEngine(webOSLunaRequest()!));
+      Announcer.aria = false;
+      return platform;
+    }
+
+    if (isWebOS()) {
+      console.warn(
+        'Announcer: webOS detected but webOS.service.request is unavailable — include webOSTV.js to use the Luna TTS engine. Falling back to speechSynthesis.',
+      );
+    }
+
+    setSpeechEngine();
+    return platform;
   },
   setupTimers: function ({
     focusDebounce = 400,

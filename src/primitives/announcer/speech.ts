@@ -12,6 +12,31 @@ export interface SeriesResult {
   cancel: () => void;
 }
 
+export interface SpeechOptions {
+  lang: string;
+  voice?: string;
+}
+
+/**
+ * Pluggable text-to-speech backend. Install one with
+ * `Announcer.setSpeechEngine()` to route speech through a platform API (webOS
+ * Luna, Tizen, a native bridge, ...) instead of the Web Speech API. The
+ * Announcer keeps owning the series: flattening, PAUSE- handling, append,
+ * cancel and nesting all still work — the engine only speaks one phrase.
+ */
+export interface SpeechEngine {
+  /**
+   * Speak a single phrase. Resolve when it has finished so the Announcer knows
+   * when to move on; resolve immediately if the platform can't report
+   * completion. Reject with an error carrying `error: 'network'` to be retried
+   * (3 attempts, backing off), or `error: 'canceled' | 'interrupted'` to end
+   * the series quietly. Any other rejection propagates to the caller.
+   */
+  speak: (phrase: string, options: SpeechOptions) => void | Promise<void>;
+  /** Stop whatever is currently being spoken. */
+  cancel: VoidFunction;
+}
+
 // Aria label
 type AriaLabel = { text: string; lang: string };
 const ARIA_PARENT_ID = 'aria-parent';
@@ -22,7 +47,7 @@ let ariaLabelPhrases: AriaLabel[] = [];
 // raw SpeechSynthesisErrorEvent so callers can classify the failure without
 // depending on the SpeechSynthesisErrorEvent global, which isn't defined on
 // every TV browser.
-interface SpeechError extends Error {
+export interface SpeechError extends Error {
   error?: string;
 }
 
@@ -129,49 +154,67 @@ function createAriaElement(): HTMLDivElement | HTMLElement {
 }
 
 /**
- * Speak a string
+ * The default engine — the browser's Web Speech API.
  *
- * @param phrase Phrase to speak
- * @param utterances An array which the new SpeechSynthesisUtterance instance representing this utterance will be appended
- * @param lang Language to speak in
  * @return {Promise<void>} Promise resolved when the utterance has finished speaking, and rejected if there's an error
  */
-function speak(
-  phrase: string,
-  utterances: SpeechSynthesisUtterance[],
-  lang = 'en-US',
-  voiceName?: string,
-) {
-  const synth = window.speechSynthesis;
+const webSpeechEngine: SpeechEngine = {
+  speak(phrase, { lang, voice: voiceName }) {
+    const synth = window.speechSynthesis;
 
-  return new Promise<void>((resolve, reject) => {
-    let selectedVoice;
-    if (voiceName) {
-      const availableVoices = synth.getVoices();
-      selectedVoice =
-        availableVoices.find((v) => v.name === voiceName) || availableVoices[0];
-    }
+    return new Promise<void>((resolve, reject) => {
+      let selectedVoice;
+      if (voiceName) {
+        const availableVoices = synth.getVoices();
+        selectedVoice =
+          availableVoices.find((v) => v.name === voiceName) ||
+          availableVoices[0];
+      }
 
-    const utterance = new SpeechSynthesisUtterance(phrase);
-    utterance.lang = lang;
-    if (selectedVoice) {
-      utterance.voice = selectedVoice;
-    }
-    utterance.onend = () => {
-      resolve();
-    };
-    utterance.onerror = (e) => {
-      const error: SpeechError = new Error(
-        `Speech synthesis error: ${e.error}`,
-      );
-      // Preserve the code so speakSeries can tell benign interruptions
-      // ("interrupted"/"canceled") apart from real failures ("network", etc.).
-      error.error = e.error;
-      reject(error);
-    };
-    utterances.push(utterance);
-    synth.speak(utterance);
-  });
+      const utterance = new SpeechSynthesisUtterance(phrase);
+      utterance.lang = lang;
+      if (selectedVoice) {
+        utterance.voice = selectedVoice;
+      }
+      utterance.onend = () => {
+        resolve();
+      };
+      utterance.onerror = (e) => {
+        const error: SpeechError = new Error(
+          `Speech synthesis error: ${e.error}`,
+        );
+        // Preserve the code so speakSeries can tell benign interruptions
+        // ("interrupted"/"canceled") apart from real failures ("network", etc.).
+        error.error = e.error;
+        reject(error);
+      };
+      synth.speak(utterance);
+    });
+  },
+  cancel() {
+    window.speechSynthesis?.cancel();
+  },
+};
+
+let speechEngine: SpeechEngine = webSpeechEngine;
+
+/**
+ * Install a custom speech engine, or pass nothing to restore the Web Speech
+ * API default. Prefer `Announcer.setSpeechEngine()`.
+ */
+export function setSpeechEngine(engine?: SpeechEngine | null): void {
+  speechEngine = engine ?? webSpeechEngine;
+}
+
+/**
+ * Devices that ship a platform TTS instead of the Web Speech API may not
+ * define SpeechSynthesisUtterance at all, where a bare `instanceof` throws.
+ */
+function isUtterance(phrase: unknown): phrase is SpeechSynthesisUtterance {
+  return (
+    typeof SpeechSynthesisUtterance !== 'undefined' &&
+    phrase instanceof SpeechSynthesisUtterance
+  );
 }
 
 /**
@@ -212,12 +255,10 @@ function speakSeries(
   voice?: string,
   root = true,
 ): SeriesResult {
-  const synth = window.speechSynthesis;
   const remainingPhrases = flattenStrings(
     Array.isArray(series) ? series : [series],
   );
   const nestedSeriesResults: SeriesResult[] = [];
-  const utterances: SpeechSynthesisUtterance[] = [];
   let active: boolean = true;
 
   const seriesChain = (async () => {
@@ -245,7 +286,7 @@ function speakSeries(
           while (active && retriesLeft > 0) {
             try {
               if (aria) addChildrenToAriaDiv({ text: phrase, lang });
-              else await speak(phrase, utterances, lang, voice);
+              else await speechEngine.speak(phrase, { lang, voice });
               retriesLeft = 0; // Exit retry loop on success
             } catch (e) {
               retriesLeft = await handleSpeechError(
@@ -255,7 +296,7 @@ function speakSeries(
               );
             }
           }
-        } else if (phrase instanceof SpeechSynthesisUtterance) {
+        } else if (isUtterance(phrase)) {
           // Handle SpeechSynthesisUtterance objects with retry logic
           const totalRetries = 3;
           let retriesLeft = totalRetries;
@@ -268,7 +309,10 @@ function speakSeries(
               if (text) {
                 if (aria) addChildrenToAriaDiv({ text, lang: objectLang });
                 else
-                  await speak(text, utterances, objectLang, objectVoice?.name);
+                  await speechEngine.speak(text, {
+                    lang: objectLang,
+                    voice: objectVoice?.name,
+                  });
                 retriesLeft = 0; // Exit retry loop on success
               }
             } catch (e) {
@@ -321,7 +365,7 @@ function speakSeries(
           // phrases from this canceled series.
           ariaLabelPhrases = [];
         } else {
-          synth.cancel(); // Cancel all ongoing speech
+          speechEngine.cancel(); // Cancel all ongoing speech
         }
       }
       nestedSeriesResults.forEach((nestedSeriesResult) => {

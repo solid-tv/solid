@@ -33,4 +33,15 @@ export { createBlurredImage } from './utils/createBlurredImage.js';
 
 export type * from './types.js';
 export type { KeyHandler } from '../core/focusManager.js';
-export type { SpeechType } from './announcer/speech.js';
+export type {
+  SpeechType,
+  SpeechEngine,
+  SpeechOptions,
+  SpeechError,
+} from './announcer/speech.js';
+export {
+  createWebOSEngine,
+  detectSpeechPlatform,
+  isTizenVoiceGuideEnabled,
+  type SpeechPlatform,
+} from './announcer/platformEngines.js';
