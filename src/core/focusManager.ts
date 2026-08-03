@@ -450,8 +450,27 @@ const keyHoldTimeouts: { [key: KeyNameOrKeyCode]: number | true } = {};
 
 const keyOf = (e: KeyboardEvent): KeyNameOrKeyCode => e.key || e.keyCode;
 
-// Keys whose auto-repeat key-downs are dropped before propagation, mapped to an
-// optional callback run when the key is finally released.
+// `key` is not a stable identity for a physical key across key-down and key-up.
+// webOS reports Back's key-down as { key: 'GoBack', keyCode: 461 } and its
+// key-up as { key: 'Unidentified', keyCode: 461 } — same key, two names, with
+// only the keyCode shared. So a key is identified by *every* name its event
+// carries, and two events are the same key if any identity matches.
+const UNIDENTIFIED = 'Unidentified';
+
+const keyIdentities = (
+  keyOrEvent: KeyboardEvent | KeyNameOrKeyCode,
+): KeyNameOrKeyCode[] => {
+  if (typeof keyOrEvent !== 'object') return [keyOrEvent];
+  const ids: KeyNameOrKeyCode[] = [];
+  // 'Unidentified' names no particular key. Treating it as an identity would
+  // conflate every key that reports it.
+  if (keyOrEvent.key && keyOrEvent.key !== UNIDENTIFIED)
+    ids.push(keyOrEvent.key);
+  if (keyOrEvent.keyCode) ids.push(keyOrEvent.keyCode);
+  return ids;
+};
+
+// Keys whose auto-repeat key-downs are dropped before propagation.
 //
 // A hold action typically moves focus (opening a context menu, say) while the
 // key is still physically down. Two things then go wrong, and neither can be
@@ -463,12 +482,29 @@ const keyOf = (e: KeyboardEvent): KeyNameOrKeyCode => e.key || e.keyCode;
 // Both are propagation concerns, so the latch lives here. The release callback
 // is what lets a suppressor still learn about a key-up it can no longer receive
 // through the focus path.
-const suppressedKeys = new Map<KeyNameOrKeyCode, (() => void) | undefined>();
+type Suppression = {
+  ids: KeyNameOrKeyCode[];
+  onRelease?: () => void;
+};
 
-const liftSuppression = (key: KeyNameOrKeyCode): void => {
-  const onRelease = suppressedKeys.get(key);
-  suppressedKeys.delete(key);
-  onRelease?.();
+// Indexed under every identity of the suppressed key, so a key-up naming the
+// key differently still finds it. Entries for one key share a Suppression.
+const suppressedKeys = new Map<KeyNameOrKeyCode, Suppression>();
+
+const findSuppression = (ids: KeyNameOrKeyCode[]): Suppression | undefined => {
+  for (const id of ids) {
+    const found = suppressedKeys.get(id);
+    if (found) return found;
+  }
+  return undefined;
+};
+
+const liftSuppression = (ids: KeyNameOrKeyCode[]): void => {
+  const found = findSuppression(ids);
+  if (!found) return;
+  // Drop every alias, not just the one that matched.
+  for (const id of found.ids) suppressedKeys.delete(id);
+  found.onRelease?.();
 };
 
 /**
@@ -480,6 +516,10 @@ const liftSuppression = (key: KeyNameOrKeyCode): void => {
  * when suppression lifts, whichever way it lifts, and is delivered regardless of
  * where focus has moved in the meantime.
  *
+ * Pass the `KeyboardEvent` where you have one: the key is then matched on both
+ * its name and its keyCode, which is what lets a key-up reporting a different
+ * `key` for the same physical key (webOS Back) still lift the suppression.
+ *
  * `useHold` calls this itself when a hold fires; call it directly only when
  * implementing hold behavior outside that primitive.
  */
@@ -487,10 +527,10 @@ export const suppressKeyUntilRelease = (
   keyOrEvent: KeyboardEvent | KeyNameOrKeyCode,
   onRelease?: () => void,
 ): void => {
-  suppressedKeys.set(
-    typeof keyOrEvent === 'object' ? keyOf(keyOrEvent) : keyOrEvent,
-    onRelease,
-  );
+  const ids = keyIdentities(keyOrEvent);
+  if (ids.length === 0) return;
+  const suppression: Suppression = { ids, onRelease };
+  for (const id of ids) suppressedKeys.set(id, suppression);
 };
 
 /**
@@ -500,9 +540,7 @@ export const suppressKeyUntilRelease = (
 export const releaseKeySuppression = (
   keyOrEvent: KeyboardEvent | KeyNameOrKeyCode,
 ): void => {
-  liftSuppression(
-    typeof keyOrEvent === 'object' ? keyOf(keyOrEvent) : keyOrEvent,
-  );
+  liftSuppression(keyIdentities(keyOrEvent));
 };
 
 const handleKeyEvents = (
@@ -512,12 +550,13 @@ const handleKeyEvents = (
 ) => {
   if (keydown) {
     const key: KeyNameOrKeyCode = keyOf(keydown);
+    const ids = keyIdentities(keydown);
     if (keydown.repeat) {
-      if (suppressedKeys.has(key)) return;
-    } else if (suppressedKeys.has(key)) {
+      if (findSuppression(ids)) return;
+    } else {
       // A fresh press starts a new gesture, so the previous one is over even
       // though its key-up never arrived. Settle it before handling this press.
-      liftSuppression(key);
+      liftSuppression(ids);
     }
     const mappedKeyHoldEvent =
       keyHoldMapEntries[keydown.key] || keyHoldMapEntries[keydown.keyCode];
@@ -539,7 +578,7 @@ const handleKeyEvents = (
     // The key is up: whatever was suppressing its repeats is done. Settle it
     // before propagating, so a suppressor that is still in the focus path sees
     // its own release callback rather than a second one via the key-up below.
-    if (suppressedKeys.has(key)) liftSuppression(key);
+    liftSuppression(keyIdentities(keyup));
     const mappedKeyEvent =
       keyMapEntries[keyup.key] || keyMapEntries[keyup.keyCode];
     if (keyHoldTimeouts[key] === true) {

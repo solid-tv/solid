@@ -128,6 +128,23 @@ import {
 suppressKeyUntilRelease(event, () => console.log('key released'));
 ```
 
+Pass the `KeyboardEvent` rather than a key name where you have one. `key` is not a
+stable identity for a physical key across key-down and key-up — webOS reports
+Back as:
+
+```
+key-down  { key: 'GoBack',       keyCode: 461, repeat: false }
+key-up    { key: 'Unidentified', keyCode: 461 }
+```
+
+Given the event, a key is matched on both its name and its keyCode, so a key-up
+that renames the key still lifts the suppression. Such a key must also be mapped
+by keyCode for its release to route at all:
+
+```tsx
+useFocusManager({ Back: [461, 'GoBack'] });
+```
+
 ---
 
 ### Platforms without auto-repeat
