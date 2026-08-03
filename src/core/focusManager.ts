@@ -450,45 +450,6 @@ const keyHoldTimeouts: { [key: KeyNameOrKeyCode]: number | true } = {};
 
 const keyOf = (e: KeyboardEvent): KeyNameOrKeyCode => e.key || e.keyCode;
 
-// Keys this platform has actually been seen delivering a key-up for.
-//
-// Whether a hold can be detected by timer alone comes down to this. If a key
-// delivers key-up, reaching the hold threshold without one means the key is
-// genuinely still down, and no auto-repeat is needed to confirm the hold. If it
-// does not (webOS OK), a press that is already over is indistinguishable from
-// one still held, so only an auto-repeat can confirm it.
-//
-// This is per-key, not per-platform: webOS emits auto-repeat for OK but not for
-// Back, and swallows key-up for OK but not for Back.
-const keysSeenReleasing = new Set<KeyNameOrKeyCode>();
-
-/**
- * Record that `keyOrEvent` delivered a key-up. The focus manager calls this for
- * every key-up it sees; call it directly only when driving key events without
- * {@link useFocusManager}.
- */
-export const noteKeyUpDelivered = (
-  keyOrEvent: KeyboardEvent | KeyNameOrKeyCode,
-): void => {
-  keysSeenReleasing.add(
-    typeof keyOrEvent === 'object' ? keyOf(keyOrEvent) : keyOrEvent,
-  );
-};
-
-/**
- * Whether this key has been observed delivering a key-up in this session.
- *
- * `false` for a key not yet pressed — absence of evidence, not evidence that the
- * key never releases. Callers that need a decision before any press has been
- * observed should be told the answer explicitly rather than inferring it.
- */
-export const keyDeliversKeyUp = (
-  keyOrEvent: KeyboardEvent | KeyNameOrKeyCode,
-): boolean =>
-  keysSeenReleasing.has(
-    typeof keyOrEvent === 'object' ? keyOf(keyOrEvent) : keyOrEvent,
-  );
-
 // Keys whose auto-repeat key-downs are dropped before propagation, mapped to an
 // optional callback run when the key is finally released.
 //
@@ -575,7 +536,6 @@ const handleKeyEvents = (
     propagateKeyPress(keydown, mappedKeyEvent, false);
   } else if (keyup) {
     const key: KeyNameOrKeyCode = keyOf(keyup);
-    keysSeenReleasing.add(key);
     // The key is up: whatever was suppressing its repeats is done. Settle it
     // before propagating, so a suppressor that is still in the focus path sees
     // its own release callback rather than a second one via the key-up below.

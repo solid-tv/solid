@@ -1,9 +1,5 @@
 import { createMemo } from 'solid-js';
-import {
-  suppressKeyUntilRelease,
-  keyDeliversKeyUp,
-  noteKeyUpDelivered,
-} from '../core/focusManager.js';
+import { suppressKeyUntilRelease } from '../core/focusManager.js';
 import type { ElementNode } from '../core/elementNode.js';
 
 /**
@@ -33,21 +29,13 @@ export type UseHoldProps = {
   /**
    * Whether a hold must be confirmed by an auto-repeat key-down.
    *
-   * - `'auto'` (default): use auto-repeat if the key needs it, otherwise resolve
-   *   by timer. A key that has been seen delivering key-up needs no auto-repeat —
-   *   reaching the threshold without a key-up means it is still down. A key that
-   *   swallows key-up does need one, since a finished press is otherwise
-   *   indistinguishable from one still held.
-   * - `false`: always resolve by timer, matching the legacy `keyHoldOptions`
-   *   behavior. Deterministic from the very first press.
-   * - `true`: require an auto-repeat, never resolving a repeat-less press as a
-   *   hold.
-   *
-   * `'auto'` infers from keys seen earlier in the session, so the first press of
-   * a key resolves as a tap. Set this explicitly for a key you already know —
-   * e.g. `false` for Back on webOS, which emits no auto-repeat.
+   * `true` (default): a press with neither key-up nor auto-repeat by the
+   * threshold resolves as a tap. `false`: it resolves as a hold, matching the
+   * legacy `keyHoldOptions` behavior. Set this to `false` on platforms whose
+   * remote input layer delivers no auto-repeat, where a hold gesture would
+   * otherwise be unreachable.
    */
-  holdRequiresRepeat?: boolean | 'auto';
+  holdRequiresRepeat?: boolean;
 };
 
 /**
@@ -62,16 +50,11 @@ export type UseHoldProps = {
  *   when the timer fires it resolves to a hold → `onHold`.
  * - if key-up arrives before the timer, it's a tap → `onEnter` (fires
  *   immediately, no latency, on platforms that deliver key-up).
- * - if the timer fires with neither, the key is either still held or already
- *   released with its key-up swallowed. `holdRequiresRepeat` decides which, and
- *   by default (`'auto'`) infers it: a key known to deliver key-up must still be
- *   down, so it resolves to a hold by timer alone; a key that swallows key-up
- *   resolves to a tap, keeping the primary action working on webOS OK at the
- *   cost of ~`holdThreshold` ms latency.
- *
- * Auto-repeat is therefore used where it exists and not required where it does
- * not — webOS emits it for OK but not for Back, so Back holds resolve by timer
- * while OK holds are confirmed by repeat.
+ * - if neither key-up nor auto-repeat arrives, the timer resolves to a tap →
+ *   `onEnter` after `holdThreshold` ms. This is the key-up-independent path that
+ *   keeps taps working on webOS, at the cost of ~`holdThreshold` ms latency.
+ *   Set `holdRequiresRepeat: false` to resolve this ambiguous case as a hold
+ *   instead, on platforms that deliver no auto-repeat at all.
  *
  * Once `onHold` fires the key is still physically down, so the focus manager
  * drops its remaining auto-repeats until it is released. Without that, a hold
@@ -113,18 +96,7 @@ export function useHold(props: UseHoldProps): [HoldHandler, HoldHandler] {
   const performOnEnterImmediately = createMemo(
     () => props.performOnEnterImmediately ?? false,
   );
-  const holdRequiresRepeat = createMemo(
-    () => props.holdRequiresRepeat ?? 'auto',
-  );
-
-  // At the threshold with no auto-repeat seen, is this press still held (a hold)
-  // or already over with its key-up swallowed (a tap)? Only a key that delivers
-  // key-up can answer that on its own.
-  const requiresRepeat = (e: KeyboardEvent | undefined) => {
-    const mode = holdRequiresRepeat();
-    if (mode !== 'auto') return mode;
-    return !(e !== undefined && keyDeliversKeyUp(e));
-  };
+  const holdRequiresRepeat = createMemo(() => props.holdRequiresRepeat ?? true);
 
   let holdTimeout = -1;
   let enterFired = false; // onEnter already fired for this press
@@ -174,7 +146,7 @@ export function useHold(props: UseHoldProps): [HoldHandler, HoldHandler] {
 
     holdTimeout = setTimeout(() => {
       holdTimeout = -1;
-      if (repeated || !requiresRepeat(e)) {
+      if (repeated || !holdRequiresRepeat()) {
         // Held past the threshold → hold gesture.
         holdFired = true;
         // The key is still down and will keep repeating. Drop those repeats so
@@ -194,11 +166,6 @@ export function useHold(props: UseHoldProps): [HoldHandler, HoldHandler] {
   };
 
   const releaseHold: HoldHandler = (e, target, handlerElm) => {
-    // Reaching here at all is proof this key delivers key-up, which is what
-    // `'auto'` reads. The focus manager records this too; doing it here as well
-    // keeps `'auto'` working behind a custom focus manager.
-    if (e) noteKeyUpDelivered(e);
-
     if (holdTimeout !== -1) {
       // Released before the threshold → tap. Fires immediately where key-up is
       // delivered, avoiding the timer latency.
