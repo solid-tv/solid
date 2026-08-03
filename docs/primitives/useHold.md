@@ -26,14 +26,14 @@ const [holdRight, releaseRight] = useHold({
 
 #### `UseHoldProps`
 
-| Prop                        | Type           | Description                                                                                                                       | Default      |
-| --------------------------- | -------------- | --------------------------------------------------------------------------------------------------------------------------------- | ------------ |
-| `onHold`                    | `HoldCallback` | Called once the hold threshold is exceeded.                                                                                       | **Required** |
-| `onEnter`                   | `HoldCallback` | Called on press or key entry. May be delayed depending on config.                                                                 | **Required** |
-| `onRelease`                 | `HoldCallback` | Called after a successful hold is released.                                                                                       | `undefined`  |
-| `holdThreshold`             | `number`       | Time in milliseconds to wait before triggering `onHold`.                                                                          | `500`        |
-| `performOnEnterImmediately` | `boolean`      | Whether `onEnter` is triggered immediately or only if released early.                                                             | `false`      |
-| `holdRequiresRepeat`        | `boolean`      | Whether a hold must be confirmed by an auto-repeat key-down. See [Platforms without auto-repeat](#platforms-without-auto-repeat). | `true`       |
+| Prop                        | Type                | Description                                                                                                             | Default      |
+| --------------------------- | ------------------- | ----------------------------------------------------------------------------------------------------------------------- | ------------ |
+| `onHold`                    | `HoldCallback`      | Called once the hold threshold is exceeded.                                                                             | **Required** |
+| `onEnter`                   | `HoldCallback`      | Called on press or key entry. May be delayed depending on config.                                                       | **Required** |
+| `onRelease`                 | `HoldCallback`      | Called after a successful hold is released.                                                                             | `undefined`  |
+| `holdThreshold`             | `number`            | Time in milliseconds to wait before triggering `onHold`.                                                                | `500`        |
+| `performOnEnterImmediately` | `boolean`           | Whether `onEnter` is triggered immediately or only if released early.                                                   | `false`      |
+| `holdRequiresRepeat`        | `boolean \| 'auto'` | Whether a hold must be confirmed by an auto-repeat key-down. See [Keys without auto-repeat](#keys-without-auto-repeat). | `'auto'`     |
 
 Each callback receives the same context a `KeyHandler` gets — the `KeyboardEvent`
 that began the press, the element whose handler ran, and the focused element:
@@ -130,27 +130,50 @@ suppressKeyUntilRelease(event, () => console.log('key released'));
 
 ---
 
-### Platforms without auto-repeat
+### Keys without auto-repeat
 
-A hold is confirmed by an auto-repeat key-down. If a press delivers neither a
-key-up nor an auto-repeat by the threshold, the press is ambiguous, and by
-default it resolves as a **tap** — the behavior that keeps taps working on
-remotes that swallow key-up.
+When the timer fires having seen neither a key-up nor an auto-repeat, the press
+is ambiguous: the key is either still held, or already released with its key-up
+swallowed. `holdRequiresRepeat` decides how that resolves.
 
-On a platform whose remote input layer delivers no auto-repeat at all, that makes
-a hold unreachable. Set `holdRequiresRepeat: false` to resolve the ambiguous case
-as a hold instead, matching the legacy `keyHoldOptions` behavior:
+This is a **per-key** property, not a per-platform one. On webOS, OK emits
+auto-repeat but swallows key-up; Back is the reverse — it emits key-up but no
+OS-level `repeat === true`. A hold on Back is therefore unreachable if
+auto-repeat is required, and a timer is the only way to detect it.
+
+| Value              | Behavior                                                             |
+| ------------------ | -------------------------------------------------------------------- |
+| `'auto'` (default) | Use auto-repeat where the key needs it, fall back to timer where not |
+| `false`            | Always resolve by timer                                              |
+| `true`             | Require an auto-repeat; never resolve a repeat-less press as a hold  |
+
+`'auto'` keys off whether the key delivers key-up, which is the only thing that
+disambiguates the case:
+
+- **Key delivers key-up** (webOS Back): reaching the threshold without one means
+  it is genuinely still down. No auto-repeat needed — resolve by timer → `onHold`.
+- **Key swallows key-up** (webOS OK): a finished press looks identical to one
+  still held, so only an auto-repeat can confirm a hold. Without one → `onEnter`.
+
+The focus manager records key-up delivery per key as it observes it, so this
+needs no configuration. It does mean **the first press of a key resolves as a
+tap**, since nothing has been observed yet. For a key whose behavior you already
+know, say so and skip the warm-up:
 
 ```tsx
-const [holdEnter, releaseEnter] = useHold({
-  onHold: openContextMenu,
-  onEnter: openTile,
-  holdRequiresRepeat: false, // no auto-repeat on this platform
+// webOS Back: emits key-up, but never emits auto-repeat.
+const [holdBack, releaseBack] = useHold({
+  onHold: exitApp,
+  onEnter: goBack,
+  holdThreshold: 1000,
+  holdRequiresRepeat: false, // resolve by timer from the very first press
 });
+
+<view onBack={holdBack} onCaptureBackRelease={releaseBack} />;
 ```
 
-An early key-up still resolves as a tap either way, so this only changes the
-no-key-up **and** no-repeat case.
+An early key-up still resolves as a tap under every setting — this only governs
+the no-key-up **and** no-repeat case.
 
 ---
 

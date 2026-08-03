@@ -4,15 +4,29 @@ import type { ElementNode } from '../src/core/elementNode.ts';
 
 const suppressKeyUntilRelease =
   vi.fn<(e: KeyboardEvent | string | number, onRelease?: () => void) => void>();
+
+// Stands in for the focus manager's key-up registry, which `'auto'` reads.
+const seenReleasing = new Set<string | number>();
+const keyOf = (e: KeyboardEvent | string | number) =>
+  typeof e === 'object' ? e.key : e;
+
 vi.mock('../src/core/focusManager.ts', () => ({
   suppressKeyUntilRelease: (...args: unknown[]) =>
     (suppressKeyUntilRelease as (...a: unknown[]) => void)(...args),
+  keyDeliversKeyUp: (e: KeyboardEvent | string | number) =>
+    seenReleasing.has(keyOf(e)),
+  noteKeyUpDelivered: (e: KeyboardEvent | string | number) => {
+    seenReleasing.add(keyOf(e));
+  },
 }));
 
 const { useHold } = await import('../src/primitives/useHold.ts');
 
+// webOS: OK emits auto-repeat but swallows key-up; Back is the reverse.
 const down = { key: 'Enter', repeat: false } as KeyboardEvent;
 const downRepeat = { key: 'Enter', repeat: true } as KeyboardEvent;
+const backDown = { key: 'Back', repeat: false } as KeyboardEvent;
+const backUp = { key: 'Back' } as KeyboardEvent;
 const target = { id: 'target' } as unknown as ElementNode;
 const handlerElm = { id: 'handlerElm' } as unknown as ElementNode;
 
@@ -33,6 +47,7 @@ describe('useHold', () => {
   beforeEach(() => {
     vi.useFakeTimers();
     suppressKeyUntilRelease.mockClear();
+    seenReleasing.clear();
   });
   afterEach(() => vi.useRealTimers());
 
@@ -106,16 +121,73 @@ describe('useHold', () => {
     dispose();
   });
 
-  describe('holdRequiresRepeat', () => {
-    it('resolves a repeat-less press as a tap by default', () => {
+  describe("holdRequiresRepeat: 'auto' (default)", () => {
+    it('requires a repeat for a key that swallows key-up', () => {
+      // webOS OK: no key-up has ever been observed for this key, so a press
+      // that is already over is indistinguishable from one still held.
       const { startHold, onEnter, onHold, dispose } = setup();
-      startHold(down); // no repeat, no key-up
+      startHold(down);
       vi.advanceTimersByTime(200);
       expect(onEnter).toHaveBeenCalledTimes(1);
       expect(onHold).not.toHaveBeenCalled();
       dispose();
     });
 
+    it('resolves by timer for a key known to deliver key-up', () => {
+      // webOS Back: emits no auto-repeat, but does emit key-up. One prior press
+      // is what teaches 'auto' that.
+      const { startHold, releaseHold, onEnter, onHold, dispose } = setup();
+      startHold(backDown);
+      releaseHold(backUp);
+      expect(onEnter).toHaveBeenCalledTimes(1);
+
+      // Now hold it. No auto-repeat will ever arrive, and none is needed.
+      startHold(backDown);
+      vi.advanceTimersByTime(200);
+      expect(onHold).toHaveBeenCalledTimes(1);
+      expect(onEnter).toHaveBeenCalledTimes(1);
+      dispose();
+    });
+
+    it('still resolves an early key-up as a tap for such a key', () => {
+      const { startHold, releaseHold, onEnter, onHold, dispose } = setup();
+      startHold(backDown);
+      releaseHold(backUp); // warms the registry
+      startHold(backDown);
+      releaseHold(backUp); // released before the threshold → tap
+      vi.advanceTimersByTime(200);
+      expect(onEnter).toHaveBeenCalledTimes(2);
+      expect(onHold).not.toHaveBeenCalled();
+      dispose();
+    });
+
+    it('tracks key-up delivery per key, not per platform', () => {
+      // Back has released before; Enter never has. The same session must
+      // resolve them differently.
+      const back = setup();
+      back.startHold(backDown);
+      back.releaseHold(backUp);
+      back.dispose();
+
+      const enter = setup();
+      enter.startHold(down);
+      vi.advanceTimersByTime(200);
+      expect(enter.onHold).not.toHaveBeenCalled();
+      expect(enter.onEnter).toHaveBeenCalledTimes(1);
+      enter.dispose();
+    });
+
+    it('requires a repeat when startHold gets no event', () => {
+      const { startHold, onEnter, onHold, dispose } = setup();
+      startHold(); // no event → no key to reason about
+      vi.advanceTimersByTime(200);
+      expect(onEnter).toHaveBeenCalledTimes(1);
+      expect(onHold).not.toHaveBeenCalled();
+      dispose();
+    });
+  });
+
+  describe('holdRequiresRepeat: explicit', () => {
     it('resolves a repeat-less press as a hold when false', () => {
       const { startHold, onEnter, onHold, dispose } = setup({
         holdRequiresRepeat: false,
@@ -136,6 +208,23 @@ describe('useHold', () => {
       expect(onEnter).toHaveBeenCalledTimes(1);
       vi.advanceTimersByTime(200);
       expect(onHold).not.toHaveBeenCalled();
+      dispose();
+    });
+
+    it('when true, never resolves a repeat-less press as a hold', () => {
+      // Even for a key 'auto' would have resolved by timer.
+      const warm = setup();
+      warm.startHold(backDown);
+      warm.releaseHold(backUp);
+      warm.dispose();
+
+      const { startHold, onEnter, onHold, dispose } = setup({
+        holdRequiresRepeat: true,
+      });
+      startHold(backDown);
+      vi.advanceTimersByTime(200);
+      expect(onHold).not.toHaveBeenCalled();
+      expect(onEnter).toHaveBeenCalledTimes(1);
       dispose();
     });
   });

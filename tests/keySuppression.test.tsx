@@ -4,13 +4,14 @@ import {
   useFocusManager,
   suppressKeyUntilRelease,
   releaseKeySuppression,
+  keyDeliversKeyUp,
 } from '@solidtv/solid/primitives';
 import { renderer, waitForUpdate } from './setup.js';
 
-const keydown = (repeat = false) =>
-  document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', repeat }));
-const keyup = () =>
-  document.dispatchEvent(new KeyboardEvent('keyup', { key: 'Enter' }));
+const keydown = (repeat = false, key = 'Enter') =>
+  document.dispatchEvent(new KeyboardEvent('keydown', { key, repeat }));
+const keyup = (key = 'Enter') =>
+  document.dispatchEvent(new KeyboardEvent('keyup', { key }));
 
 async function setup() {
   const onEnter = v.vi.fn();
@@ -85,6 +86,26 @@ v.describe('key suppression', () => {
     suppressKeyUntilRelease('Enter');
     keydown();
     v.assert.equal(onEnter.mock.calls.length, 1);
+
+    dispose();
+  });
+
+  // Uses keys no other test in this file touches: the registry is a
+  // session-long capability probe and deliberately has no reset.
+  v.test('records which keys deliver key-up', async () => {
+    const { dispose } = await setup();
+
+    // Absence of evidence, not evidence the key never releases.
+    v.assert.equal(keyDeliversKeyUp('Back'), false);
+
+    keydown(false, 'Back');
+    v.assert.equal(keyDeliversKeyUp('Back'), false); // key-down proves nothing
+
+    keyup('Back');
+    v.assert.equal(keyDeliversKeyUp('Back'), true);
+
+    // Per-key: a key that never released stays unknown, in the same session.
+    v.assert.equal(keyDeliversKeyUp('ColorF0Red'), false);
 
     dispose();
   });
