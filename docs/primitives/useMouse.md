@@ -43,7 +43,7 @@ To use this, pass the `customStates` option to `useMouse`.
 When an element is clicked, `useMouse` handles the interaction as follows:
 
 1. **`onMouseClick`**: If the element has an `onMouseClick` handler, it is called directly with the mouse event and the element instance. `onMouseClick` is mouse-specific and never fires from a keyboard/remote Enter.
-2. **Everything else**: The element is focused (`setFocus()`) and a synthetic `Enter` key event (keydown + keyup) is dispatched. This routes through the `focusManager` exactly like a remote/keyboard Enter press — the capture phase, leaf→root bubbling, return-value propagation (a handler returning `true` stops it), per-element throttling, and keyHold all apply. In practice this means a click and a remote Enter invoke the same `onEnter` path.
+2. **Everything else**: The element is focused (`setFocus()`) and a synthetic `Enter` key event (keydown + keyup) is dispatched. This routes through the `focusManager` exactly like a remote/keyboard Enter press — the capture phase, leaf→root bubbling, return-value propagation (a handler returning `true` stops it), and per-element throttling all apply. In practice this means a click and a remote Enter invoke the same `onEnter` path.
 
 Example of handling clicks:
 

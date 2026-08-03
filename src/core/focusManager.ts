@@ -3,11 +3,7 @@ import { Config, isDev } from './config.js';
 import { IRendererNode } from './dom-renderer/domRendererTypes.js';
 export type * from './focusKeyTypes.js';
 import { ElementNode } from './elementNode.js';
-import type {
-  KeyNameOrKeyCode,
-  KeyHoldOptions,
-  KeyMap,
-} from './focusKeyTypes.js';
+import type { KeyNameOrKeyCode, KeyMap } from './focusKeyTypes.js';
 import { isFunction } from './utils.js';
 import {
   activeElement,
@@ -30,9 +26,7 @@ const keyMapEntries: KeyMapEntries = {
   Escape: 'Escape',
 };
 
-const keyHoldMapEntries: Record<KeyNameOrKeyCode, string> = {
-  // Enter: 'EnterHold',
-};
+const keyOf = (e: KeyboardEvent): KeyNameOrKeyCode => e.key || e.keyCode;
 
 const flattenKeyMap = (
   keyMap: Partial<KeyMap>,
@@ -333,7 +327,6 @@ const runBubblePhase = (
   fp: ElementNode[],
   e: KeyboardEvent,
   mappedEvent: string | undefined,
-  isHold: boolean,
   isUp: boolean,
   sameKey: boolean,
   currentTime: number,
@@ -344,11 +337,9 @@ const runBubblePhase = (
       ? `on${mappedEvent}Release`
       : `on${mappedEvent}`
     : undefined;
-  const fallbackHandlerKey: 'onKeyHold' | 'onKeyPress' | undefined = isUp
+  const fallbackHandlerKey: 'onKeyPress' | undefined = isUp
     ? undefined
-    : isHold
-      ? 'onKeyHold'
-      : 'onKeyPress';
+    : 'onKeyPress';
 
   let lastHandlerSeen: ElementNode | undefined;
 
@@ -387,11 +378,10 @@ const runBubblePhase = (
 const propagateKeyPress = (
   e: KeyboardEvent,
   mappedEvent?: string,
-  isHold: boolean = false,
   isUp: boolean = false,
 ): boolean => {
   const currentTime = performance.now();
-  const key = e.key || e.keyCode;
+  const key = keyOf(e);
   const sameKey = lastInputKey === key;
   lastInputKey = key;
 
@@ -426,7 +416,6 @@ const propagateKeyPress = (
     fp,
     e,
     mappedEvent,
-    isHold,
     isUp,
     sameKey,
     currentTime,
@@ -434,7 +423,7 @@ const propagateKeyPress = (
   if (handled) return true;
 
   if (isDev && Config.keyDebug && !isUp) {
-    const detail = `key="${e.key}", mappedEvent=${mappedEvent}, isHold=${isHold}, isUp=${isUp}`;
+    const detail = `key="${e.key}", mappedEvent=${mappedEvent}, isUp=${isUp}`;
     if (lastHandlerSeen) {
       console.log(`Keypress bubbled, ${detail}`, lastHandlerSeen);
     } else {
@@ -445,57 +434,131 @@ const propagateKeyPress = (
   return false;
 };
 
-const DEFAULT_KEY_HOLD_THRESHOLD = 500; // ms
-const keyHoldTimeouts: { [key: KeyNameOrKeyCode]: number | true } = {};
+// `key` is not a stable identity for a physical key across key-down and key-up.
+// webOS reports Back's key-down as { key: 'GoBack', keyCode: 461 } and its
+// key-up as { key: 'Unidentified', keyCode: 461 } — same key, two names, with
+// only the keyCode shared. So a key is identified by *every* name its event
+// carries, and two events are the same key if any identity matches.
+const UNIDENTIFIED = 'Unidentified';
 
-const handleKeyEvents = (
-  delay: number,
-  keydown?: KeyboardEvent,
-  keyup?: KeyboardEvent,
-) => {
+const keyIdentities = (
+  keyOrEvent: KeyboardEvent | KeyNameOrKeyCode,
+): KeyNameOrKeyCode[] => {
+  if (typeof keyOrEvent !== 'object') return [keyOrEvent];
+  const ids: KeyNameOrKeyCode[] = [];
+  // 'Unidentified' names no particular key. Treating it as an identity would
+  // conflate every key that reports it.
+  if (keyOrEvent.key && keyOrEvent.key !== UNIDENTIFIED)
+    ids.push(keyOrEvent.key);
+  if (keyOrEvent.keyCode) ids.push(keyOrEvent.keyCode);
+  return ids;
+};
+
+// Keys whose auto-repeat key-downs are dropped before propagation.
+//
+// A hold action typically moves focus (opening a context menu, say) while the
+// key is still physically down. Two things then go wrong, and neither can be
+// fixed by the element that owns the hold, because it is no longer in the focus
+// path: the trailing auto-repeats propagate down the *new* focus path and fire
+// whatever just took focus, and the key-up goes there too, so the owner's
+// release handler never runs.
+//
+// Both are propagation concerns, so the latch lives here. The release callback
+// is what lets a suppressor still learn about a key-up it can no longer receive
+// through the focus path.
+type Suppression = {
+  ids: KeyNameOrKeyCode[];
+  onRelease?: () => void;
+};
+
+// Indexed under every identity of the suppressed key, so a key-up naming the
+// key differently still finds it. Entries for one key share a Suppression.
+const suppressedKeys = new Map<KeyNameOrKeyCode, Suppression>();
+
+const findSuppression = (ids: KeyNameOrKeyCode[]): Suppression | undefined => {
+  for (const id of ids) {
+    const found = suppressedKeys.get(id);
+    if (found) return found;
+  }
+  return undefined;
+};
+
+const liftSuppression = (ids: KeyNameOrKeyCode[]): void => {
+  const found = findSuppression(ids);
+  if (!found) return;
+  // Drop every alias, not just the one that matched.
+  for (const id of found.ids) suppressedKeys.delete(id);
+  found.onRelease?.();
+};
+
+/**
+ * Drop auto-repeat key-downs for `keyOrEvent` until the key is released.
+ *
+ * Suppression is lifted by the key's key-up, or by the next fresh (non-repeat)
+ * key-down — the latter so platforms that swallow key-up (webOS) can't wedge a
+ * key permanently. Non-repeat key-downs are never suppressed. `onRelease` runs
+ * when suppression lifts, whichever way it lifts, and is delivered regardless of
+ * where focus has moved in the meantime.
+ *
+ * Pass the `KeyboardEvent` where you have one: the key is then matched on both
+ * its name and its keyCode, which is what lets a key-up reporting a different
+ * `key` for the same physical key (webOS Back) still lift the suppression.
+ *
+ * `useHold` calls this itself when a hold fires; call it directly only when
+ * implementing hold behavior outside that primitive.
+ */
+export const suppressKeyUntilRelease = (
+  keyOrEvent: KeyboardEvent | KeyNameOrKeyCode,
+  onRelease?: () => void,
+): void => {
+  const ids = keyIdentities(keyOrEvent);
+  if (ids.length === 0) return;
+  const suppression: Suppression = { ids, onRelease };
+  for (const id of ids) suppressedKeys.set(id, suppression);
+};
+
+/**
+ * Lift suppression added by {@link suppressKeyUntilRelease} early, running its
+ * release callback.
+ */
+export const releaseKeySuppression = (
+  keyOrEvent: KeyboardEvent | KeyNameOrKeyCode,
+): void => {
+  liftSuppression(keyIdentities(keyOrEvent));
+};
+
+const handleKeyEvents = (keydown?: KeyboardEvent, keyup?: KeyboardEvent) => {
   if (keydown) {
-    const key: KeyNameOrKeyCode = keydown.key || keydown.keyCode;
-    const mappedKeyHoldEvent =
-      keyHoldMapEntries[keydown.key] || keyHoldMapEntries[keydown.keyCode];
-    const mappedKeyEvent =
-      keyMapEntries[keydown.key] || keyMapEntries[keydown.keyCode];
-    if (mappedKeyHoldEvent) {
-      if (!keyHoldTimeouts[key]) {
-        keyHoldTimeouts[key] = window.setTimeout(() => {
-          keyHoldTimeouts[key] = true;
-          propagateKeyPress(keydown, mappedKeyHoldEvent, true);
-        }, delay);
-      }
-      return;
+    const ids = keyIdentities(keydown);
+    if (keydown.repeat) {
+      if (findSuppression(ids)) return;
+    } else {
+      // A fresh press starts a new gesture, so the previous one is over even
+      // though its key-up never arrived. Settle it before handling this press.
+      liftSuppression(ids);
     }
 
-    propagateKeyPress(keydown, mappedKeyEvent, false);
+    propagateKeyPress(
+      keydown,
+      keyMapEntries[keydown.key] || keyMapEntries[keydown.keyCode],
+    );
   } else if (keyup) {
-    const key: KeyNameOrKeyCode = keyup.key || keyup.keyCode;
-    const mappedKeyEvent =
-      keyMapEntries[keyup.key] || keyMapEntries[keyup.keyCode];
-    if (keyHoldTimeouts[key] === true) {
-      delete keyHoldTimeouts[key];
-    } else if (keyHoldTimeouts[key]) {
-      clearTimeout(keyHoldTimeouts[key]);
-      delete keyHoldTimeouts[key];
-      // trigger key down event when hold didn't finish
-      propagateKeyPress(keyup, mappedKeyEvent, false);
-    }
+    // The key is up: whatever was suppressing its repeats is done. Settle it
+    // before propagating, so a suppressor that is still in the focus path sees
+    // its own release callback rather than a second one via the key-up below.
+    liftSuppression(keyIdentities(keyup));
 
-    propagateKeyPress(keyup, mappedKeyEvent, false, true);
+    propagateKeyPress(
+      keyup,
+      keyMapEntries[keyup.key] || keyMapEntries[keyup.keyCode],
+      true,
+    );
   }
 };
 
-export const useFocusManager = (
-  userKeyMap?: Partial<KeyMap>,
-  keyHoldOptions?: KeyHoldOptions,
-) => {
+export const useFocusManager = (userKeyMap?: Partial<KeyMap>) => {
   if (userKeyMap) {
     flattenKeyMap(userKeyMap, keyMapEntries);
-  }
-  if (keyHoldOptions?.userKeyHoldMap) {
-    flattenKeyMap(keyHoldOptions.userKeyHoldMap, keyHoldMapEntries);
   }
 
   // Capture the calling owner so signal updates and key-event reactions
@@ -512,13 +575,10 @@ export const useFocusManager = (
   Config.setActiveElement = (elm) =>
     ownerContext(() => setActiveElementSignal(elm));
 
-  const delay = keyHoldOptions?.holdThreshold || DEFAULT_KEY_HOLD_THRESHOLD;
-  const runKeyEvent = handleKeyEvents.bind(null, delay);
-
   const keyPressHandler = (event: KeyboardEvent) =>
-    ownerContext(() => runKeyEvent(event, undefined));
+    ownerContext(() => handleKeyEvents(event, undefined));
   const keyUpHandler = (event: KeyboardEvent) =>
-    ownerContext(() => runKeyEvent(undefined, event));
+    ownerContext(() => handleKeyEvents(undefined, event));
 
   document.addEventListener('keydown', keyPressHandler);
   document.addEventListener('keyup', keyUpHandler);
@@ -526,8 +586,6 @@ export const useFocusManager = (
   onCleanup(() => {
     document.removeEventListener('keydown', keyPressHandler);
     document.removeEventListener('keyup', keyUpHandler);
-    for (const timeout of Object.values(keyHoldTimeouts)) {
-      if (timeout && timeout !== true) clearTimeout(timeout);
-    }
+    suppressedKeys.clear();
   });
 };

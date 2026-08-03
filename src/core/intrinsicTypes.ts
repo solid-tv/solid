@@ -10,12 +10,7 @@ import {
   ShaderRoundedProps,
   ShaderShadowProps,
 } from './shaders.js';
-import {
-  EventHandlers,
-  DefaultKeyMap,
-  KeyHoldMap,
-  FocusNode,
-} from './focusKeyTypes.js';
+import { EventHandlers, DefaultKeyMap, FocusNode } from './focusKeyTypes.js';
 import type { JSXElement } from 'solid-js';
 
 export type AnimationSettings = Partial<lngr.AnimationSettings>;
@@ -123,7 +118,6 @@ export interface NodeProps
   extends
     RendererNode,
     EventHandlers<DefaultKeyMap>,
-    EventHandlers<KeyHoldMap>,
     FocusNode,
     Partial<
       NewOmit<

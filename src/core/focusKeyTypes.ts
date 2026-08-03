@@ -28,13 +28,6 @@ export interface FocusNode {
     handlerElm: ElementNode,
     currentFocusedElm: ElementNode,
   ) => KeyHandlerReturn;
-  onKeyHold?: (
-    this: ElementNode,
-    e: KeyboardEvent,
-    mappedKeyEvent: string | undefined,
-    handlerElm: ElementNode,
-    currentFocusedElm: ElementNode,
-  ) => KeyHandlerReturn;
 }
 
 export type KeyNameOrKeyCode = string | number;
@@ -52,10 +45,6 @@ export interface KeyMap extends DefaultKeyMap {
   [key: string]: KeyNameOrKeyCode | KeyNameOrKeyCode[] | null;
 }
 
-export interface DefaultKeyHoldMap {
-  EnterHold: KeyNameOrKeyCode | KeyNameOrKeyCode[] | null;
-}
-
 export type EventHandlers<Map> = {
   [K in keyof Map as `on${Capitalize<string & K>}`]?: KeyHandler;
 } & {
@@ -66,8 +55,6 @@ export type EventHandlers<Map> = {
   onCaptureKey?: KeyHandler;
   onCaptureKeyRelease?: KeyHandler;
 };
-
-export interface KeyHoldMap extends DefaultKeyHoldMap {}
 
 export type KeyHandlerReturn = boolean | void;
 
@@ -83,8 +70,3 @@ export type ForwardFocusHandler = (
   this: ElementNode,
   elm: ElementNode,
 ) => boolean | void;
-
-export type KeyHoldOptions = {
-  userKeyHoldMap: Partial<KeyHoldMap>;
-  holdThreshold?: number;
-};
