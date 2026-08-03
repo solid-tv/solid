@@ -26,24 +26,51 @@ const [holdRight, releaseRight] = useHold({
 
 #### `UseHoldProps`
 
-| Prop                        | Type         | Description                                                           | Default      |
-| --------------------------- | ------------ | --------------------------------------------------------------------- | ------------ |
-| `onHold`                    | `() => void` | Called once the hold threshold is exceeded.                           | **Required** |
-| `onEnter`                   | `() => void` | Called on press or key entry. May be delayed depending on config.     | **Required** |
-| `onRelease`                 | `() => void` | Called after a successful hold is released.                           | `undefined`  |
-| `holdThreshold`             | `number`     | Time in milliseconds to wait before triggering `onHold`.              | `500`        |
-| `performOnEnterImmediately` | `boolean`    | Whether `onEnter` is triggered immediately or only if released early. | `false`      |
+| Prop                        | Type           | Description                                                                                                                       | Default      |
+| --------------------------- | -------------- | --------------------------------------------------------------------------------------------------------------------------------- | ------------ |
+| `onHold`                    | `HoldCallback` | Called once the hold threshold is exceeded.                                                                                       | **Required** |
+| `onEnter`                   | `HoldCallback` | Called on press or key entry. May be delayed depending on config.                                                                 | **Required** |
+| `onRelease`                 | `HoldCallback` | Called after a successful hold is released.                                                                                       | `undefined`  |
+| `holdThreshold`             | `number`       | Time in milliseconds to wait before triggering `onHold`.                                                                          | `500`        |
+| `performOnEnterImmediately` | `boolean`      | Whether `onEnter` is triggered immediately or only if released early.                                                             | `false`      |
+| `holdRequiresRepeat`        | `boolean`      | Whether a hold must be confirmed by an auto-repeat key-down. See [Platforms without auto-repeat](#platforms-without-auto-repeat). | `true`       |
+
+Each callback receives the same context a `KeyHandler` gets — the `KeyboardEvent`
+that began the press, the element whose handler ran, and the focused element:
+
+```ts
+type HoldCallback = (
+  e?: KeyboardEvent,
+  target?: ElementNode,
+  handlerElm?: ElementNode,
+) => void;
+```
+
+For `onHold` and for timer-resolved `onEnter`, this is the context captured from
+the originating key-down, since those fire from a timer with no event of their
+own.
 
 ---
 
 ### Returns
 
 ```ts
-[startHold, releaseHold]: [() => boolean, () => boolean]
+[startHold, releaseHold]: [HoldHandler, HoldHandler]
+
+type HoldHandler = (
+  e?: KeyboardEvent,
+  target?: ElementNode,
+  handlerElm?: ElementNode,
+) => boolean;
 ```
 
 - `startHold`: Call this on a key/button press. Starts the hold timer and conditionally calls `onEnter`.
 - `releaseHold`: Call this on a key/button release. Stops the timer and calls `onEnter` or `onRelease` depending on how long it was held.
+
+> **`startHold` needs the event.** It reads `e.repeat` to detect a hold. Passed
+> directly as a key handler (`onRight={holdRight}`) it receives one. If you wrap
+> it, forward all of the arguments — a wrapper that drops the event yields a
+> primitive that can never detect a hold, silently, and typically only on device.
 
 ---
 
@@ -70,4 +97,84 @@ const [onHoldEnter, onHoldRelease] = useHold({
 });
 
 <MyComponent onEnter={onHoldEnter} onRelease={onHoldRelease} />;
+```
+
+---
+
+### Holds that move focus
+
+The canonical hold — hold OK to open a context menu — moves focus while the key
+is still physically down. The platform keeps emitting auto-repeat key-downs after
+`onHold` fires, and those would otherwise propagate down the **new** focus path
+and fire whatever just took focus.
+
+`useHold` handles this by latching the key in the focus manager once `onHold`
+fires. Remaining auto-repeats are dropped until the key is released, and the
+latch delivers `onRelease` even though the key-up now propagates somewhere the
+holding element can no longer see. Suppression lifts on key-up, or on the next
+fresh (non-repeat) key-down so a swallowed key-up cannot wedge a key.
+
+Non-repeat key-downs are never suppressed, so a real press always gets through.
+
+If you implement hold behavior without this primitive, the same latch is
+available directly:
+
+```ts
+import {
+  suppressKeyUntilRelease,
+  releaseKeySuppression,
+} from '@solidtv/solid/primitives';
+
+suppressKeyUntilRelease(event, () => console.log('key released'));
+```
+
+---
+
+### Platforms without auto-repeat
+
+A hold is confirmed by an auto-repeat key-down. If a press delivers neither a
+key-up nor an auto-repeat by the threshold, the press is ambiguous, and by
+default it resolves as a **tap** — the behavior that keeps taps working on
+remotes that swallow key-up.
+
+On a platform whose remote input layer delivers no auto-repeat at all, that makes
+a hold unreachable. Set `holdRequiresRepeat: false` to resolve the ambiguous case
+as a hold instead, matching the legacy `keyHoldOptions` behavior:
+
+```tsx
+const [holdEnter, releaseEnter] = useHold({
+  onHold: openContextMenu,
+  onEnter: openTile,
+  holdRequiresRepeat: false, // no auto-repeat on this platform
+});
+```
+
+An early key-up still resolves as a tap either way, so this only changes the
+no-key-up **and** no-repeat case.
+
+---
+
+### Caveat: `startHold` stops propagation
+
+`startHold` returns `true`, which ends the focus manager's bubble phase —
+**ancestor handlers for that key will not run.** Attaching `useHold` to a row
+removes that row's subtree from every ancestor `onEnter`.
+
+This is structural rather than incidental: whether the press was a tap isn't
+known until key-up or until the timer fires, by which point the propagation pass
+is long over, so a deferred tap cannot be handed back to ancestors.
+
+If an ancestor performs work on that key — a root-level handler resolving an
+`href`, or a container doing analytics — invoke it from `onEnter` yourself:
+
+```ts
+const onEnter: HoldCallback = (e, target, focused) => {
+  for (let elm = target?.parent; elm; elm = elm.parent) {
+    if (
+      typeof elm.onEnter === 'function' &&
+      elm.onEnter(e, elm, focused) === true
+    )
+      return;
+  }
+};
 ```

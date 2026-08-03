@@ -448,13 +448,77 @@ const propagateKeyPress = (
 const DEFAULT_KEY_HOLD_THRESHOLD = 500; // ms
 const keyHoldTimeouts: { [key: KeyNameOrKeyCode]: number | true } = {};
 
+const keyOf = (e: KeyboardEvent): KeyNameOrKeyCode => e.key || e.keyCode;
+
+// Keys whose auto-repeat key-downs are dropped before propagation, mapped to an
+// optional callback run when the key is finally released.
+//
+// A hold action typically moves focus (opening a context menu, say) while the
+// key is still physically down. Two things then go wrong, and neither can be
+// fixed by the element that owns the hold, because it is no longer in the focus
+// path: the trailing auto-repeats propagate down the *new* focus path and fire
+// whatever just took focus, and the key-up goes there too, so the owner's
+// release handler never runs.
+//
+// Both are propagation concerns, so the latch lives here. The release callback
+// is what lets a suppressor still learn about a key-up it can no longer receive
+// through the focus path.
+const suppressedKeys = new Map<KeyNameOrKeyCode, (() => void) | undefined>();
+
+const liftSuppression = (key: KeyNameOrKeyCode): void => {
+  const onRelease = suppressedKeys.get(key);
+  suppressedKeys.delete(key);
+  onRelease?.();
+};
+
+/**
+ * Drop auto-repeat key-downs for `keyOrEvent` until the key is released.
+ *
+ * Suppression is lifted by the key's key-up, or by the next fresh (non-repeat)
+ * key-down — the latter so platforms that swallow key-up (webOS) can't wedge a
+ * key permanently. Non-repeat key-downs are never suppressed. `onRelease` runs
+ * when suppression lifts, whichever way it lifts, and is delivered regardless of
+ * where focus has moved in the meantime.
+ *
+ * `useHold` calls this itself when a hold fires; call it directly only when
+ * implementing hold behavior outside that primitive.
+ */
+export const suppressKeyUntilRelease = (
+  keyOrEvent: KeyboardEvent | KeyNameOrKeyCode,
+  onRelease?: () => void,
+): void => {
+  suppressedKeys.set(
+    typeof keyOrEvent === 'object' ? keyOf(keyOrEvent) : keyOrEvent,
+    onRelease,
+  );
+};
+
+/**
+ * Lift suppression added by {@link suppressKeyUntilRelease} early, running its
+ * release callback.
+ */
+export const releaseKeySuppression = (
+  keyOrEvent: KeyboardEvent | KeyNameOrKeyCode,
+): void => {
+  liftSuppression(
+    typeof keyOrEvent === 'object' ? keyOf(keyOrEvent) : keyOrEvent,
+  );
+};
+
 const handleKeyEvents = (
   delay: number,
   keydown?: KeyboardEvent,
   keyup?: KeyboardEvent,
 ) => {
   if (keydown) {
-    const key: KeyNameOrKeyCode = keydown.key || keydown.keyCode;
+    const key: KeyNameOrKeyCode = keyOf(keydown);
+    if (keydown.repeat) {
+      if (suppressedKeys.has(key)) return;
+    } else if (suppressedKeys.has(key)) {
+      // A fresh press starts a new gesture, so the previous one is over even
+      // though its key-up never arrived. Settle it before handling this press.
+      liftSuppression(key);
+    }
     const mappedKeyHoldEvent =
       keyHoldMapEntries[keydown.key] || keyHoldMapEntries[keydown.keyCode];
     const mappedKeyEvent =
@@ -471,7 +535,11 @@ const handleKeyEvents = (
 
     propagateKeyPress(keydown, mappedKeyEvent, false);
   } else if (keyup) {
-    const key: KeyNameOrKeyCode = keyup.key || keyup.keyCode;
+    const key: KeyNameOrKeyCode = keyOf(keyup);
+    // The key is up: whatever was suppressing its repeats is done. Settle it
+    // before propagating, so a suppressor that is still in the focus path sees
+    // its own release callback rather than a second one via the key-up below.
+    if (suppressedKeys.has(key)) liftSuppression(key);
     const mappedKeyEvent =
       keyMapEntries[keyup.key] || keyMapEntries[keyup.keyCode];
     if (keyHoldTimeouts[key] === true) {
@@ -529,5 +597,6 @@ export const useFocusManager = (
     for (const timeout of Object.values(keyHoldTimeouts)) {
       if (timeout && timeout !== true) clearTimeout(timeout);
     }
+    suppressedKeys.clear();
   });
 };
