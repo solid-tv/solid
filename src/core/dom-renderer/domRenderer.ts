@@ -822,7 +822,6 @@ function updateNodeStyles(node: DOMNode | DOMText) {
         if (!node.imgEl) {
           node.imgEl = document.createElement('img');
           node.imgEl.alt = '';
-          node.imgEl.crossOrigin = 'anonymous';
           node.imgEl.setAttribute('aria-hidden', 'true');
           node.imgEl.setAttribute('loading', 'lazy');
           node.imgEl.removeAttribute('src');
@@ -944,7 +943,6 @@ function updateNodeStyles(node: DOMNode | DOMText) {
       if (!node.imgEl) {
         node.imgEl = document.createElement('img');
         node.imgEl.alt = '';
-        node.imgEl.crossOrigin = 'anonymous';
         node.imgEl.setAttribute('aria-hidden', 'true');
         node.imgEl.setAttribute('loading', 'lazy');
         node.imgEl.removeAttribute('src');
@@ -1472,6 +1470,13 @@ export class DOMNode extends EventEmitter implements IRendererNode {
     this.hideMaskedBackgroundLayer();
     this.imgEl.style.display = '';
     this.imgEl.dataset.pendingSrc = pendingSrc;
+    // crossOrigin + data: URI fails to load on old WebKit engines (e.g. PS4 WebMAF) —
+    // only request CORS for real network sources, never for inlined base64 images.
+    if (pendingSrc.startsWith('data:')) {
+      this.imgEl.removeAttribute('crossorigin');
+    } else {
+      this.imgEl.crossOrigin = 'anonymous';
+    }
     this.imgEl.src = pendingSrc;
     this.imgEl.dataset.rawSrc = pendingSrc;
     this.imgEl.dataset.pendingSrc = '';
