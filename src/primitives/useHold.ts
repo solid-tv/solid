@@ -31,9 +31,13 @@ export type UseHoldProps = {
    *
    * `true` (default): a press with neither key-up nor auto-repeat by the
    * threshold resolves as a tap. `false`: it resolves as a hold, matching the
-   * behavior of the removed `keyHoldOptions`. Set this to `false` on platforms whose
-   * remote input layer delivers no auto-repeat, where a hold gesture would
-   * otherwise be unreachable.
+   * behavior of the removed `keyHoldOptions`.
+   *
+   * Set this to `false` for a key that emits no auto-repeat but does emit
+   * key-up on real release: the timer alone can then resolve the hold. It does
+   * *not* rescue a key that emits key-up immediately at press time (LG's Back
+   * button does this) — that key-up cancels the timer before it fires, and no
+   * setting can distinguish such a tap from a hold.
    */
   holdRequiresRepeat?: boolean;
 };

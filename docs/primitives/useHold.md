@@ -26,14 +26,14 @@ const [holdRight, releaseRight] = useHold({
 
 #### `UseHoldProps`
 
-| Prop                        | Type           | Description                                                                                                                       | Default      |
-| --------------------------- | -------------- | --------------------------------------------------------------------------------------------------------------------------------- | ------------ |
-| `onHold`                    | `HoldCallback` | Called once the hold threshold is exceeded.                                                                                       | **Required** |
-| `onEnter`                   | `HoldCallback` | Called on press or key entry. May be delayed depending on config.                                                                 | **Required** |
-| `onRelease`                 | `HoldCallback` | Called after a successful hold is released.                                                                                       | `undefined`  |
-| `holdThreshold`             | `number`       | Time in milliseconds to wait before triggering `onHold`.                                                                          | `500`        |
-| `performOnEnterImmediately` | `boolean`      | Whether `onEnter` is triggered immediately or only if released early.                                                             | `false`      |
-| `holdRequiresRepeat`        | `boolean`      | Whether a hold must be confirmed by an auto-repeat key-down. See [Platforms without auto-repeat](#platforms-without-auto-repeat). | `true`       |
+| Prop                        | Type           | Description                                                                                                                           | Default      |
+| --------------------------- | -------------- | ------------------------------------------------------------------------------------------------------------------------------------- | ------------ |
+| `onHold`                    | `HoldCallback` | Called once the hold threshold is exceeded.                                                                                           | **Required** |
+| `onEnter`                   | `HoldCallback` | Called on press or key entry. May be delayed depending on config.                                                                     | **Required** |
+| `onRelease`                 | `HoldCallback` | Called after a successful hold is released.                                                                                           | `undefined`  |
+| `holdThreshold`             | `number`       | Time in milliseconds to wait before triggering `onHold`.                                                                              | `500`        |
+| `performOnEnterImmediately` | `boolean`      | Whether `onEnter` is triggered immediately or only if released early.                                                                 | `false`      |
+| `holdRequiresRepeat`        | `boolean`      | Whether a hold must be confirmed by an auto-repeat key-down. See [Not every key can report a hold](#not-every-key-can-report-a-hold). | `true`       |
 
 Each callback receives the same context a `KeyHandler` gets — the `KeyboardEvent`
 that began the press, the element whose handler ran, and the focused element:
@@ -147,27 +147,66 @@ useFocusManager({ Back: [461, 'GoBack'] });
 
 ---
 
-### Platforms without auto-repeat
+### Not every key can report a hold
 
-A hold is confirmed by an auto-repeat key-down. If a press delivers neither a
-key-up nor an auto-repeat by the threshold, the press is ambiguous, and by
-default it resolves as a **tap** — the behavior that keeps taps working on
-remotes that swallow key-up.
+A hold is detected from what the device sends between press and release. Some
+keys send nothing usable, and on those a hold is **not detectable at all** — by
+this primitive or any other.
 
-On a platform whose remote input layer delivers no auto-repeat at all, that makes
-a hold unreachable. Set `holdRequiresRepeat: false` to resolve the ambiguous case
-as a hold instead, matching the behavior of the removed `keyHoldOptions`:
+Verified on an LG remote: the Back button emits its key-down and key-up
+back-to-back the instant it is pressed, before the user has let go. Nothing
+distinguishes a tap from a five-second hold, because both produce exactly the
+same two events at exactly the same time.
+
+There is no setting that recovers a hold here. `holdRequiresRepeat: false` does
+not help: the key-up arrives immediately and cancels the hold timer long before
+it can fire, so the press always resolves as a tap. That is the correct outcome —
+the alternative would be firing `onHold` on a plain tap.
+
+**Design around it.** If a gesture must work on every device, do not put it on a
+key that cannot report one. Put the hold on OK/Enter, which does report a real
+press duration on the remotes tested, and give Back a plain `onEnter` action.
+
+The three signals a key can offer, in the order the primitive prefers them:
+
+| Signal                      | Hold detectable? |                                                                                |
+| --------------------------- | ---------------- | ------------------------------------------------------------------------------ |
+| Auto-repeat key-downs       | Yes              | Confirms the key is still down. The default and most reliable path.            |
+| Key-up only on real release | Yes              | No key-up by the threshold means still held — set `holdRequiresRepeat: false`. |
+| Key-up immediately on press | **No**           | Tap and hold are indistinguishable. LG Back behaves this way.                  |
+
+If a press delivers no key-up and no auto-repeat by the threshold, it is
+ambiguous, and by default resolves as a **tap** — which is what keeps taps
+working on remotes that swallow key-up entirely (webOS OK). Set
+`holdRequiresRepeat: false` for a key you know reports key-up only on real
+release, so the timer alone resolves the hold:
 
 ```tsx
 const [holdEnter, releaseEnter] = useHold({
   onHold: openContextMenu,
   onEnter: openTile,
-  holdRequiresRepeat: false, // no auto-repeat on this platform
+  holdRequiresRepeat: false, // this key emits no auto-repeat
 });
 ```
 
-An early key-up still resolves as a tap either way, so this only changes the
-no-key-up **and** no-repeat case.
+Confirm behavior per key on real hardware before relying on it — it varies by
+key and by device, not just by platform. Logging the raw events is enough:
+
+```tsx
+<view
+  onCaptureKey={(e) => {
+    console.log('down', e.key, e.keyCode, e.repeat, performance.now());
+    return false;
+  }}
+  onCaptureKeyRelease={(e) => {
+    console.log('up', e.key, e.keyCode, performance.now());
+    return false;
+  }}
+/>
+```
+
+If the `up` line appears at press time rather than release time, that key cannot
+report a hold.
 
 ---
 

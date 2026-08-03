@@ -9,20 +9,19 @@ The `useFocusManager` primitive is designed to handle user input, manage focus p
 Import the `useFocusManager` and configure it with your custom key mappings:
 
 ```jsx
-import { useFocusManager } from '@solidtv/solid';
+import { useFocusManager } from '@solidtv/solid/primitives';
 
 const App = () => {
-  const focusPath = useFocusManager(
-    // These are the default, so you can just call useFocusManager()
-    {
-      Left: ['ArrowLeft', 37],
-      Right: ['ArrowRight', 39],
-      Up: ['ArrowUp', 38],
-      Down: ['ArrowDown', 40],
-      Enter: 'Enter',
-      Last: 'l',
-    },
-  );
+  // The defaults are already applied, so you can just call useFocusManager().
+  // Anything you pass is merged over them.
+  useFocusManager({
+    Left: ['ArrowLeft', 37],
+    Right: ['ArrowRight', 39],
+    Up: ['ArrowUp', 38],
+    Down: ['ArrowDown', 40],
+    Enter: 'Enter',
+    Last: 'l',
+  });
 
   // Additional application logic...
 };
@@ -30,7 +29,13 @@ const App = () => {
 
 ### Focus Path Tracking
 
-The `useFocusManager` returns a signal, `focusPath`, which is an array of elements that currently have focus. When the `activeElement` changes, the focus path is recalculated. During this process:
+`focusPath` is a signal holding the array of elements that currently have focus, from the focused leaf up to the root. It is imported separately — `useFocusManager` itself returns nothing:
+
+```jsx
+import { useFocusManager, focusPath } from '@solidtv/solid/primitives';
+```
+
+When the `activeElement` changes, the focus path is recalculated. During this process:
 
 - All elements in focus will have a `focus` state added, and `onFocus(currentFocusedElm, prevFocusedElm, nodeWithCallback)` event is called.
 - Elements losing focus will have the `focus` state removed, and `onBlur(currentFocusedElm, prevFocusedElm, nodeWithCallback)` event is called.
@@ -46,12 +51,26 @@ return <view onFocusChanged={setHasFocus}>{/* use hasFocus() */}</view>;
 
 When a key is pressed:
 
-1. The `keyMap` looks for the key name and its corresponding value.
-2. It then looks for `capture${key}` and `captureKey` from top down.
-3. It then calls the `on${key}` handler, searching from focused element back up the tree.
-4. If the key is not handled, it calls the generic `onKeyPress` on the active element and then propagates up through the focus path until the key press is handled.
+1. The `keyMap` resolves the event's `key` (falling back to its `keyCode`) to a mapped event name, e.g. `ArrowLeft` → `Left`. A key with no mapping still propagates, but only to the generic handlers.
+2. **Capture phase**, root → focused leaf: on each element it looks for `onCapture${key}`, then `onCaptureKey`. If the mapping failed, the raw `e.key` is used in place of `${key}`.
+3. **Bubble phase**, focused leaf → root: on each element it looks for `on${key}`, then falls back to `onKeyPress` on that _same_ element before moving to its parent.
 
-The keyHandler signature is: `(this: ElementNode, e: Event, elm: ElementNode, finalFocusedElm: ElementNode) => boolean`
+Note that step 3 is a single interleaved walk — `onKeyPress` on an element is tried before its parent's `on${key}`, not as a separate pass after the whole tree.
+
+The key handler signature is:
+
+```ts
+type KeyHandler = (
+  this: ElementNode,
+  e: KeyboardEvent,
+  target: ElementNode, // the element whose handler is running
+  handlerElm: ElementNode, // the focused leaf element
+  mappedEvent?: string, // capture-phase handlers only
+) => boolean | void;
+```
+
+`onKeyPress` takes the mapped event name as its second argument instead:
+`(e, mappedKeyEvent, handlerElm, currentFocusedElm)`.
 
 To stop the propagation of a key press, the handler must return `true`. Any other return value or no return value will continue to propagate the key press through the focus path, looking for additional handlers.
 
@@ -128,15 +147,18 @@ After every `printFocusHistory` call, `window.$f` is set to the DOM div of the m
 
 #### Manual printing (`printFocusHistory`)
 
-`printFocusHistory(n)` can be called at any time — including directly from the browser DevTools console — to print the last N entries. `count` is required.
+`printFocusHistory(n)` prints the last N entries at any time. `n` is required.
 
 ```javascript
-import { printFocusHistory } from '@solidtv/solid';
+import { printFocusHistory } from '@solidtv/solid/primitives';
 
 printFocusHistory(20);
+```
 
-// Also works directly in the browser DevTools console (no import needed once the app is running)
-printFocusHistory(20);
+It is not attached to `window`, so it is not callable from the DevTools console on its own. If you want it there, assign it yourself during dev setup:
+
+```javascript
+if (import.meta.env.DEV) window.printFocusHistory = printFocusHistory;
 ```
 
 #### Inspecting the buffer programmatically (`getFocusHistory`)
@@ -144,7 +166,10 @@ printFocusHistory(20);
 `getFocusHistory()` returns the full ring buffer as a read-only array of `FocusHistoryEntry` objects. This is useful for custom devtools panels, automated tests, or sending focus traces to a logging service.
 
 ```typescript
-import { getFocusHistory, type FocusHistoryEntry } from '@solidtv/solid';
+import {
+  getFocusHistory,
+  type FocusHistoryEntry,
+} from '@solidtv/solid/primitives';
 
 const history: Readonly<FocusHistoryEntry[]> = getFocusHistory();
 ```
@@ -169,10 +194,11 @@ Per-element metadata (focus count, last focused timestamp) is stored in a `WeakM
 
 On release of a key:
 
-1. The `keyMap` looks for the key name and its corresponding value.
-2. It calls the `on${key}Release` handler first.
+1. The `keyMap` resolves the key to a mapped event name, as for a key press.
+2. **Capture phase**, root → leaf: `onCapture${key}Release`, then `onCaptureKeyRelease`.
+3. **Bubble phase**, leaf → root: `on${key}Release`.
 
-Note: There is no generic `onKeyRelease`.
+Note: there is no generic `onKeyRelease` in the bubble phase — `onKeyPress` is not called for key-ups. `onCaptureKeyRelease` is the only catch-all for a release.
 
 ### Hold Key Handling
 
@@ -200,27 +226,46 @@ const [holdEnter, releaseEnter] = useHold({
 
 ### Custom Key Mappings
 
-You can pass in an array of keys for a single event. The custom keys object will be merged with the default key mapping:
+You can pass in an array of keys for a single event. What you pass is written over the default mapping, so you only need to declare what differs.
+
+Note the direction: the map you pass is `{ EventName: key(s) }`, while the table it merges into is keyed the other way, `{ key: EventName }`. These are the defaults:
 
 ```js
-const defaultKeyMap = {
+{
   ArrowLeft: 'Left',
   ArrowRight: 'Right',
   ArrowUp: 'Up',
   ArrowDown: 'Down',
   Enter: 'Enter',
+  l: 'Last',
   ' ': 'Space',
   Backspace: 'Back',
   Escape: 'Escape',
-  37: 'Left',
-  39: 'Right',
-  38: 'Up',
-  40: 'Down',
-  13: 'Enter',
-  32: 'Space',
-  8: 'Back',
-  27: 'Escape',
-};
+}
+```
+
+**No numeric keyCodes are mapped by default.** Devices that report keys by keyCode — or that report a different `key` on key-down and key-up, as LG does for Back — need those added explicitly:
+
+```js
+useFocusManager({
+  Back: [461, 'GoBack', 'Backspace'],
+  Enter: ['Enter', 13],
+});
+```
+
+#### Typing of custom handlers
+
+Only `Left`, `Right`, `Up`, `Down`, `Enter` and `Last` have typed handler props
+(`onLeft`, `onLeftRelease`, `onCaptureLeft`, …). Handlers for any other mapping —
+including the built-in `Back`, `Space` and `Escape`, and anything you add
+yourself — dispatch correctly at runtime, but are only accepted by the compiler
+through `ElementNode`'s `[key: string]: unknown` index signature. You get no
+autocompletion and no argument checking on them, so annotate the handler itself:
+
+```tsx
+const onBack: KeyHandler = (e, target, focused) => { ... };
+
+<view onBack={onBack} />;
 ```
 
 ### Example
@@ -229,7 +274,7 @@ Here's a complete example of how to use `useFocusManager`:
 
 ```jsx
 import { createSignal } from 'solid-js';
-import { useFocusManager } from '@solidtv/solid';
+import { useFocusManager } from '@solidtv/solid/primitives';
 import { Button } from '@solidtv/solid-ui';
 
 const App = () => {
