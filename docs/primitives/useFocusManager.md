@@ -22,13 +22,6 @@ const App = () => {
       Enter: 'Enter',
       Last: 'l',
     },
-    // Second param is keyHoldMapEntries
-    {
-      userKeyHoldMap: {
-        EnterHold: 'Enter',
-      },
-      holdThreshold: 150, //ms for how long to hold for
-    },
   );
 
   // Additional application logic...
@@ -183,19 +176,27 @@ Note: There is no generic `onKeyRelease`.
 
 ### Hold Key Handling
 
-Recommended approach to Hold Key Handling is with the [useHold](./useHold.md) primitive as this will not delay any keypress events for elements which do not need Hold.
+Hold gestures are handled by the [useHold](./useHold.md) primitive, which is
+scoped to the elements that need it rather than delaying key-press events
+globally.
 
-#### DEPRECATED - keyHold will be replaced with useHold
+The global `keyHoldOptions` / `userKeyHoldMap` second parameter has been removed,
+along with the `onKeyHold` and `on${Key}Hold` handlers it dispatched. Move a
+`userKeyHoldMap` entry to `useHold` on the element that owns the gesture:
 
-You can specify which keys you'd like tracked for Hold events globally as the second param to `useFocusManager`.
+```tsx
+// Before: useFocusManager(keyMap, { userKeyHoldMap: { EnterHold: 'Enter' }, holdThreshold: 1000 })
+//         <view onEnterHold={openMenu} onEnter={openTile} />
 
-1. The `keyHoldMap` looks for the key name and its corresponding value.
-2. It calls the `on${keyHold}` handler after `holdThreshold` || 500 ms.
-3. If the key is not handled, it calls the generic `onKeyHold` on the active element and then propagates up through the focus path until the key press is handled.
+// After:
+const [holdEnter, releaseEnter] = useHold({
+  onHold: openMenu,
+  onEnter: openTile,
+  holdThreshold: 1000,
+});
 
-The keyHandler signature is: `(this: ElementNode, e: Event, elm: ElementNode, finalFocusedElm: ElementNode) => boolean`
-
-To stop the propagation of a key press, the handler must return `true`. Any other return value or no return value will continue to propagate the key press through the focus path, looking for additional handlers.
+<view onEnter={holdEnter} onEnterRelease={releaseEnter} />;
+```
 
 ### Custom Key Mappings
 
@@ -242,13 +243,7 @@ const App = () => {
     Up: ["ArrowUp", 38],
     Down: ["ArrowDown", 40],
     Enter: ["Enter", 13],
-  } as unknown as KeyMap, {
-    userKeyHoldMap: {
-      EnterHold: [ 'Enter', 13 ],
-      BackHold: [ 'b', 66 ],
-    } as unknown as KeyHoldMap,
-    holdThreshold: 1000,
-  });
+  } as unknown as KeyMap);
 
   return (
     <view>

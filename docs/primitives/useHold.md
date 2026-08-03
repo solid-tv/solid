@@ -156,7 +156,7 @@ remotes that swallow key-up.
 
 On a platform whose remote input layer delivers no auto-repeat at all, that makes
 a hold unreachable. Set `holdRequiresRepeat: false` to resolve the ambiguous case
-as a hold instead, matching the legacy `keyHoldOptions` behavior:
+as a hold instead, matching the behavior of the removed `keyHoldOptions`:
 
 ```tsx
 const [holdEnter, releaseEnter] = useHold({

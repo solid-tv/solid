@@ -31,7 +31,7 @@ export type UseHoldProps = {
    *
    * `true` (default): a press with neither key-up nor auto-repeat by the
    * threshold resolves as a tap. `false`: it resolves as a hold, matching the
-   * legacy `keyHoldOptions` behavior. Set this to `false` on platforms whose
+   * behavior of the removed `keyHoldOptions`. Set this to `false` on platforms whose
    * remote input layer delivers no auto-repeat, where a hold gesture would
    * otherwise be unreachable.
    */
