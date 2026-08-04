@@ -12,7 +12,12 @@ SolidTV is a UI framework for building high-performance TV applications. It allo
   <img src="docs/companylogos/Angel.png" alt="Angel Studios" width="200" /> &nbsp; <img src="docs/companylogos/bell-fibe-tv.png" alt="Bell Fibe TV" width="80" /> &nbsp; <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/companylogos/watch-brasil.png" />
     <img src="docs/companylogos/watch-brasil-dark.png" alt="Watch Brasil" width="120" />
-  </picture>
+  </picture> &nbsp; <a href="https://www.cheknews.ca">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="docs/companylogos/chek-news.png" />
+      <img src="docs/companylogos/chek-news-dark.png" alt="CHEK News" height="46" />
+    </picture>
+  </a>
 </div>
 
 ## Need Support?
