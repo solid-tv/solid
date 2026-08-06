@@ -120,7 +120,6 @@ export function applySubTextureScaling(
   if (!regionW || !regionH) return;
   const targetW = node.props.w || regionW;
   const targetH = node.props.h || regionH;
-  if (targetW === regionW && targetH === regionH) return;
   const naturalW = img.naturalWidth || regionW;
   const naturalH = img.naturalHeight || regionH;
   const scaleX = targetW / regionW;
