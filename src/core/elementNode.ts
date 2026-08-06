@@ -1663,18 +1663,20 @@ export class ElementNode {
               flexDirection === 'row' || flexDirection === 'row-reverse';
             flexFitsWidth = isFlexRow && node.flexBoundary !== 'fixed';
 
-            if (isDev && flexFitsWidth) {
-              const needsWidthForJustify = [
-                'center',
-                'flex-end',
-                'space-between',
-                'space-around',
-                'space-evenly',
-              ].includes(node.justifyContent as string);
-
-              if (needsWidthForJustify) {
+            // Every justify mode except flexStart positions children out of the
+            // container's free space. Shrinking to fit leaves none, so fall back
+            // to filling the parent unless the developer explicitly asked to
+            // contain — in which case honor it and warn about the contradiction.
+            if (
+              flexFitsWidth &&
+              node.justifyContent !== undefined &&
+              node.justifyContent !== 'flexStart'
+            ) {
+              if (node.flexBoundary === undefined) {
+                flexFitsWidth = false;
+              } else if (isDev) {
                 console.warn(
-                  `justifyContent '${node.justifyContent}' requires an explicit width on the flex container; without one it shrinks to fit its children and has no free space to distribute: `,
+                  `justifyContent '${node.justifyContent}' has no free space to distribute on a flexBoundary 'contain' container without an explicit width: `,
                   this,
                 );
               }
