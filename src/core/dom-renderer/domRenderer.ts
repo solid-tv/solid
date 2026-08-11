@@ -800,10 +800,14 @@ function updateNodeStyles(node: DOMNode | DOMText) {
       let bgLayerStyle =
         'position: absolute; top:0; left:0; right:0; bottom:0; z-index: -1; pointer-events: none;';
       // overflow:hidden clips the transformed imgEl to prevent sprite bleed-through
-      // for non-tinted subtextures. NOT applied when hasDivBgTint because
-      // overflow:hidden + CSS mask-image causes a 1px white border artifact on WebKit.
+      // for non-tinted subtextures, and to enforce borderRadius clipping on the
+      // <img> itself: older WebKit engines (e.g. PS4) don't clip a replaced
+      // element's (img) own content via border-radius, only its background/border,
+      // so relying on radiusStyle alone leaves the image square on that platform.
+      // NOT applied when hasDivBgTint because overflow:hidden + CSS mask-image
+      // causes a 1px white border artifact on WebKit.
       // Tinted nodes use mask-image for visual clipping, so overflow:hidden is unnecessary.
-      if (srcPos !== null && !hasDivBgTint) {
+      if ((srcPos !== null || radiusStyle !== '') && !hasDivBgTint) {
         bgLayerStyle += 'overflow: hidden;';
       }
       if (bgStyle) {
@@ -822,7 +826,6 @@ function updateNodeStyles(node: DOMNode | DOMText) {
         if (!node.imgEl) {
           node.imgEl = document.createElement('img');
           node.imgEl.alt = '';
-          node.imgEl.crossOrigin = 'anonymous';
           node.imgEl.setAttribute('aria-hidden', 'true');
           node.imgEl.setAttribute('loading', 'lazy');
           node.imgEl.removeAttribute('src');
@@ -944,7 +947,6 @@ function updateNodeStyles(node: DOMNode | DOMText) {
       if (!node.imgEl) {
         node.imgEl = document.createElement('img');
         node.imgEl.alt = '';
-        node.imgEl.crossOrigin = 'anonymous';
         node.imgEl.setAttribute('aria-hidden', 'true');
         node.imgEl.setAttribute('loading', 'lazy');
         node.imgEl.removeAttribute('src');
@@ -1472,6 +1474,13 @@ export class DOMNode extends EventEmitter implements IRendererNode {
     this.hideMaskedBackgroundLayer();
     this.imgEl.style.display = '';
     this.imgEl.dataset.pendingSrc = pendingSrc;
+    // crossOrigin + data: URI fails to load on old WebKit engines (e.g. PS4 WebMAF) —
+    // only request CORS for real network sources, never for inlined base64 images.
+    if (pendingSrc.startsWith('data:')) {
+      this.imgEl.removeAttribute('crossorigin');
+    } else {
+      this.imgEl.crossOrigin = 'anonymous';
+    }
     this.imgEl.src = pendingSrc;
     this.imgEl.dataset.rawSrc = pendingSrc;
     this.imgEl.dataset.pendingSrc = '';
