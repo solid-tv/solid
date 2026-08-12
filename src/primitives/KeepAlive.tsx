@@ -14,7 +14,10 @@ export interface KeepAliveElement {
   isAlive?: s.Accessor<boolean>;
   setIsAlive?: (v: boolean) => void;
   dispose?: () => void;
-  savedFocusedElement?: ElementNode | undefined;
+  // Focused node captured on route exit so it can be refocused on re-entry.
+  // Stored here (rather than in a KeepAliveRoute closure) so it becomes
+  // garbage as soon as the entry is dropped from the map.
+  savedFocusedElement?: ElementNode;
 }
 
 const keepAliveElements = new Map<string, KeepAliveElement>();
@@ -38,48 +41,34 @@ export const storeKeepAlive = (element: KeepAliveElement) =>
 export const storeKeepAliveRoute = (element: KeepAliveElement) =>
   _storeKeepAlive(keepAliveRouteElements, element);
 
-const _cleanElement = (element: KeepAliveElement): void => {
-  element.savedFocusedElement = undefined;
-  (element.children as unknown as ElementNode | undefined)?.destroy();
-  element.dispose?.();
-  element.children = undefined;
-  element.owner = undefined;
-  element.routeSignal = undefined;
-  element.isAlive = undefined;
-  element.setIsAlive = undefined;
-  element.dispose = undefined;
-};
-
 const _removeKeepAlive = (
   map: Map<string, KeepAliveElement>,
   id: string,
 ): void => {
   const element = map.get(id);
   if (element) {
-    _cleanElement(element);
+    (element.children as unknown as ElementNode | undefined)?.destroy();
+    element.dispose?.();
     map.delete(id);
   }
 };
 
 export const removeKeepAlive = (id: string): void =>
   _removeKeepAlive(keepAliveElements, id);
-export const removeKeepAliveRoute = (id: string): void => {
-  keepAliveRouteCache.delete(id);
+export const removeKeepAliveRoute = (id: string): void =>
   _removeKeepAlive(keepAliveRouteElements, id);
-};
 
 const _clearKeepAlive = (map: Map<string, KeepAliveElement>): void => {
   map.forEach((element) => {
-    _cleanElement(element);
+    (element.children as unknown as ElementNode | undefined)?.destroy();
+    element.dispose?.();
   });
   map.clear();
 };
 
 export const clearKeepAlive = (): void => _clearKeepAlive(keepAliveElements);
-export const clearKeepAliveRoute = (): void => {
-  keepAliveRouteCache.clear();
+export const clearKeepAliveRoute = (): void =>
   _clearKeepAlive(keepAliveRouteElements);
-};
 
 interface KeepAliveProps {
   id: string;
@@ -133,7 +122,8 @@ const createKeepAliveComponent = (
       existing &&
       (props.shouldDispose?.(props.id) || existingChild?.destroyed)
     ) {
-      _cleanElement(existing);
+      existingChild?.destroy();
+      existing.dispose?.();
       map.delete(props.id);
       existing = undefined;
     }
@@ -224,16 +214,22 @@ export const KeepAliveRoute = <S extends string>(
   };
 
   const onRemove = chainFunctions(props.onRemove, (elm: ElementNode) => {
-    const existing = getExisting();
-    existing.savedFocusedElement = activeElement();
+    const existing = keepAliveRouteElements.get(key);
+    if (existing) {
+      existing.savedFocusedElement = activeElement();
+    }
     elm.alpha = 0;
   });
 
   const onRender = chainFunctions(props.onRender, (elm: ElementNode) => {
     const existing = keepAliveRouteElements.get(key);
-    const savedFocused = existing?.savedFocusedElement;
+    const savedFocusedElement = existing?.savedFocusedElement;
+    if (existing) {
+      existing.savedFocusedElement = undefined;
+    }
+
     let isChild = false;
-    let current = savedFocused;
+    let current = savedFocusedElement;
     while (current) {
       if (current === elm) {
         isChild = true;
@@ -242,13 +238,10 @@ export const KeepAliveRoute = <S extends string>(
       current = current.parent;
     }
 
-    if (isChild && savedFocused) {
-      savedFocused.setFocus();
+    if (isChild && savedFocusedElement) {
+      savedFocusedElement.setFocus();
     } else {
       elm.setFocus();
-    }
-    if (existing) {
-      existing.savedFocusedElement = undefined;
     }
     elm.alpha = 1;
   });
@@ -264,7 +257,8 @@ export const KeepAliveRoute = <S extends string>(
           existingChild &&
           (props.shouldDispose?.(key) || existingChild.destroyed)
         ) {
-          _cleanElement(existing);
+          existingChild.destroy();
+          existing.dispose?.();
           keepAliveRouteElements.delete(key);
           existing = getExisting();
         }

@@ -1,81 +1,95 @@
 import * as v from 'vitest';
-import * as s from 'solid-js';
 import * as lng from '@solidtv/solid';
 
-v.vi.mock('@solidjs/router', () => ({
-  Route: (props: any) => props,
-}));
-
+// @solidjs/router is aliased to tests/stubs/solidjs-router.ts, whose <Route>
+// hands its props straight back — which is all this test needs.
+import {
+  KeepAliveRoute,
+  keepAliveRouteElements,
+  removeKeepAliveRoute,
+  clearKeepAliveRoute,
+  clearKeepAliveRouteCache,
+} from '../src/primitives/KeepAlive.jsx';
 import { renderer } from './setup.js';
 
-v.describe('KeepAlive memory & pointer management', () => {
-  let KeepAliveModule: typeof import('../src/primitives/KeepAlive.js');
+const wait = (ms = 10) => new Promise((r) => setTimeout(r, ms));
 
-  v.beforeAll(async () => {
-    KeepAliveModule = await import('../src/primitives/KeepAlive.js');
-  });
+// Renders the route's component wrapper and returns the KeepAlive <view>,
+// which carries the chained onRemove/onRender we want to exercise.
+const renderRoute = (path: string) => {
+  const routeProps = KeepAliveRoute({
+    path,
+    component: () => (
+      <view width={100} height={100}>
+        <view width={100} height={100} />
+      </view>
+    ),
+  }) as any;
 
+  let outer!: lng.ElementNode;
+  const dispose = renderer.render(() => (
+    <view ref={outer} width={1920} height={1080}>
+      {routeProps.component({})}
+    </view>
+  ));
+
+  return { keepAliveView: outer.children[0] as lng.ElementNode, dispose };
+};
+
+v.describe('KeepAliveRoute saved focus', () => {
   v.afterEach(() => {
-    KeepAliveModule.clearKeepAlive();
-    KeepAliveModule.clearKeepAliveRoute();
+    clearKeepAliveRoute();
+    clearKeepAliveRouteCache();
   });
 
-  v.test('clearKeepAliveRoute clears savedFocusedElement and all pointers on KeepAliveElement', () => {
-    const dummyNode = new lng.ElementNode(renderer.stage);
-    const mockDispose = v.vi.fn();
-    const mockElement: import('../src/primitives/KeepAlive.js').KeepAliveElement = {
-      id: 'test-route',
-      children: dummyNode as any,
-      owner: s.getOwner(),
-      savedFocusedElement: dummyNode,
-      dispose: mockDispose,
-      isAlive: (() => true) as any,
-      setIsAlive: v.vi.fn(),
-    };
+  v.test('stores the focused element on the map entry, then releases it on re-entry', async () => {
+    const { keepAliveView, dispose } = renderRoute('/stores');
+    await wait();
 
-    KeepAliveModule.storeKeepAliveRoute(mockElement);
-    v.expect(KeepAliveModule.keepAliveRouteElements.get('test-route')?.savedFocusedElement).toBe(dummyNode);
+    const focused = keepAliveView.children[0]!.children[0] as lng.ElementNode;
+    focused.setFocus();
+    await wait();
+    v.expect(lng.activeElement()).toBe(focused);
 
-    KeepAliveModule.clearKeepAliveRoute();
+    keepAliveView.onRemove!(keepAliveView);
+    v.expect(keepAliveRouteElements.get('/stores')!.savedFocusedElement).toBe(
+      focused,
+    );
 
-    v.expect(KeepAliveModule.keepAliveRouteElements.size).toBe(0);
-    v.expect(mockDispose).toHaveBeenCalled();
-    v.expect(mockElement.savedFocusedElement).toBeUndefined();
-    v.expect(mockElement.children).toBeUndefined();
-    v.expect(mockElement.owner).toBeUndefined();
-    v.expect(mockElement.dispose).toBeUndefined();
-    v.expect(mockElement.isAlive).toBeUndefined();
-    v.expect(mockElement.setIsAlive).toBeUndefined();
+    keepAliveView.onRender!(keepAliveView);
+    await wait();
+    v.expect(lng.activeElement()).toBe(focused);
+    // Pointer dropped once it has been used — nothing left to retain.
+    v.expect(
+      keepAliveRouteElements.get('/stores')!.savedFocusedElement,
+    ).toBeUndefined();
+
+    dispose();
   });
 
-  v.test('removeKeepAliveRoute clears savedFocusedElement and all pointers for a specific route', () => {
-    const dummyNode1 = new lng.ElementNode(renderer.stage);
-    const dummyNode2 = new lng.ElementNode(renderer.stage);
+  v.test('dropping the map entry drops the saved element with it', async () => {
+    const { keepAliveView, dispose } = renderRoute('/dropped');
+    await wait();
 
-    const elem1: import('../src/primitives/KeepAlive.js').KeepAliveElement = {
-      id: 'route-1',
-      children: dummyNode1 as any,
-      savedFocusedElement: dummyNode1,
-      dispose: v.vi.fn(),
-    };
-    const elem2: import('../src/primitives/KeepAlive.js').KeepAliveElement = {
-      id: 'route-2',
-      children: dummyNode2 as any,
-      savedFocusedElement: dummyNode2,
-      dispose: v.vi.fn(),
-    };
+    const focused = keepAliveView.children[0]!.children[0] as lng.ElementNode;
+    focused.setFocus();
+    await wait();
 
-    KeepAliveModule.storeKeepAliveRoute(elem1);
-    KeepAliveModule.storeKeepAliveRoute(elem2);
+    keepAliveView.onRemove!(keepAliveView);
+    v.expect(keepAliveRouteElements.get('/dropped')!.savedFocusedElement).toBe(
+      focused,
+    );
 
-    KeepAliveModule.removeKeepAliveRoute('route-1');
+    // No closure holds the pointer, so removing the entry is enough to make
+    // the saved element collectable. Re-entering falls back to the route
+    // element instead of refocusing a node from the torn-down subtree.
+    removeKeepAliveRoute('/dropped');
+    v.expect(keepAliveRouteElements.has('/dropped')).toBe(false);
 
-    v.expect(KeepAliveModule.keepAliveRouteElements.has('route-1')).toBe(false);
-    v.expect(elem1.savedFocusedElement).toBeUndefined();
-    v.expect(elem1.children).toBeUndefined();
-    v.expect(elem1.dispose).toBeUndefined();
+    keepAliveView.onRender!(keepAliveView);
+    await wait();
+    v.expect(lng.activeElement()).not.toBe(focused);
 
-    v.expect(KeepAliveModule.keepAliveRouteElements.has('route-2')).true;
-    v.expect(elem2.savedFocusedElement).toBe(dummyNode2);
+    dispose();
   });
 });

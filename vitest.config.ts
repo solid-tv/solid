@@ -24,5 +24,14 @@ export default defineConfig(({ mode }) => ({
   },
   resolve: {
     conditions: ['@solidtv/source', 'browser', 'development'],
+    alias: {
+      // @solidjs/router resolves to untranspiled .jsx under the
+      // `@solidtv/source` condition, which vitest can't load. Tests only
+      // need <Route> to exist.
+      '@solidjs/router': new URL(
+        './tests/stubs/solidjs-router.ts',
+        import.meta.url,
+      ).pathname,
+    },
   },
 }));
