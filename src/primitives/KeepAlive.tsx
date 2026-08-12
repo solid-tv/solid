@@ -14,6 +14,10 @@ export interface KeepAliveElement {
   isAlive?: s.Accessor<boolean>;
   setIsAlive?: (v: boolean) => void;
   dispose?: () => void;
+  // Focused node captured on route exit so it can be refocused on re-entry.
+  // Stored here (rather than in a KeepAliveRoute closure) so it becomes
+  // garbage as soon as the entry is dropped from the map.
+  savedFocusedElement?: ElementNode;
 }
 
 const keepAliveElements = new Map<string, KeepAliveElement>();
@@ -199,8 +203,6 @@ export const KeepAliveRoute = <S extends string>(
     return cached;
   }
 
-  let savedFocusedElement: ElementNode | undefined;
-
   const getExisting = (): KeepAliveElement => {
     let existing = keepAliveRouteElements.get(key);
     if (!existing) {
@@ -212,11 +214,20 @@ export const KeepAliveRoute = <S extends string>(
   };
 
   const onRemove = chainFunctions(props.onRemove, (elm: ElementNode) => {
-    savedFocusedElement = activeElement();
+    const existing = keepAliveRouteElements.get(key);
+    if (existing) {
+      existing.savedFocusedElement = activeElement();
+    }
     elm.alpha = 0;
   });
 
   const onRender = chainFunctions(props.onRender, (elm: ElementNode) => {
+    const existing = keepAliveRouteElements.get(key);
+    const savedFocusedElement = existing?.savedFocusedElement;
+    if (existing) {
+      existing.savedFocusedElement = undefined;
+    }
+
     let isChild = false;
     let current = savedFocusedElement;
     while (current) {
