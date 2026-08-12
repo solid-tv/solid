@@ -14,6 +14,7 @@ export interface KeepAliveElement {
   isAlive?: s.Accessor<boolean>;
   setIsAlive?: (v: boolean) => void;
   dispose?: () => void;
+  savedFocusedElement?: ElementNode | undefined;
 }
 
 const keepAliveElements = new Map<string, KeepAliveElement>();
@@ -37,34 +38,48 @@ export const storeKeepAlive = (element: KeepAliveElement) =>
 export const storeKeepAliveRoute = (element: KeepAliveElement) =>
   _storeKeepAlive(keepAliveRouteElements, element);
 
+const _cleanElement = (element: KeepAliveElement): void => {
+  element.savedFocusedElement = undefined;
+  (element.children as unknown as ElementNode | undefined)?.destroy();
+  element.dispose?.();
+  element.children = undefined;
+  element.owner = undefined;
+  element.routeSignal = undefined;
+  element.isAlive = undefined;
+  element.setIsAlive = undefined;
+  element.dispose = undefined;
+};
+
 const _removeKeepAlive = (
   map: Map<string, KeepAliveElement>,
   id: string,
 ): void => {
   const element = map.get(id);
   if (element) {
-    (element.children as unknown as ElementNode | undefined)?.destroy();
-    element.dispose?.();
+    _cleanElement(element);
     map.delete(id);
   }
 };
 
 export const removeKeepAlive = (id: string): void =>
   _removeKeepAlive(keepAliveElements, id);
-export const removeKeepAliveRoute = (id: string): void =>
+export const removeKeepAliveRoute = (id: string): void => {
+  keepAliveRouteCache.delete(id);
   _removeKeepAlive(keepAliveRouteElements, id);
+};
 
 const _clearKeepAlive = (map: Map<string, KeepAliveElement>): void => {
   map.forEach((element) => {
-    (element.children as unknown as ElementNode | undefined)?.destroy();
-    element.dispose?.();
+    _cleanElement(element);
   });
   map.clear();
 };
 
 export const clearKeepAlive = (): void => _clearKeepAlive(keepAliveElements);
-export const clearKeepAliveRoute = (): void =>
+export const clearKeepAliveRoute = (): void => {
+  keepAliveRouteCache.clear();
   _clearKeepAlive(keepAliveRouteElements);
+};
 
 interface KeepAliveProps {
   id: string;
@@ -118,8 +133,7 @@ const createKeepAliveComponent = (
       existing &&
       (props.shouldDispose?.(props.id) || existingChild?.destroyed)
     ) {
-      existingChild?.destroy();
-      existing.dispose?.();
+      _cleanElement(existing);
       map.delete(props.id);
       existing = undefined;
     }
@@ -199,8 +213,6 @@ export const KeepAliveRoute = <S extends string>(
     return cached;
   }
 
-  let savedFocusedElement: ElementNode | undefined;
-
   const getExisting = (): KeepAliveElement => {
     let existing = keepAliveRouteElements.get(key);
     if (!existing) {
@@ -212,13 +224,16 @@ export const KeepAliveRoute = <S extends string>(
   };
 
   const onRemove = chainFunctions(props.onRemove, (elm: ElementNode) => {
-    savedFocusedElement = activeElement();
+    const existing = getExisting();
+    existing.savedFocusedElement = activeElement();
     elm.alpha = 0;
   });
 
   const onRender = chainFunctions(props.onRender, (elm: ElementNode) => {
+    const existing = keepAliveRouteElements.get(key);
+    const savedFocused = existing?.savedFocusedElement;
     let isChild = false;
-    let current = savedFocusedElement;
+    let current = savedFocused;
     while (current) {
       if (current === elm) {
         isChild = true;
@@ -227,10 +242,13 @@ export const KeepAliveRoute = <S extends string>(
       current = current.parent;
     }
 
-    if (isChild && savedFocusedElement) {
-      savedFocusedElement.setFocus();
+    if (isChild && savedFocused) {
+      savedFocused.setFocus();
     } else {
       elm.setFocus();
+    }
+    if (existing) {
+      existing.savedFocusedElement = undefined;
     }
     elm.alpha = 1;
   });
@@ -246,8 +264,7 @@ export const KeepAliveRoute = <S extends string>(
           existingChild &&
           (props.shouldDispose?.(key) || existingChild.destroyed)
         ) {
-          existingChild.destroy();
-          existing.dispose?.();
+          _cleanElement(existing);
           keepAliveRouteElements.delete(key);
           existing = getExisting();
         }
