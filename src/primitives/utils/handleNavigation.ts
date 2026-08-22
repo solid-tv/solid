@@ -377,6 +377,10 @@ export const spatialHandleNavigation: lng.KeyHandler = function (e) {
       closestIdx = i;
     }
 
+    // No child in an adjacent column/row - keep the current selection so the
+    // next key press resumes from here instead of resetting to the first child.
+    if (closestIdx === -1) return false;
+
     return selectChild(this as lngp.NavigableElement, closestIdx);
   }
 
