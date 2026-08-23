@@ -9,9 +9,9 @@ SolidTV absorbs everything it can, but Solid's renames and its new update timing
 reach application code. This guide covers what you have to change.
 
 > SolidTV 2.0 tracks Solid's `2.0.0-rc` line. Solid calls the API frozen
-> "barring showstoppers", but there is no stable release date yet. The 1.x line
-> continues to receive fixes — stay on it if you need a stable dependency, or if
-> you use the router (see [Routing](#routing-is-temporarily-unavailable)).
+> "barring showstoppers", but there is no stable release date yet, and
+> `@solidjs/router` is still on `next`. The 1.x line continues to receive fixes
+> — stay on it if you need a stable dependency tree.
 
 ## Overview of steps
 
@@ -21,6 +21,8 @@ reach application code. This guide covers what you have to change.
 4. Add `flush()` wherever you write state and then read it synchronously
 5. Replace `createResource`, `batch`, `on`, and the other removed primitives
 6. Move lifecycle out of `ref` callbacks
+7. Rebuild your router — routes are data now, not `<Route>` components
+8. Repoint JSX types at `@solidtv/solid`
 
 ---
 
@@ -34,10 +36,14 @@ gives you `rc.0` and two mismatched reactive cores, so pin exact versions:
 {
   "dependencies": {
     "solid-js": "2.0.0-rc.1",
+    // only if you use @solidtv/solid/primitives/router
+    "@solidjs/router": "2.0.0-next.17",
   },
   "devDependencies": {
     "babel-preset-solid": "2.0.0-rc.1",
     "vite-plugin-solid": "3.0.0-next.27",
+    // if you test with it — 0.8.x is Solid 1.x only
+    "@solidjs/testing-library": "1.0.0-beta.2",
   },
 }
 ```
@@ -142,6 +148,19 @@ cleanup function instead.
 > at compile time. TypeScript types the single-argument overload as `never`,
 > which is still valid as a statement — so the typechecker will not find these
 > for you. Grep for them.
+
+### `createMemo` lost its initial value
+
+`createMemo(fn, initialValue, options)` is now `createMemo(fn, options)`. The
+compute's `prev` parameter simply starts as `undefined`:
+
+```diff
+- const seen = createMemo((p) => p || props.active, false);
++ const seen = createMemo((p) => p || props.active);
+```
+
+Passing the old second argument is a type error (`Expected 1-2 arguments`), so
+the compiler finds these. `equals` and `name` still live in `options`.
 
 ## 4. Updates are batched — the one silent change
 
@@ -252,6 +271,24 @@ mark, or state driven from an imperative event handler re-entered into an owner
 const [offset, setOffset] = createSignal(0, { ownedWrite: true });
 ```
 
+## 8. TypeScript: JSX types come from SolidTV now
+
+Solid 2.0 no longer ships a `JSX` namespace — each renderer declares its own,
+and SolidTV declares the one for `<view>` / `<text>` / `<node>`. Type-only
+imports from `solid-js` therefore move:
+
+```diff
+- import type { JSX, JSXElement } from 'solid-js';
++ import type { JSX } from '@solidtv/solid';
+```
+
+`JSX.Element` keeps working through `@solidtv/solid`. Solid's own renderer-
+agnostic equivalent is now the top-level `Element` type, so
+`import type { Element } from 'solid-js'` also works if you prefer it — just
+note it shadows the DOM `Element` global.
+
+No change is needed to `jsxImportSource: "@solidtv/solid"` in your tsconfig.
+
 ## SolidTV-specific changes
 
 Beyond Solid itself:
@@ -262,7 +299,9 @@ Beyond Solid itself:
   releases ago; shaders are exported from the main entry point.
 - **`VITE_USE_NEW_FLEX` is gone.** The CSS-aligned flex engine — `flexShrink`,
   `flexBasis`, array-syntax padding/margin — is now the only engine, so drop the
-  environment variable. Behaviour matches having had the flag enabled.
+  environment variable. Behaviour matches having had the flag enabled, plus the
+  legacy engine's `flex-grow` overflow warning, which the new engine had been
+  missing.
 - **`createBlurredImage`** returns a plain accessor rather than a
   `Resource`, since Solid removed the `Resource` type. Reads behave as before
   (`undefined` until the first blur resolves), but `.loading`, `.error` and
