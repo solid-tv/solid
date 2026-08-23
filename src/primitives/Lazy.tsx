@@ -33,7 +33,7 @@ type LazyProps<T extends readonly any[]> = lng.NewOmit<lng.NodeProps, 'children'
   /** Skip refocusing the container when `each.length` changes. */
   noRefocus?: boolean;
 
-  children: (item: s.Accessor<T[number]>, index: number) => s.JSX.Element;
+  children: (item: s.Accessor<T[number]>, index: number) => s.Element;
 };
 
 // Lifecycle when props.each changes:
@@ -55,7 +55,13 @@ function createLazy<T>(
   keyHandler: (updateOffset: (event: KeyboardEvent, container: lng.ElementNode) => void) => Record<string, (event: KeyboardEvent, container: lng.ElementNode) => void>
 ) {
   // Need at least one item so it can be focused
-  const [offset, setOffset] = s.createSignal<number>(props.sync ? props.upCount : 0);
+  // ownedWrite: `offset` is a high-water mark driven from a render effect,
+  // the nav handler and the preload timer — all inside this component's
+  // owner, which Solid 2.0 rejects by default.
+  const [offset, setOffset] = s.createSignal<number>(
+    props.sync ? props.upCount : 0,
+    { ownedWrite: true },
+  );
   let preloadTimer: ReturnType<typeof setTimeout> | null = null;
   let navDelayTimer: ReturnType<typeof setTimeout> | null = null;
   let disposed = false;
@@ -84,10 +90,16 @@ function createLazy<T>(
     return 2;
   });
 
-  s.createRenderEffect(() => setOffset(offset => Math.max(offset, (props.selected || 0) + buffer())));
+  s.createRenderEffect(
+    () => (props.selected || 0) + buffer(),
+    (min) => {
+      // braces: an effect's return value is a cleanup function in 2.0
+      setOffset((offset) => Math.max(offset, min));
+    },
+  );
 
   if (!props.sync || props.eagerLoad) {
-    s.createEffect(() => {
+    s.createTrackedEffect(() => {
       if (!props.each) return;
       // Cancel any in-flight preload chain from a prior effect run before
       // starting a new one — otherwise two chains share state and race.
@@ -114,7 +126,7 @@ function createLazy<T>(
 
   // Refocus when each.length changes. Side effect kept out of the items memo
   // (memos must be pure — Solid may skip evaluation when there are no readers).
-  s.createEffect(() => {
+  s.createTrackedEffect(() => {
     if (!Array.isArray(props.each)) {
       itemLength = 0;
       return;
@@ -186,10 +198,10 @@ function createLazy<T>(
     <lng.Dynamic
       {...props}
       component={component}
-      {/* @once */ ...handler}
+      {...handler}
       lazyScrollToIndex={lazyScrollToIndex}
       ref={lngp.chainRefs(el => { viewRef = el as lngp.NavigableElement; }, props.ref)} >
-      <s.Index each={items()} children={props.children} />
+      <s.For each={items()} keyed={false} children={props.children} />
     </lng.Dynamic>
   );
 }

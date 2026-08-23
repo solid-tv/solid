@@ -1,4 +1,4 @@
-import { type Accessor, type Resource, createResource } from 'solid-js';
+import { type Accessor, createMemo, latest } from 'solid-js';
 
 /**
  * Represents a valid image source that can be used for blurring
@@ -57,10 +57,15 @@ interface ImageDimensions {
 }
 
 /**
- * Type for the resource return value from createBlurredImage
+ * Type for the value returned by createBlurredImage.
+ *
+ * Solid 2.0 removed `Resource<T>`, so this is a plain `Accessor`. Reads behave
+ * as the resource did — `undefined` until the first blur resolves, and the
+ * previous value while a new source is in flight — but the `.loading`,
+ * `.error` and `.state` properties a `Resource` carried are gone.
  */
-type BlurredImageResource<T extends NullableImageSource> = Resource<
-  T extends null | undefined ? null : string
+type BlurredImageResource<T extends NullableImageSource> = Accessor<
+  (T extends null | undefined ? null : string) | undefined
 >;
 
 /**
@@ -373,12 +378,17 @@ export function createBlurredImage<TSource extends NullableImageSource>(
     return typeof url === 'string' ? url : url.toString();
   };
 
-  const [blurredImage] = createResource(
-    imageUrlString,
-    async (url: string): Promise<string> => {
-      return await applyGaussianBlur(url, options);
-    },
-  );
+  // An async compute replaces createResource: returning a promise from the
+  // compute is what makes the value asynchronous in 2.0. A null/undefined
+  // source short-circuits, matching a resource whose source is falsy.
+  const blurredImage = createMemo(() => {
+    const url = imageUrlString();
+    if (url === null || url === undefined) {
+      return null;
+    }
+    return applyGaussianBlur(url, options);
+  });
 
-  return blurredImage as BlurredImageResource<TSource>;
+  // `latest` reads without suspending, preserving the resource-style read.
+  return (() => latest(blurredImage)) as BlurredImageResource<TSource>;
 }

@@ -9,7 +9,7 @@ import {
   type RouteDescription,
   type RouteMatch,
 } from '@solidjs/router';
-import type { JSX } from 'solid-js';
+import type { type Element as JSXElement } from 'solid-js';
 
 export function hashParser(str: string) {
   const to = str.replace(/^.*?#/, '');
@@ -40,7 +40,7 @@ export function bindEvent(
   return () => target.removeEventListener(type, handler);
 }
 
-export function HashRouter(props: HashRouterProps): JSX.Element {
+export function HashRouter(props: HashRouterProps): JSXElement {
   const getSource = () => window.location.hash.slice(1);
   const beforeLeave = createBeforeLeave();
   return createRouter({

@@ -19,13 +19,10 @@ A fundamental tool for layout is the Flex container. Currently, there is a minim
 
 ### New Flex Engine Toggle
 
-The framework now includes a modern, high-performance, CSS-aligned flex engine alongside the legacy engine. To opt into the new flex engine, define the following environment variable during your Vite build process:
-
-```bash
-VITE_USE_NEW_FLEX=true
-```
-
-This will add `flexShrink`, `flexBasis` support and padding / margin full support with array syntax.
+As of SolidTV 2.0 the modern, CSS-aligned flex engine is the only engine — the
+legacy one and the `VITE_USE_NEW_FLEX` opt-in have been removed, so no build
+configuration is needed. It supports `flexShrink`, `flexBasis`, and full
+padding / margin support with array syntax.
 
 Because the engines are conditionally evaluated at build time via `import.meta.env`, your bundler (e.g., Rollup) will automatically perform **Dead-Code Elimination (tree-shaking)**. This means whichever layout engine isn't selected will be completely omitted from your application's final production bundle.
 

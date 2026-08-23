@@ -354,7 +354,10 @@ export function useMouse<TApp extends ElementNode = ElementNode>(
   throttleBy: number = 100,
   options?: UseMouseOptions,
 ): void {
-  const pos = useMousePosition();
+  // @solid-primitives/mouse@4.0.0-next.3 declares useMousePosition as
+  // `ReturnType<typeof createHydratableSingletonRoot>` with the generic
+  // erased, so it infers as `unknown`. The runtime shape is unchanged.
+  const pos = useMousePosition() as { x: number; y: number };
   const scheduled = createScheduled((fn) => throttle(fn, throttleBy));
   let previousElement: ElementNode | null = null;
   const pressedElementRef: { current: ElementNode | null } = { current: null };
@@ -379,55 +382,65 @@ export function useMouse<TApp extends ElementNode = ElementNode>(
   makeEventListener(window, 'wheel', handleScroll);
   makeEventListener(window, 'click', handleClickContext);
   makeEventListener(window, 'mousedown', handleMouseDownContext);
-  createEffect(() => {
-    if (!scheduled()) return;
+  createEffect(
+    () => {
+      // Track the schedule tick and pointer position here. `scheduled()`
+      // registers an onCleanup internally, which createTrackedEffect
+      // forbids; a compute is an allowed scope for it. The effect below
+      // walks plain ElementNodes and must not re-track.
+      if (!scheduled()) return null;
+      return { x: pos.x, y: pos.y };
+    },
+    (coords) => {
+      if (!coords) return;
 
-    const path = getChildrenByPosition(myApp, pos.x, pos.y);
-    let activeElm: ElementNode | undefined;
-    for (let i = path.length - 1; i >= 0; i--) {
-      const el = path[i]!;
-      if (
-        el.onEnter ||
-        el.onMouseClick ||
-        el.onFocus ||
-        el[focusKey] ||
-        (hoverState && el[hoverState])
-      ) {
-        activeElm = el;
-        break;
+      const path = getChildrenByPosition(myApp, coords.x, coords.y);
+      let activeElm: ElementNode | undefined;
+      for (let i = path.length - 1; i >= 0; i--) {
+        const el = path[i]!;
+        if (
+          el.onEnter ||
+          el.onMouseClick ||
+          el.onFocus ||
+          el[focusKey] ||
+          (hoverState && el[hoverState])
+        ) {
+          activeElm = el;
+          break;
+        }
       }
-    }
 
-    if (!activeElm) {
-      if (previousElement && hoverState) {
+      if (!activeElm) {
+        if (previousElement && hoverState) {
+          removeCustomStateFromElement(previousElement, hoverState);
+          previousElement = null;
+        }
+        return;
+      }
+
+      let p = activeElm.parent;
+      while (p?.forwardStates) {
+        activeElm = p;
+        p = p.parent;
+      }
+
+      // Update Row & Column Selected property
+      const activeElmParent = activeElm.parent;
+      if (activeElmParent?.selected !== undefined) {
+        activeElmParent.selected = activeElmParent.children.indexOf(activeElm);
+      }
+
+      if (previousElement && previousElement !== activeElm && hoverState) {
         removeCustomStateFromElement(previousElement, hoverState);
-        previousElement = null;
       }
-      return;
-    }
 
-    let p = activeElm.parent;
-    while (p?.forwardStates) {
-      activeElm = p;
-      p = p.parent;
-    }
+      if (hoverState) {
+        addCustomStateToElement(activeElm, hoverState);
+      } else {
+        activeElm.setFocus();
+      }
 
-    // Update Row & Column Selected property
-    const activeElmParent = activeElm.parent;
-    if (activeElmParent?.selected !== undefined) {
-      activeElmParent.selected = activeElmParent.children.indexOf(activeElm);
-    }
-
-    if (previousElement && previousElement !== activeElm && hoverState) {
-      removeCustomStateFromElement(previousElement, hoverState);
-    }
-
-    if (hoverState) {
-      addCustomStateToElement(activeElm, hoverState);
-    } else {
-      activeElm.setFocus();
-    }
-
-    previousElement = activeElm;
-  });
+      previousElement = activeElm;
+    },
+  );
 }

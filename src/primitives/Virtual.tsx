@@ -3,6 +3,7 @@ import * as lng from '@solidtv/solid';
 import * as lngp from '@solidtv/solid/primitives';
 import { List } from '@solid-primitives/list';
 import * as utils from '../utils.js';
+import { createEffectOn } from './utils/createEffectOn.js';
 import {
   defaultTransitionBack,
   defaultTransitionForward,
@@ -23,7 +24,7 @@ export type VirtualProps<T> = lng.NewOmit<lngp.RowProps, 'children'> & {
   debugInfo?: boolean;
   factorScale?: boolean;
   uniformSize?: boolean;
-  children: (item: s.Accessor<T>, index: s.Accessor<number>) => s.JSX.Element;
+  children: (item: s.Accessor<T>, index: s.Accessor<number>) => s.Element;
 };
 
 function createVirtual<T>(
@@ -504,8 +505,7 @@ function createVirtual<T>(
   };
 
   let doOnce = initiallyLocked;
-  s.createEffect(
-    s.on([effectiveWrap, items], () => {
+  createEffectOn([effectiveWrap, items], () => {
       if (!viewRef || itemCount() === 0 || !effectiveWrap() || doOnce) return;
       doOnce = true;
       if (itemCount() <= props.displaySize) {
@@ -523,13 +523,11 @@ function createVirtual<T>(
         originalPosition = viewRef.lng[axis];
         targetPosition = viewRef.lng[axis];
       });
-    }),
-  );
+    });
 
-  s.createEffect(s.on([() => props.selected, items], updateSelected));
+  createEffectOn([() => props.selected, items], updateSelected);
 
-  s.createEffect(
-    s.on(items, () => {
+  createEffectOn(items, () => {
       if (!viewRef) return;
       let c = cursor();
       if (c >= itemCount()) {
@@ -539,8 +537,7 @@ function createVirtual<T>(
       const newState = computeSlice(c, 0, slice());
       setSlice(newState);
       viewRef.selected = newState.selected;
-    }),
-  );
+    });
 
   return (
     <view
@@ -575,7 +572,7 @@ function createVirtual<T>(
       )
       }
     >
-      <List each={slice().slice}>{props.children}</List>
+      <List each={slice().slice} recycle>{props.children}</List>
     </view>
   );
 }

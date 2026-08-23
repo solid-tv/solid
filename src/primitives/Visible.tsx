@@ -3,7 +3,7 @@ import {
   children,
   createMemo,
   ChildrenReturn,
-  JSX,
+  type Element as JSXElement,
   untrack,
   onCleanup,
   createRoot,
@@ -13,14 +13,13 @@ import { ElementNode } from '@solidtv/solid';
 export function Visible<T>(props: {
   when: T | undefined | null | false;
   keyed?: boolean;
-  children: JSX.Element;
-}): JSX.Element {
+  children: JSXElement;
+}): JSXElement {
   let child: ChildrenReturn | undefined;
   let disposer: VoidFunction | undefined;
   const keyed = props.keyed;
   const condition = createMemo<T | undefined | null | boolean>(
     () => props.when,
-    undefined,
     DEV
       ? {
           equals: (a, b) => (keyed ? a === b : !a === !b),
@@ -55,5 +54,5 @@ export function Visible<T>(props: {
     });
 
     return c || child ? child : null;
-  }) as unknown as JSX.Element;
+  }) as unknown as JSXElement;
 };

@@ -14,7 +14,7 @@ export * from './Grid.jsx';
 export * from './FPSCounter.jsx';
 export * from './FadeInOut.jsx';
 export * from './Preserve.jsx';
-export * from './Suspense.jsx';
+export * from './Loading.jsx';
 export * from './Marquee.jsx';
 export * from './createFocusStack.jsx';
 export * from './useHold.js';

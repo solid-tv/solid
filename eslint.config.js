@@ -30,7 +30,15 @@ const relaxedTypedRules = {
 
 export default tseslint.config(
   {
-    ignores: ['dist/**', 'node_modules/**'],
+    ignores: [
+      'dist/**',
+      'node_modules/**',
+      // Gated on upstream @solidjs/router support and excluded from
+      // tsconfig, so typed linting cannot resolve them either.
+      'src/primitives/router.ts',
+      'src/primitives/routerIndex.ts',
+      'src/primitives/KeepAlive.tsx',
+    ],
   },
   eslint.configs.recommended,
   {

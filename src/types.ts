@@ -4,7 +4,7 @@ import {
   type ElementText,
   type TextNode,
 } from './core/index.js';
-import { createRenderer } from 'solid-js/universal';
+import { createRenderer } from '@solidjs/universal';
 
 export type SolidRendererOptions = Parameters<
   typeof createRenderer<SolidNode>

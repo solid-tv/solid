@@ -1,7 +1,7 @@
 import * as s from 'solid-js';
 import * as lng from '@solidtv/solid';
 
-function Preserve(props: lng.NodeProps): s.JSX.Element {
+function Preserve(props: lng.NodeProps): s.Element {
   const view = (<view {...props} />) as unknown as lng.ElementNode;
 
   view.preserve = true;
@@ -17,7 +17,7 @@ function Preserve(props: lng.NodeProps): s.JSX.Element {
     view.destroy();
   });
 
-  return view as unknown as s.JSX.Element;
+  return view as unknown as s.Element;
 }
 
 export default Preserve;

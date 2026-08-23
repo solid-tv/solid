@@ -1,6 +1,7 @@
 - Getting Started
   - [Basics](/articles/basics.md)
   - [Rendering Hello World](/essentials/render.md)
+  - [Migration 1.x to 2.0 (SolidJS 2.0)](/articles/migration-1x-to-2.0.md)
   - [Migration 2.x to 3.0](/articles/migration-2x-to-3.0.md)
 - Core Concepts
   - [Components](/essentials/components.md)

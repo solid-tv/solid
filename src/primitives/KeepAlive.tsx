@@ -9,7 +9,7 @@ export interface KeepAliveElement {
   // creates a partial entry holding only `id` + `isAlive` until the route
   // mounts, so callers must null-check before use.
   owner?: s.Owner | null;
-  children?: s.JSX.Element;
+  children?: s.Element;
   routeSignal?: s.Signal<unknown>;
   isAlive?: s.Accessor<boolean>;
   setIsAlive?: (v: boolean) => void;
@@ -174,7 +174,7 @@ const KeepAliveRouteInternal = createKeepAliveComponent(
 // changes to KeepAliveRoute props (e.g., a reactive `transition` or `preload`
 // reference), use a stable wrapper around them or clear this cache when
 // they change.
-const keepAliveRouteCache = new Map<string, s.JSX.Element>();
+const keepAliveRouteCache = new Map<string, s.Element>();
 
 export const clearKeepAliveRouteCache = (): void => {
   keepAliveRouteCache.clear();
@@ -186,7 +186,7 @@ export const KeepAliveRoute = <S extends string>(
     path: string;
     component: (
       props: RouteProps<S> & { isAlive: s.Accessor<boolean> },
-    ) => s.JSX.Element;
+    ) => s.Element;
     shouldDispose?: (key: string) => boolean;
     onRemove?: ElementNode['onRemove'];
     onRender?: ElementNode['onRender'];

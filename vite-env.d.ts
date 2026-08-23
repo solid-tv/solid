@@ -10,7 +10,6 @@ declare global {
 interface ImportMetaEnv {
   readonly __DEV__: boolean;
   readonly DEV: boolean;
-  readonly VITE_USE_NEW_FLEX?: string;
 }
 
 interface ImportMeta {

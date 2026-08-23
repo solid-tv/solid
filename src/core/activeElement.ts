@@ -21,4 +21,9 @@ import type { ElementNode } from './elementNode.js';
  */
 export const [activeElement, setActiveElement] = createSignal<
   ElementNode | undefined
->(undefined);
+>(undefined, {
+  // Driven from within an owner context (see Config.setActiveElement wiring in
+  // focusManager.ts), which Solid 2.0 otherwise rejects with
+  // REACTIVE_WRITE_IN_OWNED_SCOPE. The write is intentional.
+  ownedWrite: true,
+});

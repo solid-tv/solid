@@ -32,5 +32,13 @@
     "types": ["solid-js", "vite/client"],
     "customConditions": ["@solidtv/source"]
   },
-  "include": ["vite-env.d.ts", "src/**/*"]
+  "include": ["vite-env.d.ts", "src/**/*"],
+  // Gated on upstream: @solidjs/router has no Solid 2.0 release yet
+  // (2.0.0-next.17), and these files use its internals. Kept on disk so the
+  // ./primitives/router entry can return once the router ships.
+  "exclude": [
+    "src/primitives/router.ts",
+    "src/primitives/routerIndex.ts",
+    "src/primitives/KeepAlive.tsx"
+  ]
 }

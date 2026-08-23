@@ -1,4 +1,4 @@
-import { createSignal, createMemo, createEffect, JSX, untrack, Index } from "solid-js";
+import { createSignal, createMemo, createTrackedEffect, type Element as JSXElement, untrack, For } from "solid-js";
 import { type NodeProps, ElementNode, NewOmit, hasFocus } from "@solidtv/solid";
 import { chainFunctions, chainRefs } from "./utils/chainFunctions.js";
 
@@ -13,7 +13,7 @@ export interface GridItemProps<T> {
 
 export interface GridProps<T> extends NewOmit<NodeProps, 'children'> {
   items: readonly T[];
-  children: (props: GridItemProps<T>) => JSX.Element,
+  children: (props: GridItemProps<T>) => JSXElement,
   itemHeight?: number;
   itemWidth?: number;
   itemOffset?: number;
@@ -24,12 +24,12 @@ export interface GridProps<T> extends NewOmit<NodeProps, 'children'> {
   onSelectedChanged?: (index: number, grid: ElementNode, elm?: ElementNode) => void;
 }
 
-export function Grid<T>(props: GridProps<T>): JSX.Element {
+export function Grid<T>(props: GridProps<T>): JSXElement {
 
   const [focusedIndex, setFocusedIndex] = createSignal(0);
   const baseColumns = 4;
 
-  createEffect(() => {
+  createTrackedEffect(() => {
     const currentIndex = untrack(focusedIndex);
     if (props.selected === currentIndex) return;
     if (props.selected !== undefined && props.items?.length > props.selected) {
@@ -94,7 +94,7 @@ export function Grid<T>(props: GridProps<T>): JSX.Element {
   };
 
   // Handle focus when items change - important for autofocus
-  createEffect(() => {
+  createTrackedEffect(() => {
     if (props.items && props.items.length > 0 && gridRef && hasFocus(gridRef)) {
       queueMicrotask(focus)
     }
@@ -134,7 +134,7 @@ export function Grid<T>(props: GridProps<T>): JSX.Element {
       strictBounds={false}
       y={scrollY()}
     >
-      <Index each={props.items}>
+      <For each={props.items} keyed={false}>
         {(item, index) => (
           <props.children
             item={item()}
@@ -145,7 +145,7 @@ export function Grid<T>(props: GridProps<T>): JSX.Element {
             y={Math.floor(index / columns()) * totalHeight()}
           />
         )}
-      </Index>
+      </For>
     </view>
   );
 };

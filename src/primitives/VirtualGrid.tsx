@@ -8,6 +8,7 @@ import * as utils from '../utils.js';
 // the import entry (circular init — index.ts re-exports withScrolling after
 // VirtualGrid).
 import { withScrolling } from './utils/withScrolling.js';
+import { createEffectOn } from './utils/createEffectOn.js';
 
 const columnScroll = withScrolling(false);
 
@@ -26,10 +27,10 @@ export type VirtualGridProps<T> = lng.NewOmit<lngp.RowProps, 'children'> & {
   buffer?: number;
   onEndReached?: () => void;
   onEndReachedThreshold?: number;
-  children: (item: s.Accessor<T>, index: s.Accessor<number>) => s.JSX.Element;
+  children: (item: s.Accessor<T>, index: s.Accessor<number>) => s.Element;
 };
 
-export function VirtualGrid<T>(props: VirtualGridProps<T>): s.JSX.Element {
+export function VirtualGrid<T>(props: VirtualGridProps<T>): s.Element {
   const bufferSize = () => props.buffer ?? 2;
   const [ cursor, setCursor ] = s.createSignal(props.selected ?? 0);
   const items = s.createMemo(() => props.each || []);
@@ -173,10 +174,9 @@ export function VirtualGrid<T>(props: VirtualGridProps<T>): s.JSX.Element {
     s.untrack(() => updateSelected([index]));
   }
 
-  s.createEffect(s.on([() => props.selected, items], updateSelected));
+  createEffectOn([() => props.selected, items], updateSelected);
 
-  s.createEffect(
-    s.on(items, (gridItems, _prevGridItems, prevSize) => {
+  createEffectOn(items, (gridItems, _prevGridItems, prevSize) => {
       if (!viewRef) return;
 
       if (cachedSelected !== undefined) {
@@ -198,8 +198,7 @@ export function VirtualGrid<T>(props: VirtualGridProps<T>): s.JSX.Element {
       }
 
       return gridItems.length;
-    }, { defer: true })
-  );
+    }, { defer: true });
 
 
   return (
@@ -219,7 +218,7 @@ export function VirtualGrid<T>(props: VirtualGridProps<T>): s.JSX.Element {
       onSelectedChanged={/* @once */ chainedOnSelectedChanged}
       style={/* @once */ lng.combineStyles(props.style, rowStyles)}
     >
-      <List each={slice()}>{props.children}</List>
+      <List each={slice()} recycle>{props.children}</List>
     </view>
   );
 }

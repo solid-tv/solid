@@ -1,10 +1,10 @@
 import {
   type Accessor,
-  batch,
   type Setter,
-  createComputed,
-  createResource,
+  createEffect,
+  createMemo,
   createSignal,
+  latest,
 } from 'solid-js';
 
 // Adopted from https://github.com/solidjs-community/solid-primitives/blob/main/packages/pagination/src/index.ts
@@ -42,16 +42,20 @@ export function createInfiniteItems<T>(
   const [page, setPage] = createSignal(0);
   const [end, setEnd] = createSignal(false);
 
-  const [contents] = createResource(page, fetcher);
+  // An async compute replaces createResource. `latest` reads the last
+  // resolved value instead of suspending, so this primitive keeps working
+  // outside a <Loading> boundary — as it did with a resource in 1.x.
+  const contents = createMemo(() => fetcher(page()));
 
-  createComputed(() => {
-    const content = contents();
-    if (!content) return;
-    batch(() => {
+  createEffect(
+    () => latest(contents),
+    (content) => {
+      if (!content) return;
+      // batch() is gone — writes are batched to the microtask automatically.
       if (content.length === 0) setEnd(true);
       setItems((p) => [...p, ...content]);
-    });
-  });
+    },
+  );
 
   return [
     items,

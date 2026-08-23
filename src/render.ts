@@ -1,19 +1,17 @@
-import { createRenderer as solidCreateRenderer } from 'solid-js/universal';
+import { createRenderer as solidCreateRenderer } from '@solidjs/universal';
 import {
   Config,
-  type NodeProps,
-  type TextProps,
   startLightningRenderer,
   type RendererMainSettings,
   DomRendererMainSettings,
 } from './core/index.js';
 import nodeOpts from './solidOpts.js';
 import {
-  splitProps,
+  omit,
   createMemo,
   createRenderEffect,
   untrack,
-  type JSXElement,
+  type Element as JSXElement,
   createRoot,
   type Component,
 } from 'solid-js';
@@ -26,7 +24,7 @@ let renderer;
 export const rootNode = nodeOpts.createElement('App');
 
 const render = function (code: () => JSXElement) {
-  // @ts-expect-error - code is jsx element and not SolidElement yet
+  // @ts-expect-error - code returns a JSX Element, not a SolidNode yet
   return solidRenderer.render(code, rootNode);
 };
 
@@ -61,7 +59,8 @@ export const {
   insert,
   spread,
   setProp,
-  use,
+  applyRef,
+  ref,
 } = solidRenderer;
 
 // Re-export a Proxy-free-safe mergeProps in place of the renderer's own so the
@@ -74,12 +73,15 @@ const taskQueue: Task[] = [];
 let tasksEnabled = false;
 
 createRoot(() => {
-  createRenderEffect(() => {
-    // should change whenever a keypress occurs, so we disable the task queue
-    // until the renderer is idle again.
-    activeElement();
-    tasksEnabled = false;
-  });
+  // should change whenever a keypress occurs, so we disable the task queue
+  // until the renderer is idle again. Solid 2.0 splits this into a tracked
+  // compute and an untracked effect.
+  createRenderEffect(
+    () => activeElement(),
+    () => {
+      tasksEnabled = false;
+    },
+  );
 });
 
 export function setTasksEnabled(enabled: boolean): void {
@@ -124,15 +126,15 @@ function processTasks(): void {
 export function Dynamic<T extends Record<string, any>>(
   props: T & { component?: Component<T> | undefined | null },
 ): JSXElement {
-  const [p, others] = splitProps(props, ['component']);
+  const others = omit(props, 'component');
 
-  const cached = createMemo(() => p.component);
+  const cached = createMemo(() => props.component);
 
   return createMemo(() => {
     const component = cached();
     switch (typeof component) {
       case 'function':
-        return untrack(() => component(others));
+        return untrack(() => component(others as T));
 
       case 'string': {
         const el = createElement(component);
@@ -146,25 +148,6 @@ export function Dynamic<T extends Record<string, any>>(
     }
   }) as unknown as JSXElement;
 }
-
-// Dont use JSX as it creates circular dependencies and causes trouble with the playground.
-/**
- * @deprecated Use the lowercase `<view>` intrinsic element instead. The `View` component will be removed in a future release.
- */
-export const View = (props: NodeProps) => {
-  const el = createElement('node');
-  spread(el, props, false);
-  return el as unknown as JSXElement;
-};
-
-/**
- * @deprecated Use the lowercase `<text>` intrinsic element instead. The `Text` component will be removed in a future release.
- */
-export const Text = (props: TextProps) => {
-  const el = createElement('text');
-  spread(el, props, false);
-  return el as unknown as JSXElement;
-};
 
 export function registerDefaultShader(_name: string, _shader: any) {
   // noop for v2

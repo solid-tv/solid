@@ -1,4 +1,10 @@
-import { createSignal, getOwner, onCleanup, runWithOwner } from 'solid-js';
+import {
+  createSignal,
+  flush,
+  getOwner,
+  onCleanup,
+  runWithOwner,
+} from 'solid-js';
 import { Config, isDev } from './config.js';
 import { IRendererNode } from './dom-renderer/domRendererTypes.js';
 export type * from './focusKeyTypes.js';
@@ -221,7 +227,12 @@ export const setActiveElementCore = (elm: ElementNode) => {
   Config.setActiveElement(elm);
 };
 
-export const [focusPath, setFocusPath] = createSignal<ElementNode[]>([]);
+export const [focusPath, setFocusPath] = createSignal<ElementNode[]>([], {
+  // Written from key handlers re-entered into an owner via runWithOwner
+  // (see useFocusManager below), which Solid 2.0 otherwise rejects with
+  // REACTIVE_WRITE_IN_OWNED_SCOPE. The write is intentional.
+  ownedWrite: true,
+});
 
 const updateFocusPath = (
   currentFocusedElm: ElementNode,
@@ -275,6 +286,11 @@ const updateFocusPath = (
   }
 
   _signalWrapper(() => setFocusPath(fp));
+  // Solid 2.0 defers signal writes to a microtask, but the focus path has to
+  // be visible to the very next key event — on a TV a keypress can land
+  // immediately after a focus change, and handleKeyEvents bails out on an
+  // empty path. Settle the write here so key handling stays synchronous.
+  flush();
 };
 
 let lastGlobalKeyPressTime = 0;

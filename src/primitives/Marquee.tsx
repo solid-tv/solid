@@ -64,9 +64,9 @@ export function MarqueeText(props: MarqueeTextProps) {
   const isTextOverflowing = s.createMemo(() => textWidth() > props.clipWidth - SAFETY_MARGIN)
   const shouldScroll = s.createMemo(() => props.marquee && isTextOverflowing())
 
-  const wasFocusedBefore = s.createMemo<boolean>(p => p || props.marquee, false)
+  const wasFocusedBefore = s.createMemo<boolean>(p => p || props.marquee)
 
-  s.createEffect(() => {
+  s.createTrackedEffect(() => {
     if (shouldScroll()) {
 
       const options: lng.AnimationSettings = {

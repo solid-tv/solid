@@ -28,7 +28,7 @@ interface FocusStackContextType {
 
 const FocusStackContext = s.createContext<FocusStackContextType | undefined>(undefined);
 
-export function FocusStackProvider(props: { children: s.JSX.Element}) {
+export function FocusStackProvider(props: { children: s.Element}) {
   const [_focusStack, setFocusStack] = s.createSignal<ElementNode[]>([]);
 
   function storeFocus(element: ElementNode, prevElement?: ElementNode) {
@@ -56,9 +56,9 @@ export function FocusStackProvider(props: { children: s.JSX.Element}) {
   }
 
   return (
-    <FocusStackContext.Provider value={{ storeFocus, restoreFocus, clearFocusStack }}>
+    <FocusStackContext value={{ storeFocus, restoreFocus, clearFocusStack }}>
       {props.children}
-    </FocusStackContext.Provider>
+    </FocusStackContext>
   );
 }
 

@@ -1,6 +1,6 @@
-import { createEffect, on } from 'solid-js';
 import { Announcer } from './announcer.js';
 import { focusPath } from '../useFocusManager.js';
+import { createEffectOn } from '../utils/createEffectOn.js';
 
 let doOnce = false;
 export const useAnnouncer = (options?: {
@@ -12,7 +12,7 @@ export const useAnnouncer = (options?: {
   }
   doOnce = true;
   Announcer.setupTimers(options);
-  createEffect(on(focusPath, Announcer.onFocusChange!, { defer: true }));
+  createEffectOn(focusPath, Announcer.onFocusChange!, { defer: true });
 
   return Announcer;
 };

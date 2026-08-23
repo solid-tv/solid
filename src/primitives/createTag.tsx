@@ -2,11 +2,11 @@ import * as s from 'solid-js';
 import * as lng from '@solidtv/solid';
 
 interface Destroyable {
-  (props: lng.NodeProps): s.JSX.Element;
+  (props: lng.NodeProps): s.Element;
   destroy: () => void;
 }
 
-export function createTag(children: s.JSX.Element): Destroyable {
+export function createTag(children: s.Element): Destroyable {
   const [texture, setTexture] = s.createSignal<lng.Texture | null | undefined>(
     null,
   );

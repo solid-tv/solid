@@ -10,8 +10,21 @@ import {
 import type { SolidNode, SolidRendererOptions } from './types.js';
 
 export default {
-  createElement(name: string): ElementNode {
-    return new ElementNode(name);
+  createElement(
+    name: string,
+    staticProps?: Record<string, unknown>,
+  ): ElementNode {
+    const node = new ElementNode(name);
+    if (staticProps !== undefined) {
+      // Solid 2.0 hands every compile-time-constant prop here as one object
+      // instead of a setProp call each. Assign through the same path
+      // setProperty uses so ElementNode's setters still run, in declaration
+      // order — matching how 1.x applied them one at a time.
+      for (const key in staticProps) {
+        node[key] = staticProps[key];
+      }
+    }
+    return node;
   },
   createTextNode(text: string): TextNode {
     // A text node is just a string - not the <text> node
@@ -27,7 +40,7 @@ export default {
   setProperty(node: ElementNode, name: string, value: any): void {
     node[name] = value;
   },
-  insertNode(parent: ElementNode, node: SolidNode, anchor: SolidNode): void {
+  insertNode(parent: ElementNode, node: SolidNode, anchor?: SolidNode): void {
     log('INSERT: ', parent, node, anchor);
 
     const prevParent = node.parent;

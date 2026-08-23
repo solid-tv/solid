@@ -1,4 +1,4 @@
-import { type Component, createRenderEffect, createSignal } from 'solid-js';
+import { type Component, createTrackedEffect, createSignal } from 'solid-js';
 import { ImageTexture, renderer, type NodeProps } from '@solidtv/solid';
 import { Config } from '../core/config.js';
 
@@ -13,7 +13,7 @@ export const Image: Component<ImageProps> = (props) => {
   const [texture, setTexture] = createSignal<ImageTexture | null>(null);
   const [src, setSrc] = createSignal<string | null>(props.placeholder || null);
 
-  createRenderEffect(() => {
+  createTrackedEffect(() => {
     if (Config.domRendererEnabled) {
       const img = new window.Image();
       img.crossOrigin = 'anonymous';

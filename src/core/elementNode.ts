@@ -16,12 +16,8 @@ import {
   type DollarString,
 } from './intrinsicTypes.js';
 import States, { type NodeStates } from './states.js';
-import calculateFlexOld from './flex.js';
-import calculateFlexNew from './flexLayout.js';
+import calculateFlex from './flex.js';
 
-const calculateFlex = import.meta.env?.VITE_USE_NEW_FLEX
-  ? calculateFlexNew
-  : calculateFlexOld;
 import {
   log,
   isArray,
