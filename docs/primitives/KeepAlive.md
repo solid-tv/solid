@@ -4,30 +4,31 @@ The `KeepAlive` and `KeepAliveRoute` components provide a mechanism to cache com
 
 ## Usage
 
-The primary way to use this feature is with `KeepAliveRoute`, which is a wrapper around the standard `@solidjs/router` `Route` component. It automatically handles caching the route's component.
+The primary way to use this feature is with `KeepAliveRoute`, which returns a Solid Router route definition with caching wired in. Place it in your router's `routes` array like any other route.
 
 ### Caching a Route
 
 By using `KeepAliveRoute`, you can ensure that when a user navigates back to a previously visited route, it will be displayed in the exact same state as they left it.
 
 ```jsx
-import { KeepAliveRoute } from '@solidtv/solid';
+import {
+  createHashRouter,
+  KeepAliveRoute,
+} from '@solidtv/solid/primitives/router';
 import { Browse, browsePreload } from './pages/Browse';
 
-const AppRoutes = () => {
-  return (
-    <Router>
-      {/* The Browse page will be kept in memory */}
-      <KeepAliveRoute
-        id="browse"
-        path="browse/:filter"
-        component={Browse}
-        preload={browsePreload}
-      />
-      {/* Other routes */}
-    </Router>
-  );
-};
+const Router = createHashRouter({
+  routes: [
+    // The Browse page will be kept in memory
+    KeepAliveRoute({
+      id: 'browse',
+      path: 'browse/:filter',
+      component: Browse,
+      preload: browsePreload,
+    }),
+    // Other routes
+  ],
+});
 ```
 
 In the example above, the `Browse` component's state will be preserved. When you navigate away and then back to a `/browse/...` URL, the page will render instantly from the cache, showing exactly what was there before.
@@ -42,12 +43,15 @@ To prevent background effects from running when the page is inactive, `KeepAlive
 import { createEffect } from 'solid-js';
 
 const Browse = (props) => {
-  createEffect(() => {
-    // Return early to prevent the effect from running in the background when cached
-    if (!props.isAlive()) return;
+  createEffect(
+    () => props.isAlive(),
+    (isAlive) => {
+      // Return early to prevent the effect from running in the background when cached
+      if (!isAlive) return;
 
-    console.log('Page is active and visible!');
-  });
+      console.log('Page is active and visible!');
+    },
+  );
 
   return <view>...</view>;
 };

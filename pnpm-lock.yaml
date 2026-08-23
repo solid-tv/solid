@@ -36,6 +36,9 @@ importers:
       '@solid-devtools/debugger':
         specifier: ^0.28.1
         version: 0.28.1(solid-js@2.0.0-rc.1)
+      '@solidjs/router':
+        specifier: 2.0.0-next.17
+        version: 2.0.0-next.17(@solidjs/web@2.0.0-rc.1(solid-js@2.0.0-rc.1))(solid-js@2.0.0-rc.1)
       '@typescript-eslint/eslint-plugin':
         specifier: ^8.59.2
         version: 8.59.2(@typescript-eslint/parser@8.59.2(eslint@9.39.4(jiti@2.7.0))(typescript@6.0.3))(eslint@9.39.4(jiti@2.7.0))(typescript@6.0.3)
@@ -929,6 +932,12 @@ packages:
     peerDependencies:
       '@solidjs/web': ^2.0.0-rc.0
       solid-js: ^2.0.0-rc.0
+
+  '@solidjs/router@2.0.0-next.17':
+    resolution: {integrity: sha512-LchYm3IZ3Y7vGPh/Jx6X8UjpBirQrz9ZoRQkgRpdz8A9C7eTiRXY326pJDcoYDXn7FzYtFpRCwsfBMxRDsFo6A==}
+    peerDependencies:
+      '@solidjs/web': ^2.0.0-rc.1
+      solid-js: ^2.0.0-rc.1
 
   '@solidjs/signals@2.0.0-rc.1':
     resolution: {integrity: sha512-KQpgUbn9xuzFaXupwej9MvUnQV+H6wcCgvrERf+dygco3T9JWP9S02g/UoYwwmJ6Vh+LE1b82ZlSHYR2Bd1O8A==}
@@ -3307,6 +3316,11 @@ snapshots:
       solid-js: 2.0.0-rc.1
 
   '@solid-primitives/utils@7.0.0-next.4(@solidjs/web@2.0.0-rc.1(solid-js@2.0.0-rc.1))(solid-js@2.0.0-rc.1)':
+    dependencies:
+      '@solidjs/web': 2.0.0-rc.1(solid-js@2.0.0-rc.1)
+      solid-js: 2.0.0-rc.1
+
+  '@solidjs/router@2.0.0-next.17(@solidjs/web@2.0.0-rc.1(solid-js@2.0.0-rc.1))(solid-js@2.0.0-rc.1)':
     dependencies:
       '@solidjs/web': 2.0.0-rc.1(solid-js@2.0.0-rc.1)
       solid-js: 2.0.0-rc.1

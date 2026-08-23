@@ -1,8 +1,8 @@
 import * as v from 'vitest';
 import * as lng from '@solidtv/solid';
 
-// @solidjs/router is aliased to tests/stubs/solidjs-router.ts, whose <Route>
-// hands its props straight back — which is all this test needs.
+// KeepAliveRoute returns a plain route-definition object in Solid Router 2.0,
+// so this exercises it directly without mounting a router.
 import {
   KeepAliveRoute,
   keepAliveRouteElements,

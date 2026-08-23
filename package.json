@@ -18,6 +18,13 @@
         "default": "./dist/src/primitives/index.js"
       }
     },
+    "./primitives/router": {
+      "@solidtv/source": "./src/primitives/routerIndex.ts",
+      "import": {
+        "types": "./dist/src/primitives/routerIndex.d.ts",
+        "default": "./dist/src/primitives/routerIndex.js"
+      }
+    },
     "./devtools": {
       "@solidtv/source": "./src/devtools/index.ts",
       "import": {
@@ -69,6 +76,7 @@
   "devDependencies": {
     "@eslint/js": "^9.39.4",
     "@solid-devtools/debugger": "^0.28.1",
+    "@solidjs/router": "2.0.0-next.17",
     "@typescript-eslint/eslint-plugin": "^8.59.2",
     "@typescript-eslint/parser": "^8.59.2",
     "@vitest/browser-playwright": "^4.1.6",
@@ -97,10 +105,15 @@
     "*.{js,cjs,md}": "prettier --write"
   },
   "peerDependencies": {
+    "@solidjs/router": "^2.0.0-next.17",
     "@solidtv/renderer": "^1.6.3",
     "solid-js": "^2.0.0-rc.1"
   },
-  "peerDependenciesMeta": {},
+  "peerDependenciesMeta": {
+    "@solidjs/router": {
+      "optional": true
+    }
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/solid-tv/solid.git"

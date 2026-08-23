@@ -67,14 +67,16 @@ const TextPage = lazy(() => import('./pages/Text'));
 const { render } = createRenderer();
 await loadFonts(fonts);
 
-// Render the app using the HashRouter from SolidRouter
-render(() => (
-  <HashRouter root={App}>
-    <Route path="/" component={HelloWorld} preload={getHomeData} />
-    <Route path="/text" component={TextPage} />
-    <Route path="/*all" component={NotFound} />
-  </HashRouter>
-));
+// Build the router from a route tree, then render it.
+const Router = createHashRouter({
+  routes: [
+    { path: '/', component: HelloWorld, preload: getHomeData },
+    { path: '/text', component: TextPage },
+    { path: '/*all', component: NotFound },
+  ],
+});
+
+render(() => <Router>{(props) => <App>{props.children}</App>}</Router>);
 ```
 
 Lazy-loading routes? Oh yeah! This helps reduce the initial bundle size and lets your app boot up super fast. The cool thing about SolidTV Router is the ability to preload data for routes before they fully load. By following the “render as you fetch” pattern, we can make API calls while a component is being rendered, giving us that super snappy feel.
@@ -82,16 +84,22 @@ Lazy-loading routes? Oh yeah! This helps reduce the initial bundle size and lets
 If you need different sections of your app with varying layouts (say, some with a sidebar and some without), you can easily structure it like this:
 
 ```jsx
-render(() => (
-  <HashRouter root={App}>
-    <Route path="/main" component={LeftNav}>
-      <Route path="/" component={HelloWorld} preload={getHomeData} />
-      <Route path="/text" component={TextPage} />
-    </Route>
-    {/* These routes won't have left nav */}
-    <Route path="/*all" component={NotFound} />
-  </HashRouter>
-));
+const Router = createHashRouter({
+  routes: [
+    {
+      path: '/main',
+      component: LeftNav,
+      children: [
+        { path: '/', component: HelloWorld, preload: getHomeData },
+        { path: '/text', component: TextPage },
+      ],
+    },
+    // These routes won't have left nav
+    { path: '/*all', component: NotFound },
+  ],
+});
+
+render(() => <Router>{(props) => <App>{props.children}</App>}</Router>);
 ```
 
 Here, any route under `/main` will include a left-side navigation bar, but routes outside of that won’t. There is lots the router can do and I recommend you check out their [official documentation](https://github.com/solidjs/solid-router).

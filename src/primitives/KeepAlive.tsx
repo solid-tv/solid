@@ -1,4 +1,8 @@
-import { Route, RoutePreloadFuncArgs, RouteProps } from '@solidjs/router';
+import type {
+  RouteDefinition,
+  RoutePreloadFuncArgs,
+  RouteSectionProps,
+} from '@solidjs/router';
 import * as s from 'solid-js';
 import { ElementNode, activeElement } from '@solidtv/solid';
 import { chainFunctions } from './utils/chainFunctions.js';
@@ -163,39 +167,55 @@ const KeepAliveRouteInternal = createKeepAliveComponent(
   storeKeepAliveRoute,
 );
 
-// Cache the resolved <Route> JSX per key. Solid Router uses the routeDef
-// object itself as the route key (see @solidjs/router index.js:455), so if
+// Cache the route definition per key. Solid Router still uses the routeDef
+// object itself as the route key (routing.js `key: routeDef`), so if
 // KeepAliveRoute ever gets re-evaluated, a new routeDef would drift the key
-// and force routeStates to dispose + recreate sibling contexts (which would
-// re-invoke their components). Returning the same JSX reference keeps the
-// route key stable across re-evaluations.
+// and force route states to dispose + recreate sibling contexts (which would
+// re-invoke their components). Returning the same object keeps the route key
+// stable across re-evaluations.
 //
 // Note: this captures `props` at first invocation. If you rely on dynamic
 // changes to KeepAliveRoute props (e.g., a reactive `transition` or `preload`
 // reference), use a stable wrapper around them or clear this cache when
 // they change.
-const keepAliveRouteCache = new Map<string, s.Element>();
+const keepAliveRouteCache = new Map<string, RouteDefinition>();
 
 export const clearKeepAliveRouteCache = (): void => {
   keepAliveRouteCache.clear();
 };
 
-export const KeepAliveRoute = <S extends string>(
-  props: RouteProps<S> & {
-    id?: string;
-    path: string;
-    component: (
-      props: RouteProps<S> & { isAlive: s.Accessor<boolean> },
-    ) => s.Element;
-    shouldDispose?: (key: string) => boolean;
-    onRemove?: ElementNode['onRemove'];
-    onRender?: ElementNode['onRender'];
-    transition?: ElementNode['transition'];
-    preload?: (
-      args: RoutePreloadFuncArgs & { isAlive: s.Accessor<boolean> },
-    ) => void;
-  },
-) => {
+export interface KeepAliveRouteProps
+  extends Omit<RouteDefinition, 'component' | 'preload' | 'path'> {
+  id?: string;
+  path: string;
+  component: (
+    props: RouteSectionProps & { isAlive: s.Accessor<boolean> },
+  ) => s.Element;
+  shouldDispose?: (key: string) => boolean;
+  onRemove?: ElementNode['onRemove'];
+  onRender?: ElementNode['onRender'];
+  transition?: ElementNode['transition'];
+  preload?: (
+    args: RoutePreloadFuncArgs & { isAlive: s.Accessor<boolean> },
+  ) => void;
+}
+
+/**
+ * A route definition whose subtree is preserved across navigations.
+ *
+ * Solid Router 2.0 builds routers from a route *tree* rather than `<Route>`
+ * components, so this returns a `RouteDefinition` object to place in a
+ * `routes` array instead of JSX.
+ *
+ * ```tsx
+ * createHashRouter({
+ *   routes: [KeepAliveRoute({ path: '/browse', component: Browse })],
+ * });
+ * ```
+ */
+export const KeepAliveRoute = (
+  props: KeepAliveRouteProps,
+): RouteDefinition => {
   const key = props.id || props.path;
 
   const cached = keepAliveRouteCache.get(key);
@@ -287,7 +307,7 @@ export const KeepAliveRoute = <S extends string>(
       }
     : undefined;
 
-  const componentWrapper = (childProps: RouteProps<S>) => {
+  const componentWrapper = (childProps: RouteSectionProps) => {
     const existing = getExisting();
     // Do NOT spread `childProps`: it has a `children` getter (the router's
     // outlet) that would be invoked eagerly, creating a <Show> subscribed to
@@ -301,7 +321,7 @@ export const KeepAliveRoute = <S extends string>(
         enumerable: true,
         configurable: true,
       },
-    }) as RouteProps<S> & { isAlive: s.Accessor<boolean> };
+    }) as RouteSectionProps & { isAlive: s.Accessor<boolean> };
     return (
       <KeepAliveRouteInternal
         id={key}
@@ -314,9 +334,25 @@ export const KeepAliveRoute = <S extends string>(
     );
   };
 
-  const routeElement = (
-    <Route {...props} preload={preload} component={componentWrapper} />
-  );
+  // Strip the KeepAlive-only keys so what is returned is a plain route
+  // definition; the rest (path, matchFilters, children, info, search) passes
+  // straight through.
+  const {
+    id: _id,
+    shouldDispose: _shouldDispose,
+    onRemove: _onRemove,
+    onRender: _onRender,
+    transition: _transition,
+    component: _component,
+    preload: _preload,
+    ...routeDef
+  } = props;
+
+  const routeElement: RouteDefinition = {
+    ...routeDef,
+    preload,
+    component: componentWrapper,
+  };
 
   keepAliveRouteCache.set(key, routeElement);
   return routeElement;

@@ -23,7 +23,7 @@ SolidTV stores rely on JavaScript `Proxy`, which is unavailable in Chrome versio
   - ✅ `const [count, setCount] = createSignal(0);`
   - ❌ `const count = createStore({ value: 0 });`
 
-Use the HashRouter included in the `@solid-tv/solid/primitives` it does all the setup for the SolidTV Router to not use Proxies.
+Use `createHashRouter` from `@solidtv/solid/primitives/router` — it does all the setup for the SolidTV Router to not use Proxies.
 
 Lastly, avoid spreading functions `{...someSignal()}` with Solid. Read more about Deproxification from the [SolidTV Release Notes](https://github.com/solidjs/solid/releases/tag/v1.6.0)
 

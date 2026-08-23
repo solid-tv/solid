@@ -271,15 +271,61 @@ Beyond Solid itself:
   it — and still carries SolidTV's Proxy-free fix for
   [solidjs/solid#2282](https://github.com/solidjs/solid/issues/2282).
 
-## Routing is temporarily unavailable
+## Routing
 
-The `@solidtv/solid/primitives/router` entry point — `HashRouter`, `KeepAlive`,
-and `KeepAliveRoute` — is **not available in 2.0.0**. It depends on
-`@solidjs/router`, which has no Solid 2.0 release yet (it is at
-`2.0.0-next.17`), and on several of its internals.
+`@solidtv/solid/primitives/router` requires `@solidjs/router@^2.0.0-next.17`.
+Solid Router 2.0 is a redesign: a router is built from a **route tree plus a
+history adapter**, and `<Route>` components no longer exist — routes are plain
+data.
 
-If your app uses routing, stay on SolidTV 1.x for now. The entry point returns
-once the router ships Solid 2.0 support.
+### `HashRouter` → `createHashRouter`
+
+Because the route tree is supplied when the router is created, the 1.x
+`<HashRouter>` component becomes a factory. Solid Router now ships
+`hashHistory()` itself, so all SolidTV adds is the Proxy-free params/query path
+for Chrome 38.
+
+```diff
+- <HashRouter root={App}>
+-   <Route path="/" component={Home} />
+-   <Route path="/show/:id" component={Show} />
+- </HashRouter>
++ const Router = createHashRouter({
++   routes: [
++     { path: '/', component: Home },
++     { path: '/show/:id', component: Show },
++   ],
++ });
++
++ render(() => <Router>{(props) => <App>{props.children}</App>}</Router>);
+```
+
+`forceProxy` and `queryParams` are unchanged and still control the Proxy-free
+path. `hashParser`, `bindEvent`, `SUPPORTS_PROXY`, `createMemoWithoutProxy`,
+and `collectDynamicParams` are all still exported.
+
+### `KeepAliveRoute` returns a route definition
+
+It previously returned `<Route>` JSX; it now returns a `RouteDefinition` object
+to place in a `routes` array. Its options are otherwise unchanged.
+
+```diff
+- <KeepAliveRoute path="/browse" component={Browse} />
++ createHashRouter({
++   routes: [KeepAliveRoute({ path: '/browse', component: Browse })],
++ });
+```
+
+The component's props are now typed `RouteSectionProps` (Solid Router's new
+name) rather than `RouteProps`, and `isAlive` is still injected.
+
+`KeepAlive` itself — the non-route component — is unchanged.
+
+> One packaging note: `@solidjs/router` ships its factory as untranspiled
+> `.jsx` under the `solid` export condition, so your bundler compiles it with
+> whatever `moduleName` you configured. That is fine for SolidTV — the router's
+> JSX is entirely component tags, which compile to renderer-agnostic
+> `createComponent` calls.
 
 ## Legacy device support
 

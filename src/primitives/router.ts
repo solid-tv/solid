@@ -1,15 +1,14 @@
 import { getOwner, runWithOwner, createMemo } from 'solid-js';
 import {
-  type BaseRouterProps,
   createRouter,
-  createBeforeLeave,
-  keepDepth,
-  notifyIfNotBlocked,
-  saveCurrentDepth,
+  hashHistory,
+  type Params,
+  type RouteDefinition,
   type RouteDescription,
   type RouteMatch,
+  type RouterConfig,
+  type SearchParams,
 } from '@solidjs/router';
-import type { type Element as JSXElement } from 'solid-js';
 
 export function hashParser(str: string) {
   const to = str.replace(/^.*?#/, '');
@@ -23,14 +22,6 @@ export function hashParser(str: string) {
   return to;
 }
 
-export type HashRouterProps = BaseRouterProps & {
-  actionBase?: string;
-  explicitLinks?: boolean;
-  preload?: boolean;
-  forceProxy?: boolean;
-  queryParams?: string[];
-};
-
 export function bindEvent(
   target: EventTarget,
   type: string,
@@ -40,51 +31,63 @@ export function bindEvent(
   return () => target.removeEventListener(type, handler);
 }
 
-export function HashRouter(props: HashRouterProps): JSXElement {
-  const getSource = () => window.location.hash.slice(1);
-  const beforeLeave = createBeforeLeave();
-  return createRouter({
-    get: getSource,
-    set({ value, replace, state }) {
-      if (replace) {
-        window.history.replaceState(keepDepth(state), '', '#' + value);
-      } else {
-        window.history.pushState(state, '', '#' + value);
-      }
-      saveCurrentDepth();
-    },
-    init: (notify) =>
-      bindEvent(
-        window,
-        'hashchange',
-        notifyIfNotBlocked(
-          notify,
-          (delta) =>
-            !beforeLeave.confirm(delta && delta < 0 ? delta : getSource()),
-        ),
-      ),
-    utils: {
-      go: (delta) => window.history.go(delta),
-      renderPath: (path) => `#${path}`,
-      parsePath: hashParser,
-      beforeLeave,
-      queryWrapper:
-        props.forceProxy || !SUPPORTS_PROXY
-          ? (getQuery) => {
-              return createMemoWithoutProxy(getQuery, props.queryParams);
-            }
-          : undefined,
-      paramsWrapper:
-        props.forceProxy || !SUPPORTS_PROXY
-          ? (buildParams, branches) => {
-              return createMemoWithoutProxy(
-                buildParams,
-                collectDynamicParams(branches()),
-              );
-            }
-          : undefined,
-    },
-  })(props);
+export type HashRouterConfig<
+  R extends readonly RouteDefinition[] = RouteDefinition[],
+> = Omit<RouterConfig<R>, 'history'> & {
+  /**
+   * Use the Proxy-free params/query implementation even where `Proxy` exists.
+   * Off by default; it is selected automatically on engines without `Proxy`.
+   */
+  forceProxy?: boolean;
+  /**
+   * Query keys to expose when running without `Proxy`. Without `Proxy` the
+   * key set cannot be discovered lazily, so unlisted query params are not
+   * reactive. Ignored when `Proxy` is available.
+   */
+  queryParams?: string[];
+};
+
+/**
+ * Hash-based router for TV devices, where apps are frequently served from a
+ * path that cannot use history routing.
+ *
+ * Solid Router 2.0 builds routers from a route tree plus a history adapter and
+ * ships `hashHistory()` itself, so this is now a thin factory over
+ * `createRouter` rather than the hand-rolled component SolidTV shipped in 1.x.
+ * What it still adds is the Proxy-free params/query path for Chrome 38 —
+ * `queryWrapper`/`paramsWrapper` remain the supported hooks for that.
+ *
+ * ```tsx
+ * const Router = createHashRouter({
+ *   routes: [{ path: '/', component: Home }],
+ * });
+ *
+ * render(() => <Router>{(props) => <App>{props.children}</App>}</Router>);
+ * ```
+ */
+export function createHashRouter<
+  const R extends readonly RouteDefinition[] = RouteDefinition[],
+>(config: HashRouterConfig<R>) {
+  const { forceProxy, queryParams, ...rest } = config;
+  const history = hashHistory();
+
+  if (forceProxy === true || !SUPPORTS_PROXY) {
+    history.utils = {
+      ...history.utils,
+      queryWrapper: (getQuery: () => SearchParams) =>
+        createMemoWithoutProxy(
+          getQuery as () => Record<string, unknown>,
+          queryParams,
+        ) as SearchParams,
+      paramsWrapper: (getParams: () => Params, branches: () => Branch[]) =>
+        createMemoWithoutProxy(
+          getParams as () => Record<string, unknown>,
+          collectDynamicParams(branches()),
+        ) as Params,
+    };
+  }
+
+  return createRouter({ ...rest, history } as RouterConfig<R>);
 }
 
 export const SUPPORTS_PROXY = typeof Proxy === 'function';
@@ -120,6 +123,7 @@ export function createMemoWithoutProxy<
   return target;
 }
 
+// Structurally the router's own `Branch`, which it does not re-export.
 export interface Branch {
   routes: RouteDescription[];
   score: number;
