@@ -51,6 +51,16 @@ export interface Config {
   domRendererEnabled: boolean;
   keyDebug: boolean;
   focusHistoryDebug: number;
+  /**
+   * Accumulate per-phase timings for the post-mutation flush into
+   * {@link postMutationTiming}. The flush runs as a microtask after the key
+   * handler returns, so its cost is invisible in a handler-scoped profile;
+   * this is the only way to attribute it to delete, layout or focus.
+   *
+   * Off by default and safe to toggle at runtime: the scheduler reads this
+   * once per flush and takes no timestamps while it is false.
+   */
+  postMutationDebug: boolean;
   animationSettings?: AnimationSettings;
   animationsEnabled: boolean;
   fontSettings: Partial<TextProps>;
@@ -78,6 +88,7 @@ export const Config: Config = {
   focusDebug: false,
   keyDebug: false,
   focusHistoryDebug: 0,
+  postMutationDebug: false,
   animationsEnabled: true,
   animationSettings: {
     duration: 250,

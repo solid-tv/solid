@@ -110,6 +110,29 @@ Besides `rendererOptions`, the `Config` object exposes several properties specif
   Logs focus management events to help debug spatial navigation.
 - **keyDebug**: `boolean` (Default: `false`)
   Logs all key input events.
+- **postMutationDebug**: `boolean` (Default: `false`)
+  Accumulates per-phase timings for the post-mutation flush (delete, layout, focus) into the exported `postMutationTiming` counters. The flush runs as a microtask after the key handler returns, so its cost does not show up under the handler in a profile.
+
+  ```jsx
+  import {
+    Config,
+    postMutationTiming,
+    resetPostMutationTiming,
+  } from '@solidtv/solid';
+
+  Config.postMutationDebug = true;
+
+  setInterval(() => {
+    const { calls, total, max, deleteTotal, layoutTotal, focusTotal } =
+      postMutationTiming;
+    console.log(
+      `post-mutation ${calls} calls, ${total.toFixed(1)}ms (max ${max.toFixed(1)}ms)`,
+      { deleteTotal, layoutTotal, focusTotal },
+    );
+    resetPostMutationTiming();
+  }, 1000);
+  ```
+
 - **animationsEnabled**: `boolean` (Default: `true`)
   Global toggle to enable or disable animations.
 - **animationSettings**: `AnimationSettings`
