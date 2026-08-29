@@ -228,8 +228,10 @@ const updateFocusPath = (
   prevFocusedElm: ElementNode | undefined,
 ) => {
   let current: ElementNode | undefined = currentFocusedElm;
+  // fp escapes through the focusPath signal, so it must be a fresh array; the
+  // membership test below runs on paths of a handful of elements every single
+  // keypress, where a linear scan beats allocating and hashing a Set.
   const fp: ElementNode[] = [];
-  const fpSet = new Set<ElementNode>();
   while (current) {
     if (
       !current.states.has(Config.focusStateKey) ||
@@ -251,13 +253,13 @@ const updateFocusPath = (
       );
     }
     fp.push(current);
-    fpSet.add(current);
     current = current.parent;
   }
 
   const prevFp = focusPath();
-  prevFp.forEach((elm) => {
-    if (!fpSet.has(elm)) {
+  for (let i = 0; i < prevFp.length; i++) {
+    const elm = prevFp[i]!;
+    if (fp.indexOf(elm) === -1) {
       elm.states.remove(Config.focusStateKey);
       elm.onBlur?.call(elm, currentFocusedElm, prevFocusedElm!, elm);
       elm.onFocusChanged?.call(
@@ -268,7 +270,7 @@ const updateFocusPath = (
         elm,
       );
     }
-  });
+  }
 
   if (Config.focusDebug) {
     addFocusDebug(prevFp, fp);

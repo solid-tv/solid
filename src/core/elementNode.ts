@@ -1542,7 +1542,14 @@ export class ElementNode {
 
     const states = this.states;
 
-    if (this._undoStyles || keyExists(this, states)) {
+    // An empty _undoStyles (left behind once a state style has been undone)
+    // must not force the resolution branch: with nothing to undo and no style
+    // matching any active state, the branch provably assigns nothing, and it
+    // runs on every path element of every focus change.
+    if (
+      (this._undoStyles !== undefined && this._undoStyles.length > 0) ||
+      keyExists(this, states)
+    ) {
       let stylesToUndo: { [key: string]: any } | undefined;
       if (this._undoStyles && this._undoStyles.length) {
         stylesToUndo = {};
