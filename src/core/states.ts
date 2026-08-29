@@ -26,8 +26,17 @@ export default class States extends Array<DollarString> {
   }
 
   has(state: DollarString) {
-    // temporary check for $ prefix
-    return this.indexOf(state) >= 0 || this.indexOf(`$${state}`) >= 0;
+    if (this.indexOf(state) >= 0) {
+      return true;
+    }
+    // temporary check for $ prefix, so has('focus') matches '$focus'. A query
+    // that already starts with '$' could only match a doubled prefix, which
+    // nothing produces, so skip the lookup: this runs per path element on
+    // every focus change and the template string was a per-call allocation.
+    return (
+      state.charCodeAt(0) !== 36 &&
+      this.indexOf(('$' + state) as DollarString) >= 0
+    );
   }
 
   is(state: DollarString) {
