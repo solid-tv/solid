@@ -100,21 +100,21 @@ function schedulePostMutation() {
   queueMicrotask(runPostMutation);
 }
 
-// Phase 1: delete-flush
-function flushDeletes() {
-  if (elementDeleteQueue.length === 0) return;
+function runPostMutation() {
+  postMutationQueued = false;
 
-  for (const el of elementDeleteQueue) {
-    if ((el._queueDelete ?? 0) < 0) {
-      el.destroy();
+  // Phase 1: delete-flush
+  if (elementDeleteQueue.length > 0) {
+    for (const el of elementDeleteQueue) {
+      if ((el._queueDelete ?? 0) < 0) {
+        el.destroy();
+      }
+      el._queueDelete = undefined;
     }
-    el._queueDelete = undefined;
+    elementDeleteQueue.length = 0;
   }
-  elementDeleteQueue.length = 0;
-}
 
-// Phase 2: layout
-function flushLayout() {
+  // Phase 2: layout
   while (layoutQueue.size > 0) {
     const queue = [...layoutQueue];
     layoutQueue.clear();
@@ -123,12 +123,10 @@ function flushLayout() {
       node.updateLayout();
     }
   }
-}
 
-// Phase 3: focus.  setFocus() may have evaluated forwardFocus pre-render
-// (when no children existed yet); deferredFocusElement re-runs setFocus
-// here once the subtree has rendered, then setActiveElementCore is applied.
-function flushFocus() {
+  // Phase 3: focus.  setFocus() may have evaluated forwardFocus pre-render
+  // (when no children existed yet); deferredFocusElement re-runs setFocus
+  // here once the subtree has rendered, then setActiveElementCore is applied.
   if (deferredFocusElement !== null) {
     const el = deferredFocusElement;
     deferredFocusElement = null;
@@ -138,106 +136,6 @@ function flushFocus() {
     nextActiveElement = null;
     setActiveElementCore(element);
   }
-}
-
-/**
- * Per-phase timings for the post-mutation flush, accumulated across calls
- * while {@link Config.postMutationDebug} is on. Milliseconds, from
- * `performance.now()`.
- *
- * The totals answer "what did this cost over the sample window"; the `*Max`
- * fields answer "what was the worst single flush", which is the number that
- * shows up as a dropped frame.
- */
-export interface PostMutationTiming {
-  /** Flushes run since the last reset. */
-  calls: number;
-  /** Wall time spent in the flush, all phases. */
-  total: number;
-  /** Worst single flush. */
-  max: number;
-  /** Phase 1: destroying nodes removed and not re-inserted. */
-  deleteTotal: number;
-  deleteMax: number;
-  /** Phase 2: draining the flex layout queue. */
-  layoutTotal: number;
-  layoutMax: number;
-  /** Phase 3: deferred forwardFocus resolution, then setActiveElementCore. */
-  focusTotal: number;
-  focusMax: number;
-}
-
-/**
- * Live counters written by the post-mutation scheduler. Mutated in place, so
- * sampling costs nothing beyond reading the fields. Call
- * {@link resetPostMutationTiming} to start a new sample window.
- */
-export const postMutationTiming: PostMutationTiming = {
-  calls: 0,
-  total: 0,
-  max: 0,
-  deleteTotal: 0,
-  deleteMax: 0,
-  layoutTotal: 0,
-  layoutMax: 0,
-  focusTotal: 0,
-  focusMax: 0,
-};
-
-/** Zeroes {@link postMutationTiming} so the next sample window starts clean. */
-export function resetPostMutationTiming(): void {
-  const t = postMutationTiming;
-  t.calls = 0;
-  t.total = 0;
-  t.max = 0;
-  t.deleteTotal = 0;
-  t.deleteMax = 0;
-  t.layoutTotal = 0;
-  t.layoutMax = 0;
-  t.focusTotal = 0;
-  t.focusMax = 0;
-}
-
-function runPostMutation() {
-  postMutationQueued = false;
-
-  // One flag read is the whole cost of instrumentation while it is off. The
-  // timed variant is a separate function so the default path never reaches a
-  // clock or a per-phase branch.
-  if (Config.postMutationDebug) {
-    runPostMutationTimed();
-    return;
-  }
-
-  flushDeletes();
-  flushLayout();
-  flushFocus();
-}
-
-function runPostMutationTimed() {
-  const start = performance.now();
-  flushDeletes();
-  const afterDelete = performance.now();
-  flushLayout();
-  const afterLayout = performance.now();
-  flushFocus();
-  const end = performance.now();
-
-  const deleteTime = afterDelete - start;
-  const layoutTime = afterLayout - afterDelete;
-  const focusTime = end - afterLayout;
-  const totalTime = end - start;
-
-  const t = postMutationTiming;
-  t.calls++;
-  t.total += totalTime;
-  t.deleteTotal += deleteTime;
-  t.layoutTotal += layoutTime;
-  t.focusTotal += focusTime;
-  if (totalTime > t.max) t.max = totalTime;
-  if (deleteTime > t.deleteMax) t.deleteMax = deleteTime;
-  if (layoutTime > t.layoutMax) t.layoutMax = layoutTime;
-  if (focusTime > t.focusMax) t.focusMax = focusTime;
 }
 
 function addToLayoutQueue(node: ElementNode) {
