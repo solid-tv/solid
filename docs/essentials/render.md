@@ -40,7 +40,6 @@ Config.rendererOptions = {
   // textureMemory: {
   //   criticalThreshold: 80e6,
   // },
-  numImageWorkers, // temp fix for renderer bug
   // Set the resolution based on window height
   // 720p = 0.666667, 1080p = 1, 1440p = 1.5, 2160p = 2
   deviceLogicalPixelRatio: 1,
@@ -61,7 +60,9 @@ For the latest renderer options read the official [renderer documentation](https
 
 - **txMemByteThreshold**: Texture Memory Byte Threshold. When the GPU VRAM used by textures exceeds this threshold, non-visible textures are freed. Set to `0` to disable.
 
-- **boundsMargin**: Bounds margin to extend the boundary for adding a CoreNode as Quad. Can be a single number or an array of four numbers.
+- **boundsMargin**: Preload margin, in logical pixels, around the viewport. Its job is to load textures ahead of a node scrolling into view. A single number applied to all sides.
+  - _Default_: `200`
+  - The `[top, right, bottom, left]` array form was dropped in renderer 1.8. It is still tolerated (the largest edge wins, with a console warning) but should be replaced with a single number.
 
 - **deviceLogicalPixelRatio**: Factor to convert app-authored logical coordinates to device logical coordinates. Supports auto-scaling for different resolutions.
   - _Default_: `1`
@@ -75,14 +76,23 @@ For the latest renderer options read the official [renderer documentation](https
 - **Texture Memory Manager Settings**:
   textureMemory?: Partial<TextureMemoryManagerSettings>;
 
-- **fpsUpdateInterval**: Interval in milliseconds for receiving FPS updates. Set to `0` to disable.
+- **fpsUpdateInterval**: Sampling interval in milliseconds for the `fpsUpdate` and `renderUpdate` events. Set to `0` to disable.
   - _Default_: `0`
+  - Since 1.9 this is the single switch for frame telemetry and it is honored in production builds. The `__calculateFps__` build flag is gone.
+
+- **targetFPS**: Caps the render loop. `0` runs uncapped at the display refresh rate.
+  - _Default_: `60`
+  - Left undefined, the loop caps at 60. On TV targets an uncapped loop draws every catch-up rAF the browser fires under GPU load (measured ~140fps on a 60Hz panel).
+
+- **textLayoutCacheSize**: Maximum number of entries kept in the SDF text layout cache.
+  - _Default_: `250`
 
 - **enableContextSpy**: Includes WebGL context call information in FPS updates. Significantly impacts performance.
   - _Default_: `false`
 
-- **numImageWorkers**: Number of image workers to use. Improves image loading on multi-core devices. Set to `0` to disable.
-  - _Default_: `2`
+- **numImageWorkers**: Number of image workers to use. Set to `0` to keep image loading on the main thread.
+  - _Default_: `1`
+  - Clamped to at most `1` since renderer 1.8: the pool measured 99.7% idle, and a second worker raised neither throughput nor images in flight. Passing `2` or `4` silently yields `1`.
 
 - **inspector**
   Optional. Allows inspection of the state of Nodes in the renderer, replicating the node state.
@@ -94,11 +104,15 @@ For the latest renderer options read the official [renderer documentation](https
 
 - **quadBufferSize**
   Specifies the quad buffer size in bytes.
-  Default: `4 * 1024 * 1024`.
+  Default: `1048576` (16384 quads x 64 bytes — the most a Uint16 index buffer can address). Was `1310720` before renderer 1.8.
 
 - **fontEngines**
   Defines font engines for text rendering (CanvasTextRenderer for Canvas, SdfTextRenderer for WebGL). Enables tree shaking for unused engines.
   Default: `[]`. Type: `(typeof SdfTextRenderer | typeof CanvasTextRenderer)[]`.
+
+#### Removed renderer settings
+
+- **renderOnlyInViewport**: removed in renderer 1.8. Its `true` behavior is now unconditional — the renderer always draws only what is in view.
 
 ### Additional Solid-Specific Configurations
 

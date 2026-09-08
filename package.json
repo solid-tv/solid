@@ -109,7 +109,7 @@
   },
   "peerDependencies": {
     "@solidjs/router": "^0.16.1",
-    "@solidtv/renderer": "^1.6.3",
+    "@solidtv/renderer": "^1.9.0",
     "solid-js": "*"
   },
   "peerDependenciesMeta": {},

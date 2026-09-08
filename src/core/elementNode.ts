@@ -277,7 +277,6 @@ const LightningRendererNonAnimatingProps = [
   'overflowSuffix',
   'placeholderColor',
   'preventCleanup',
-  'rtt',
   'scrollable',
   'scrollY',
   'srcHeight',
@@ -743,12 +742,10 @@ export interface ElementNode extends RendererNode, FocusNode {
    * - 'loaded'
    * - 'failed'
    * - 'freed'
-   * - 'inBounds'
-   * - 'outOfBounds'
    * - 'inViewport'
    * - 'outOfViewport'
    *
-   * @typedef {'loaded' | 'failed' | 'freed' | 'inBounds' | 'outOfBounds' | 'inViewport' | 'outOfViewport'} NodeEvents
+   * @typedef {'loaded' | 'failed' | 'freed' | 'inViewport' | 'outOfViewport'} NodeEvents
    *
    * @param {Partial<Record<NodeEvents, EventHandler>>} events - An object where the keys are event names from NodeEvents and the values are the respective event handlers.
    * @returns {void}
@@ -875,11 +872,7 @@ export class ElementNode {
 
   set id(id: string) {
     this._id = id;
-    if (
-      Config.rendererOptions &&
-      'inspector' in Config.rendererOptions &&
-      Config.rendererOptions.inspector
-    ) {
+    if (Config.rendererOptions?.inspector) {
       this.data = { ...this.data, testId: id };
     }
   }
@@ -1256,7 +1249,10 @@ export class ElementNode {
   }
 
   get src(): string | null | undefined {
-    return this.lng.src;
+    // Renderer 1.8 widened `src` to `string | Blob | ImageData`. The solid
+    // `src` prop only ever assigns strings (see the setter above), so the
+    // non-string arms are unreachable through this path.
+    return this.lng.src as string | null | undefined;
   }
 
   getChildById(id: string) {
@@ -1699,10 +1695,6 @@ export class ElementNode {
         if (isNaN(props.h as number)) {
           props.h = parentHeight - props.y;
           node._calcHeight = true;
-        }
-
-        if (props.rtt && !props.color) {
-          props.color = 0xffffffff;
         }
 
         if (!props.color && !props.src) {

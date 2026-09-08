@@ -488,7 +488,9 @@ function updateNodeStyles(node: DOMNode | DOMText) {
       >;
       srcPos = texture.props;
       rawImgSrc = (texture.props.texture as any).props.src;
-    } else if (props.src) {
+    } else if (typeof props.src === 'string') {
+      // Renderer 1.8 widened `src` to `string | Blob | ImageData`; the DOM
+      // renderer only paints string URLs.
       rawImgSrc = props.src;
     }
 
@@ -1256,7 +1258,6 @@ function resolveNodeDefaults(
     alpha: props.alpha ?? 1,
     ignoreParentAlpha: props.ignoreParentAlpha ?? false,
     autosize: props.autosize ?? false,
-    boundsMargin: props.boundsMargin ?? null,
     clipping: props.clipping ?? false,
     color,
     colorTop: props.colorTop ?? color,
@@ -1289,7 +1290,6 @@ function resolveNodeDefaults(
     pivotX: props.pivotX ?? props.pivot ?? 0.5,
     pivotY: props.pivotY ?? props.pivot ?? 0.5,
     rotation: props.rotation ?? 0,
-    rtt: props.rtt ?? false,
     placeholderColor: props.placeholderColor ?? 0,
     data: {},
     imageType: props.imageType,
@@ -1329,6 +1329,7 @@ const defaultShader: IRendererShader = {
 
 let lastNodeId = 0;
 
+/** Render-state labels, used for the `data-state` debug attribute only. */
 const CoreNodeRenderStateMap = new Map<number, string>([
   [0, 'init'],
   [2, 'outOfBounds'],
@@ -1436,15 +1437,20 @@ export class DOMNode extends EventEmitter implements IRendererNode {
     if (renderState === this.renderState) return;
     const previous = this.renderState;
     this.renderState = renderState;
-    const event = CoreNodeRenderStateMap.get(renderState);
     if (isRenderStateInBounds(renderState)) {
       this.applyPendingImageSrc();
     }
-    if (event && event !== 'init') {
-      this.emit(event, { previous, current: renderState });
+    // Viewport entry/exit is the whole observable surface, matching CoreNode.
+    // `inBounds` stays internal: it only exists so textures preload ahead of a
+    // node scrolling on screen. Exit fires for InViewport -> InBounds and
+    // InViewport -> OutOfBounds alike.
+    if (renderState === 8 /* InViewport */) {
+      this.emit('inViewport', { previous, current: renderState });
+    } else if (previous === 8 /* InViewport */) {
+      this.emit('outOfViewport', { previous, current: renderState });
     }
     if (this.imgEl) {
-      this.imgEl.dataset.state = event;
+      this.imgEl.dataset.state = CoreNodeRenderStateMap.get(renderState);
     }
   }
 
@@ -1763,13 +1769,6 @@ export class DOMNode extends EventEmitter implements IRendererNode {
     this.markChildrenBoundsDirty();
     updateTransformOnly(this);
   }
-  get rtt() {
-    return this.props.rtt;
-  }
-  set rtt(v) {
-    this.props.rtt = v;
-    updateNodeStyles(this);
-  }
   get shader() {
     return this.props.shader;
   }
@@ -1815,15 +1814,6 @@ export class DOMNode extends EventEmitter implements IRendererNode {
   }
   set srcY(v) {
     this.props.srcY = v;
-  }
-
-  get boundsMargin(): number | [number, number, number, number] | null {
-    return this.props.boundsMargin;
-  }
-  set boundsMargin(value: number | [number, number, number, number] | null) {
-    this.props.boundsMargin = value;
-    this.boundsDirty = true;
-    this.markChildrenBoundsDirty();
   }
 
   get ignoreParentAlpha(): boolean {
@@ -2278,9 +2268,6 @@ export class DOMRendererMain implements IRendererMain {
         break;
       case 'NoiseTexture':
         type = lng.TextureType.noise;
-        break;
-      case 'RenderTexture':
-        type = lng.TextureType.renderToTexture;
         break;
     }
     return { type, props } as InstanceType<lng.TextureMap[Type]>;

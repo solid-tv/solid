@@ -54,7 +54,13 @@ export interface Config {
   animationSettings?: AnimationSettings;
   animationsEnabled: boolean;
   fontSettings: Partial<TextProps>;
-  rendererOptions?: Partial<RendererMainSettings> | DomRendererMainSettings;
+  /**
+   * Renderer settings. Typed as an intersection rather than a union so a single
+   * config object can be authored without narrowing per renderer: which fields
+   * are honored depends on the active renderer (WebGL/Canvas vs DOM), and every
+   * field is optional.
+   */
+  rendererOptions?: Partial<RendererMainSettings> & DomRendererMainSettings;
   /**
    * Hook the focus manager calls to publish the active element. Defaults to
    * writing the {@link activeElement} signal directly; a custom focus manager

@@ -221,17 +221,31 @@ export function nodeHasTextureSource(node: DOMNode): boolean {
   );
 }
 
+/**
+ * Coerce a `boundsMargin` value to the scalar the renderer takes since 1.8.
+ *
+ * @remarks
+ * The `[top, right, bottom, left]` array form was dropped in renderer 1.8. An
+ * untyped app upgrading from 1.7 can still pass it, so mirror the WebGL
+ * renderer and take the widest edge rather than letting the margin arithmetic
+ * go wrong.
+ */
 export function normalizeBoundsMargin(
-  margin: number | [number, number, number, number] | null | undefined,
-): [number, number, number, number] {
-  if (margin == null) return [0, 0, 0, 0];
-  if (typeof margin === 'number') {
-    return [margin, margin, margin, margin];
+  margin: number | number[] | null | undefined,
+): number {
+  if (margin == null) return 0;
+  if (Array.isArray(margin) === false) return margin as number;
+  const arr = margin as number[];
+  let max = 0;
+  for (let i = 0; i < arr.length; i++) {
+    if (arr[i]! > max) {
+      max = arr[i]!;
+    }
   }
-  if (Array.isArray(margin) && margin.length === 4) {
-    return [margin[0] ?? 0, margin[1] ?? 0, margin[2] ?? 0, margin[3] ?? 0];
-  }
-  return [0, 0, 0, 0];
+  console.warn(
+    `boundsMargin array form is no longer supported, using the largest edge value: ${max}`,
+  );
+  return max;
 }
 
 export function computeRenderStateForNode(
@@ -249,10 +263,7 @@ export function computeRenderStateForNode(
   const rootRight = rootLeft + rootWidth;
   const rootBottom = rootTop + rootHeight;
 
-  const [marginTop, marginRight, marginBottom, marginLeft] =
-    normalizeBoundsMargin(
-      node.props.boundsMargin ?? node.stage.renderer.boundsMargin,
-    );
+  const margin = normalizeBoundsMargin(node.stage.renderer.boundsMargin);
 
   const width = node.props.w ?? 0;
   const height = node.props.h ?? 0;
@@ -262,10 +273,10 @@ export function computeRenderStateForNode(
   const right = left + width;
   const bottom = top + height;
 
-  const expandedLeft = rootLeft - marginLeft;
-  const expandedTop = rootTop - marginTop;
-  const expandedRight = rootRight + marginRight;
-  const expandedBottom = rootBottom + marginBottom;
+  const expandedLeft = rootLeft - margin;
+  const expandedTop = rootTop - margin;
+  const expandedRight = rootRight + margin;
+  const expandedBottom = rootBottom + margin;
 
   const intersectsBounds =
     right >= expandedLeft &&
