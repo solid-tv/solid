@@ -200,10 +200,8 @@ type EventPayloadMap = {
   loaded: lngr.NodeLoadedPayload;
   failed: lngr.NodeFailedPayload;
   freed: Event;
-  inBounds: Event;
-  outOfBounds: Event;
-  inViewport: Event;
-  outOfViewport: Event;
+  inViewport: lngr.NodeViewportPayload;
+  outOfViewport: lngr.NodeViewportPayload;
 };
 
 type NodeEvents = keyof EventPayloadMap;

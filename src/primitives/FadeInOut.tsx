@@ -40,7 +40,6 @@ export function FadeInOut(props: Props & NodeProps) {
   }
 
   function onDestroy(elm: ElementNode) {
-    elm.rtt = true;
     return elm
       .animate(
         { alpha: 0 },

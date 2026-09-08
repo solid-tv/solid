@@ -2,6 +2,7 @@
   - [Basics](/articles/basics.md)
   - [Rendering Hello World](/essentials/render.md)
   - [Migration 2.x to 3.0](/articles/migration-2x-to-3.0.md)
+  - [Upgrading to Renderer 1.9](/articles/renderer-1.9-upgrade.md)
 - Core Concepts
   - [Components](/essentials/components.md)
   - [ElementNode](/essentials/elementnode.md)
@@ -37,7 +38,6 @@
   - [Image Component](/primitives/image.md)
   - [borderBox](/primitives/borderBox.md)
   - [createBlurredImage](/primitives/createBlurredImage.md)
-  - [createTag](/primitives/createTag.md)
   - [FPS Counter](/primitives/fpscounter.md)
   - [LazyUp](/primitives/lazyUp.md)
   - [Marquee](/primitives/marquee.md)

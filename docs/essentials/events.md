@@ -34,12 +34,6 @@ In addition to the lifecycle events from SolidTV, the SolidTV Renderer offers ad
     failed: (element, eventInfo) => {
       console.log('fail was called');
     },
-    inBounds: (element, eventInfo) => {
-      console.log('Element entered bounds');
-    },
-    outOfBounds: (element, eventInfo) => {
-      console.log('Element exited bounds');
-    },
     inViewport: (element, eventInfo) => {
       console.log('Element entered viewport');
     },
@@ -55,10 +49,21 @@ In addition to the lifecycle events from SolidTV, the SolidTV Renderer offers ad
 - **`loaded`**: Fired when the element has successfully loaded.
 - **`failed`**: Fired when the element fails to load.
 - **`freed`**: Fired when the element is freed for memory.
-- **`inBounds`**: Fired when the element enters the bounds of the visible screen area.
-- **`outOfBounds`**: Fired when the element leaves the visible screen area.
 - **`inViewport`**: Fired when the element enters the viewport (the portion of the screen where content is visible).
 - **`outOfViewport`**: Fired when the element leaves the viewport.
+
+Both viewport events receive a `{ previous, current }` payload of
+`CoreNodeRenderState` values.
+
+> **Renderer 1.8 breaking change:** `inBounds` and `outOfBounds` were removed.
+> They fired on the preload transition, one step earlier than viewport entry.
+> Preloading textures ahead of a node scrolling on screen is now handled by the
+> `boundsMargin` renderer setting, so there is nothing left for an app to do on
+> that transition — move any such listener to `inViewport`.
+>
+> Viewport events are gated behind the `__emitBoundsEvents__` build flag, which
+> defaults to `false`. See [SolidTV Renderer](/articles/solidtv_renderer.md) to
+> turn it on.
 
 These additional events provide control over element state and position within the SolidTV Renderer, allowing you to react to changes such as visibility or load state with custom logic.
 

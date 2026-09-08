@@ -12,7 +12,7 @@ import {
 /** Based on {@link lng.CoreRenderer} */
 export interface IRendererCoreRenderer {
   mode: 'canvas' | 'webgl' | undefined;
-  boundsMargin?: number | [number, number, number, number];
+  boundsMargin?: number;
 }
 /** Based on {@link lng.TrFontManager} */
 export interface IRendererFontManager {
@@ -145,8 +145,12 @@ export interface DomRendererMainSettings {
   deviceLogicalPixelRatio?: number;
 
   /**
-   * Bounds margin for the renderer
-   * Can be a single number (applied to all sides) or an array [top, right, bottom, left]
+   * Preload margin around the viewport, in logical pixels (default: 200)
+   *
+   * @remarks
+   * A single number applied to all sides. The `[top, right, bottom, left]`
+   * array form was dropped in renderer 1.8; it is still tolerated at runtime
+   * (the largest edge wins, with a warning) but should be replaced.
    */
-  boundsMargin?: number | [number, number, number, number];
+  boundsMargin?: number;
 }
