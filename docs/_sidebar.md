@@ -47,6 +47,7 @@
   - [Task Scheduler](/essentials/taskscheduler.md)
   - [Screen Resolution](/essentials/screen_resolution.md)
   - [AI Context](/essentials/ai_context.md)
+  - [Render Telemetry](/articles/telemetry.md)
   - [Real World Performance](/articles/realworldperformance.md)
   - [Boosting SolidTV Performance by 50%](/articles/boostingperf.md)
   - [SolidTV / Blits Framework Comparison](/articles/solidvsblits.md)
