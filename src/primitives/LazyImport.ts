@@ -50,7 +50,15 @@ export function lazy<T extends Component<any>>(
         : null;
     }) as unknown as JSX.Element;
   }) as T;
+  // The `.then` here is a fire-and-forget side effect (it caches the resolved
+  // component); `p` is what the caller gets back. Without the `.catch` that
+  // side-effect promise has no rejection handler of its own, so a failed
+  // preload raises an unhandledrejection even when the caller dutifully catches
+  // the promise it was handed — a warmed route that fails to fetch would report
+  // as an uncaught exception. Mirrors the `.catch(() => {})` on the hydration
+  // path above; the real failure still reaches the caller through `p`.
   wrap.preload = () =>
-    p || ((p = fn()).then((mod) => (comp = () => mod.default)), p);
+    p ||
+    ((p = fn()).then((mod) => (comp = () => mod.default)).catch(() => {}), p);
   return wrap as T & { preload: () => Promise<{ default: T }> };
 }
