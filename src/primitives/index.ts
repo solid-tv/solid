@@ -5,7 +5,9 @@ export * from './borderBox.jsx';
 export * from './useMouse.js';
 export * from './portal.jsx';
 export * from './Lazy.jsx';
-export * from './LazyImport.js';
+// Named rather than `export *`: LazyImport also exports internal helpers for
+// its tests, and those must not become part of the public API.
+export { lazy } from './LazyImport.js';
 export * from './Image.jsx';
 export * from './Visible.jsx';
 export * from './Column.jsx';
