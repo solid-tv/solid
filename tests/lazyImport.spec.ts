@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import {
   cacheBust,
-  chunkUrlFromError,
+  cacheBustableUrl,
   lazy,
 } from '../src/primitives/LazyImport.ts';
 
@@ -11,33 +11,56 @@ import {
 const Page = () => null;
 const mod = { default: Page };
 
-// The two real failure messages, one per module system.
+// Real production failure messages, one per module system.
 const NATIVE_ESM_ERROR = new Error(
   'Failed to fetch dynamically imported module: https://ott.angel.com/vizio/assets/Theater.page-Bl9KRTxZ.js',
 );
+const FIREFOX_ESM_ERROR = new Error(
+  'error loading dynamically imported module: https://ott.angel.com/vizio/assets/Theater.page-Bl9KRTxZ.js',
+);
+// SystemJS error #3, direct: `<failedUrl>, <parentUrl> (SystemJS …)` with no parent.
 const SYSTEMJS_ERROR = new Error(
   'https://ott.angel.com/webos/assets/Theater.page-legacy-C2p81iuu.js,  (SystemJS https://github.com/systemjs/systemjs/blob/main/docs/errors.md#3)',
 );
+// SystemJS error #3 for a DEPENDENCY: the first URL is the dependency that
+// failed, the second is the route chunk that pulled it in. Taken verbatim from
+// production — this is the shape that made the old first-URL match wrong.
+const SYSTEMJS_DEPENDENCY_ERROR = new Error(
+  'https://ott.angel.com/webos/assets/TheaterPlayer.nav-legacy-1MzaTqJc.js, https://ott.angel.com/webos/assets/DiscoverV2Hero.page-legacy-CKnRyt-q.js (SystemJS https://github.com/systemjs/systemjs/blob/main/docs/errors.md#3)',
+);
 
-describe('chunkUrlFromError', () => {
-  it('reads the chunk URL out of a native ESM failure', () => {
-    expect(chunkUrlFromError(NATIVE_ESM_ERROR)).toBe(
+describe('cacheBustableUrl', () => {
+  it('returns the chunk named by a native ESM failure', () => {
+    expect(cacheBustableUrl(NATIVE_ESM_ERROR)).toBe(
       'https://ott.angel.com/vizio/assets/Theater.page-Bl9KRTxZ.js',
     );
   });
 
-  // The SystemJS message wraps the URL in punctuation — a trailing comma, then
-  // its own docs link. The `.js` anchor is what stops the match running past
-  // the chunk into that comma; dropping it yields a URL that 404s on retry.
-  it('reads the chunk URL, not the docs link, out of a SystemJS failure', () => {
-    expect(chunkUrlFromError(SYSTEMJS_ERROR)).toBe(
-      'https://ott.angel.com/webos/assets/Theater.page-legacy-C2p81iuu.js',
+  it("matches Firefox's wording as well as Chrome's", () => {
+    expect(cacheBustableUrl(FIREFOX_ESM_ERROR)).toBe(
+      'https://ott.angel.com/vizio/assets/Theater.page-Bl9KRTxZ.js',
     );
   });
 
+  // The regression this file exists for. SystemJS names the failed DEPENDENCY
+  // first; cache-busting it would re-import the wrong module and `lazy` would
+  // read `.default` off it. SystemJS re-fetches on a plain re-run anyway, so the
+  // right answer for every SystemJS shape is "no cache-bustable URL".
+  it('refuses the dependency URL in a SystemJS dependency failure', () => {
+    expect(cacheBustableUrl(SYSTEMJS_DEPENDENCY_ERROR)).toBeUndefined();
+  });
+
+  it('refuses a direct SystemJS failure too', () => {
+    expect(cacheBustableUrl(SYSTEMJS_ERROR)).toBeUndefined();
+  });
+
   it('returns undefined when the message names no chunk', () => {
-    expect(chunkUrlFromError(new Error('boom'))).toBeUndefined();
-    expect(chunkUrlFromError('not an error at all')).toBeUndefined();
+    expect(cacheBustableUrl(new Error('boom'))).toBeUndefined();
+    expect(cacheBustableUrl('not an error at all')).toBeUndefined();
+    // Safari phrases it without naming the module at all.
+    expect(
+      cacheBustableUrl(new Error('Importing a module script failed.')),
+    ).toBeUndefined();
   });
 });
 
@@ -61,26 +84,35 @@ describe('lazy() chunk-load retry', () => {
     expect(fn).toHaveBeenCalledTimes(1);
   });
 
-  // When the failure names a chunk, the retry must NOT re-run the loader:
-  // re-running the same specifier is exactly the no-op that leaves Vizio
-  // broken, because native ESM serves the memoised failure from the module map.
-  // The loader staying on one call is what proves the cache-busting branch ran.
+  // Native ESM: the retry must NOT re-run the loader, because re-running the
+  // same specifier is exactly the no-op that leaves it broken — the module map
+  // serves the memoised failure. The loader staying on one call is what proves
+  // the cache-busting branch ran.
   //
   // The import itself cannot resolve here — Node's ESM loader only accepts
   // `file:` and `data:` — so the promise rejects. That rejection is the test
   // environment's, not the behaviour under test, hence no assertion on its
-  // message; `chunkUrlFromError` and `cacheBust` above pin the URL that is
-  // actually requested.
-  it.each([
-    ['native ESM', NATIVE_ESM_ERROR],
-    ['SystemJS', SYSTEMJS_ERROR],
-  ])(
-    're-imports under a cache-busting URL after a %s failure',
-    async (_label, error) => {
-      const fn = vi.fn().mockRejectedValue(error);
+  // message; `cacheBustableUrl` and `cacheBust` above pin the URL requested.
+  it('re-imports under a cache-busting URL after a native ESM failure', async () => {
+    const fn = vi.fn().mockRejectedValue(NATIVE_ESM_ERROR);
 
-      await expect(lazy(fn).preload()).rejects.toThrow();
-      expect(fn).toHaveBeenCalledTimes(1);
+    await expect(lazy(fn).preload()).rejects.toThrow();
+    expect(fn).toHaveBeenCalledTimes(1);
+  });
+
+  // SystemJS: re-running the loader is both sufficient (the registry entry is
+  // dropped, so it really re-fetches) and necessary (its message may name a
+  // dependency rather than the requested chunk).
+  it.each([
+    ['direct', SYSTEMJS_ERROR],
+    ['dependency', SYSTEMJS_DEPENDENCY_ERROR],
+  ])(
+    're-runs the loader after a SystemJS %s failure',
+    async (_label, error) => {
+      const fn = vi.fn().mockRejectedValueOnce(error).mockResolvedValue(mod);
+
+      await expect(lazy(fn).preload()).resolves.toBe(mod);
+      expect(fn).toHaveBeenCalledTimes(2);
     },
   );
 
