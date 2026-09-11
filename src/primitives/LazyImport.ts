@@ -40,6 +40,42 @@ export const cacheBustableUrl = (error: unknown): string | undefined =>
 export const cacheBust = (url: string): string =>
   `${url}${url.indexOf('?') === -1 ? '?' : '&'}chunkRetry=1`;
 
+/**
+ * A dynamic `import()`, built at runtime instead of written inline.
+ *
+ * This is not a style choice, and it must not be "simplified" back to a literal
+ * `import(url)`. The token has to stay inside a string, because this file is
+ * bundled into apps that cannot parse it:
+ *
+ * A TV app targeting an old engine may build with no SystemJS transform at all
+ * — plain `iife` output plus a syntax-only `build.target`. Rollup cannot rewrite
+ * a dynamic import in that format, and a `\/* @vite-ignore *\/` one is invisible
+ * to Vite's analysis by design, so the literal survives into the bundle. Dynamic
+ * `import()` arrived in Chrome 63; on anything older the whole script fails to
+ * *parse*, and the app never boots. That is not hypothetical: it shipped, and it
+ * took every Samsung Tizen 4.0 set (Chrome 56) offline until it was rolled back.
+ *
+ * Inside a `Function` body the token is just text until it is compiled, and that
+ * compilation is what the `try` guards. Old engines throw a SyntaxError here and
+ * a CSP without `unsafe-eval` throws an EvalError; either way we return `null`
+ * and the caller re-runs the loader instead — the same fallback every SystemJS
+ * failure already takes. Resolved once and cached, including the `null`.
+ */
+let nativeImport: ((url: string) => Promise<unknown>) | null | undefined;
+
+const getNativeImport = (): ((url: string) => Promise<unknown>) | null => {
+  if (nativeImport === undefined) {
+    try {
+      nativeImport = new Function('u', 'return import(u)') as (
+        url: string,
+      ) => Promise<unknown>;
+    } catch {
+      nativeImport = null;
+    }
+  }
+  return nativeImport;
+};
+
 // lazy load a function component asynchronously
 export function lazy<T extends Component<any>>(
   fn: () => Promise<{ default: T }>,
@@ -78,9 +114,12 @@ export function lazy<T extends Component<any>>(
     fn().catch((error: unknown) => {
       const url = cacheBustableUrl(error);
       if (url === undefined) return fn();
-      return import(/* @vite-ignore */ cacheBust(url)) as Promise<{
-        default: T;
-      }>;
+      // Null when this engine cannot compile a dynamic import, or a CSP forbids
+      // compiling one — see `getNativeImport`. Re-running the loader is then the
+      // best available retry, exactly as it is for every SystemJS failure.
+      const importer = getNativeImport();
+      if (importer === null) return fn();
+      return importer(cacheBust(url)) as Promise<{ default: T }>;
     });
 
   const wrap: T & { preload?: () => void } = ((props: any) => {

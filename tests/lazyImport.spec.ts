@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { describe, it, expect, vi } from 'vitest';
 import {
   cacheBust,
@@ -177,6 +179,61 @@ describe('lazy() preload rejection handling', () => {
       expect(unhandled).toEqual([]);
     } finally {
       process.off('unhandledRejection', onUnhandled);
+    }
+  });
+});
+
+describe('dynamic import is never written as a literal token', () => {
+  // The regression that took every Samsung Tizen 4.0 set (Chrome 56) offline.
+  // A `/* @vite-ignore */ import(url)` written inline survives into bundles that
+  // have no SystemJS transform — plain `iife` output with a syntax-only
+  // `build.target`. Dynamic import arrived in Chrome 63, so older engines fail
+  // to PARSE the whole script and the app never boots.
+  //
+  // A low-tech canary rather than a parser: it fails loudly if anyone
+  // "simplifies" the Function-built importer back to the inline form.
+  // Resolved from the repo root: under Vite, `import.meta.url` is not a
+  // file: URL, so readFileSync cannot take it directly.
+  const source = readFileSync(
+    resolve(process.cwd(), 'src/primitives/LazyImport.ts'),
+    'utf8',
+  );
+
+  it('does not contain the inline @vite-ignore import that shipped the outage', () => {
+    expect(source).not.toContain('import(/* @vite-ignore */');
+  });
+
+  it('builds the importer through Function so the token stays inside a string', () => {
+    expect(source).toContain("new Function('u', 'return import(u)')");
+  });
+});
+
+describe('getNativeImport fallback', () => {
+  // Chrome 56 throws a SyntaxError compiling the body; a CSP without
+  // unsafe-eval throws an EvalError. Both must degrade to re-running the loader
+  // rather than surfacing, so the retry is never worse than not cache-busting.
+  it('re-runs the loader when Function cannot compile a dynamic import', async () => {
+    const RealFunction = globalThis.Function;
+
+    try {
+      // The importer is resolved once and cached at module scope, so the module
+      // has to be re-instantiated with Function already stubbed.
+      vi.resetModules();
+      globalThis.Function = function BlockedFunction() {
+        throw new EvalError('Refused to evaluate a string as JavaScript');
+      } as unknown as FunctionConstructor;
+
+      const fresh = await import('../src/primitives/LazyImport.ts');
+      const fn = vi
+        .fn()
+        .mockRejectedValueOnce(NATIVE_ESM_ERROR)
+        .mockResolvedValue(mod);
+
+      await expect(fresh.lazy(fn).preload()).resolves.toBe(mod);
+      expect(fn).toHaveBeenCalledTimes(2);
+    } finally {
+      globalThis.Function = RealFunction;
+      vi.resetModules();
     }
   });
 });
