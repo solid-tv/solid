@@ -1060,8 +1060,9 @@ export class ElementNode {
     props: Partial<INodeAnimateProps<CoreShaderNode>>,
     animationSettings?: AnimationSettings,
   ): IAnimationController {
-    if (isDev) {
-      assertTruthy(this.rendered, 'Node must be rendered before animating');
+    if (!this.rendered) {
+      if (isDev) console.log('NOT RENDERED! CANNOT ANIMATE');
+      return {} as IAnimationController;
     }
     return (this.lng as IRendererNode).animate(
       props,
