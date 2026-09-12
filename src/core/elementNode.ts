@@ -1062,7 +1062,7 @@ export class ElementNode {
   ): IAnimationController {
     if (!this.rendered) {
       if (isDev) console.log('NOT RENDERED! CANNOT ANIMATE');
-      return {} as IAnimationController;
+      return { start: () => {} } as IAnimationController;
     }
     return (this.lng as IRendererNode).animate(
       props,
