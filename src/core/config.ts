@@ -69,6 +69,13 @@ export interface Config {
    * the `activeElement` signal decoupled from focus-manager logic.
    */
   setActiveElement: (elm: ElementNode) => void;
+  /**
+   * When the focused element is removed from the tree, automatically refocus
+   * the nearest still-attached ancestor on its focus path (letting that
+   * ancestor's `forwardFocus`/`selected` logic pick a child). Prevents key
+   * events from dead-ending on a stale focus path. Defaults to true.
+   */
+  focusLossRecovery: boolean;
   focusStateKey: DollarString;
   lockStyles?: boolean;
   fontWeightAlias?: Record<string, number | string>;
@@ -91,6 +98,7 @@ export const Config: Config = {
   },
   convertToShader: defaultConvertToShader,
   setActiveElement: (elm) => setActiveElementSignal(elm),
+  focusLossRecovery: true,
   fontSettings: {
     fontFamily: 'Ubuntu',
     fontSize: 100,

@@ -52,6 +52,7 @@ import { NodeType, TextNode } from './nodeTypes.js';
 import {
   ForwardFocusHandler,
   setActiveElementCore,
+  recoverActiveElement,
   FocusNode,
 } from './focusManager.js';
 import { initClickInspector } from './clickInspector.js';
@@ -104,10 +105,12 @@ function runPostMutation() {
   postMutationQueued = false;
 
   // Phase 1: delete-flush
+  let didDestroy = false;
   if (elementDeleteQueue.length > 0) {
     for (const el of elementDeleteQueue) {
       if ((el._queueDelete ?? 0) < 0) {
         el.destroy();
+        didDestroy = true;
       }
       el._queueDelete = undefined;
     }
@@ -135,6 +138,19 @@ function runPostMutation() {
     const element = nextActiveElement;
     nextActiveElement = null;
     setActiveElementCore(element);
+  }
+
+  // Phase 4: focus-loss recovery. Destroying nodes is the only way the
+  // active element leaves the tree, so this is free on non-delete passes.
+  // Skip when a focus change is pending — it applies on the next pass and
+  // supersedes whatever was lost.
+  if (
+    didDestroy &&
+    Config.focusLossRecovery &&
+    deferredFocusElement === null &&
+    nextActiveElement === null
+  ) {
+    recoverActiveElement();
   }
 }
 
