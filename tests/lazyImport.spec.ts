@@ -1,9 +1,10 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
   cacheBust,
   cacheBustableUrl,
+  RETRY_DELAYS,
   lazy,
 } from '../src/primitives/LazyImport.ts';
 
@@ -30,6 +31,12 @@ const SYSTEMJS_ERROR = new Error(
 const SYSTEMJS_DEPENDENCY_ERROR = new Error(
   'https://ott.angel.com/webos/assets/TheaterPlayer.nav-legacy-1MzaTqJc.js, https://ott.angel.com/webos/assets/DiscoverV2Hero.page-legacy-CKnRyt-q.js (SystemJS https://github.com/systemjs/systemjs/blob/main/docs/errors.md#3)',
 );
+
+describe('RETRY_DELAYS', () => {
+  it('defines backoff delays of 500ms, 2s, 5s for a max of 3 retries', () => {
+    expect(RETRY_DELAYS).toEqual([500, 2000, 5000]);
+  });
+});
 
 describe('cacheBustableUrl', () => {
   it('returns the chunk named by a native ESM failure', () => {
@@ -76,9 +83,34 @@ describe('cacheBust', () => {
       'https://x/a.js?v=1&chunkRetry=1',
     );
   });
+
+  it('sets retry count parameter for subsequent retries', () => {
+    expect(cacheBust('https://x/a.js', 2)).toBe('https://x/a.js?chunkRetry=2');
+    expect(cacheBust('https://x/a.js', 3)).toBe('https://x/a.js?chunkRetry=3');
+  });
+
+  it('replaces an existing chunkRetry parameter', () => {
+    expect(cacheBust('https://x/a.js?chunkRetry=1', 2)).toBe(
+      'https://x/a.js?chunkRetry=2',
+    );
+    expect(cacheBust('https://x/a.js?v=1&chunkRetry=1', 2)).toBe(
+      'https://x/a.js?v=1&chunkRetry=2',
+    );
+    expect(cacheBust('https://x/a.js?chunkRetry=1&v=1', 3)).toBe(
+      'https://x/a.js?v=1&chunkRetry=3',
+    );
+  });
 });
 
 describe('lazy() chunk-load retry', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it('does not retry an import that succeeds', async () => {
     const fn = vi.fn().mockResolvedValue(mod);
 
@@ -98,7 +130,9 @@ describe('lazy() chunk-load retry', () => {
   it('re-imports under a cache-busting URL after a native ESM failure', async () => {
     const fn = vi.fn().mockRejectedValue(NATIVE_ESM_ERROR);
 
-    await expect(lazy(fn).preload()).rejects.toThrow();
+    const promise = lazy(fn).preload();
+    await vi.runAllTimersAsync();
+    await expect(promise).rejects.toThrow();
     expect(fn).toHaveBeenCalledTimes(1);
   });
 
@@ -113,7 +147,9 @@ describe('lazy() chunk-load retry', () => {
     async (_label, error) => {
       const fn = vi.fn().mockRejectedValueOnce(error).mockResolvedValue(mod);
 
-      await expect(lazy(fn).preload()).resolves.toBe(mod);
+      const promise = lazy(fn).preload();
+      await vi.runAllTimersAsync();
+      await expect(promise).resolves.toBe(mod);
       expect(fn).toHaveBeenCalledTimes(2);
     },
   );
@@ -126,20 +162,66 @@ describe('lazy() chunk-load retry', () => {
       .mockRejectedValueOnce(new Error('boom'))
       .mockResolvedValue(mod);
 
-    await expect(lazy(fn).preload()).resolves.toBe(mod);
+    const promise = lazy(fn).preload();
+    await vi.runAllTimersAsync();
+    await expect(promise).resolves.toBe(mod);
     expect(fn).toHaveBeenCalledTimes(2);
   });
 
-  // Bounded at one retry: a TV that has genuinely lost its connection should
-  // surface the failure rather than sit on a blank screen retrying.
-  it('gives up after exactly one retry and rejects with the second error', async () => {
+  it('retries with 500ms, 2s, 5s backoff schedule across multiple failures', async () => {
+    const fn = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('fail 1'))
+      .mockRejectedValueOnce(new Error('fail 2'))
+      .mockRejectedValueOnce(new Error('fail 3'))
+      .mockResolvedValue(mod);
+
+    const promise = lazy(fn).preload();
+
+    // Initial attempt runs immediately
+    expect(fn).toHaveBeenCalledTimes(1);
+
+    // After 499ms, retry 1 has not run yet
+    await vi.advanceTimersByTimeAsync(499);
+    expect(fn).toHaveBeenCalledTimes(1);
+
+    // At 500ms (500ms backoff), retry 1 runs and fails
+    await vi.advanceTimersByTimeAsync(1);
+    expect(fn).toHaveBeenCalledTimes(2);
+
+    // After another 1999ms (total 2499ms), retry 2 has not run yet
+    await vi.advanceTimersByTimeAsync(1999);
+    expect(fn).toHaveBeenCalledTimes(2);
+
+    // At 2500ms (2s backoff), retry 2 runs and fails
+    await vi.advanceTimersByTimeAsync(1);
+    expect(fn).toHaveBeenCalledTimes(3);
+
+    // After another 4999ms (total 7499ms), retry 3 has not run yet
+    await vi.advanceTimersByTimeAsync(4999);
+    expect(fn).toHaveBeenCalledTimes(3);
+
+    // At 7500ms (5s backoff), retry 3 runs and succeeds
+    await vi.advanceTimersByTimeAsync(1);
+    expect(fn).toHaveBeenCalledTimes(4);
+
+    await expect(promise).resolves.toBe(mod);
+  });
+
+  // Bounded at 3 retries (4 attempts total): a TV that has genuinely lost its
+  // connection should surface the failure rather than retrying indefinitely.
+  it('gives up after max 3 retries and rejects with the final error', async () => {
     const fn = vi
       .fn()
       .mockRejectedValueOnce(new Error('first'))
-      .mockRejectedValueOnce(new Error('second'));
+      .mockRejectedValueOnce(new Error('second'))
+      .mockRejectedValueOnce(new Error('third'))
+      .mockRejectedValueOnce(new Error('fourth'));
 
-    await expect(lazy(fn).preload()).rejects.toThrow('second');
-    expect(fn).toHaveBeenCalledTimes(2);
+    const promise = lazy(fn).preload();
+    await vi.runAllTimersAsync();
+    await expect(promise).rejects.toThrow('fourth');
+    expect(fn).toHaveBeenCalledTimes(4);
   });
 
   // `p` memoises the promise, so a component mounting after a preload — or
@@ -156,6 +238,14 @@ describe('lazy() chunk-load retry', () => {
 });
 
 describe('lazy() preload rejection handling', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   // A warmed route that fails to fetch must not surface as an uncaught
   // exception. `preload()`'s internal `.then` is a fire-and-forget side effect,
   // so without its own catch it raises an unhandledRejection even when the
@@ -172,10 +262,12 @@ describe('lazy() preload rejection handling', () => {
 
     try {
       const fn = vi.fn().mockRejectedValue(new Error('chunk gone'));
-      await expect(lazy(fn).preload()).rejects.toThrow('chunk gone');
+      const promise = lazy(fn).preload();
+      await vi.runAllTimersAsync();
+      await expect(promise).rejects.toThrow('chunk gone');
 
       // Node reports a rejection as unhandled a macrotask after the fact.
-      await new Promise((resolve) => setTimeout(resolve, 20));
+      await vi.advanceTimersByTimeAsync(20);
       expect(unhandled).toEqual([]);
     } finally {
       process.off('unhandledRejection', onUnhandled);
@@ -209,6 +301,14 @@ describe('dynamic import is never written as a literal token', () => {
 });
 
 describe('getNativeImport fallback', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   // Chrome 56 throws a SyntaxError compiling the body; a CSP without
   // unsafe-eval throws an EvalError. Both must degrade to re-running the loader
   // rather than surfacing, so the retry is never worse than not cache-busting.
@@ -229,8 +329,65 @@ describe('getNativeImport fallback', () => {
         .mockRejectedValueOnce(NATIVE_ESM_ERROR)
         .mockResolvedValue(mod);
 
-      await expect(fresh.lazy(fn).preload()).resolves.toBe(mod);
+      const promise = fresh.lazy(fn).preload();
+      await vi.runAllTimersAsync();
+      await expect(promise).resolves.toBe(mod);
       expect(fn).toHaveBeenCalledTimes(2);
+    } finally {
+      globalThis.Function = RealFunction;
+      vi.resetModules();
+    }
+  });
+
+  it('retries native ESM imports with incremented chunkRetry query param and backoffs', async () => {
+    const RealFunction = globalThis.Function;
+
+    try {
+      vi.resetModules();
+      const importerSpy = vi
+        .fn()
+        .mockRejectedValueOnce(new Error('retry 1 failed'))
+        .mockRejectedValueOnce(new Error('retry 2 failed'))
+        .mockResolvedValue(mod);
+
+      globalThis.Function = function MockFunction() {
+        return importerSpy;
+      } as unknown as FunctionConstructor;
+
+      const fresh = await import('../src/primitives/LazyImport.ts');
+      const fn = vi.fn().mockRejectedValue(NATIVE_ESM_ERROR);
+
+      const promise = fresh.lazy(fn).preload();
+
+      // Attempt 0: initial call to fn()
+      expect(fn).toHaveBeenCalledTimes(1);
+      expect(importerSpy).not.toHaveBeenCalled();
+
+      // Retry 1: 500ms backoff
+      await vi.advanceTimersByTimeAsync(500);
+      expect(importerSpy).toHaveBeenCalledTimes(1);
+      expect(importerSpy).toHaveBeenLastCalledWith(
+        'https://ott.angel.com/vizio/assets/Theater.page-Bl9KRTxZ.js?chunkRetry=1',
+      );
+
+      // Retry 2: 2s backoff
+      await vi.advanceTimersByTimeAsync(2000);
+      expect(importerSpy).toHaveBeenCalledTimes(2);
+      expect(importerSpy).toHaveBeenLastCalledWith(
+        'https://ott.angel.com/vizio/assets/Theater.page-Bl9KRTxZ.js?chunkRetry=2',
+      );
+
+      // Retry 3: 5s backoff
+      await vi.advanceTimersByTimeAsync(5000);
+      expect(importerSpy).toHaveBeenCalledTimes(3);
+      expect(importerSpy).toHaveBeenLastCalledWith(
+        'https://ott.angel.com/vizio/assets/Theater.page-Bl9KRTxZ.js?chunkRetry=3',
+      );
+
+      // Resolves on 3rd retry
+      await expect(promise).resolves.toBe(mod);
+      // fn() was never called again after attempt 0
+      expect(fn).toHaveBeenCalledTimes(1);
     } finally {
       globalThis.Function = RealFunction;
       vi.resetModules();

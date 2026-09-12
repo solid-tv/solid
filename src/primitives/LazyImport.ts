@@ -3,8 +3,8 @@ import {
   createResource,
   createMemo,
   untrack,
-  Component,
-  JSX,
+  type Component,
+  type JSX,
   sharedConfig,
 } from 'solid-js';
 
@@ -31,14 +31,31 @@ const NATIVE_ESM_CHUNK =
  * @internal Exported for tests. The primitives barrel re-exports `lazy` by
  * name, so this stays out of the package's public API.
  */
-export const cacheBustableUrl = (error: unknown): string | undefined =>
-  NATIVE_ESM_CHUNK.exec(
+export const cacheBustableUrl = (error: unknown): string | undefined => {
+  const match = NATIVE_ESM_CHUNK.exec(
     error instanceof Error ? error.message : String(error),
-  )?.[1];
+  );
+  return match ? match[1] : undefined;
+};
+
+/**
+ * Retry backoff delays in milliseconds (500ms, 2s, 5s). Max of 3 retries.
+ *
+ * @internal Exported for tests — see `cacheBustableUrl`.
+ */
+export const RETRY_DELAYS = [500, 2000, 5000];
 
 /** @internal Exported for tests — see `cacheBustableUrl`. */
-export const cacheBust = (url: string): string =>
-  `${url}${url.indexOf('?') === -1 ? '?' : '&'}chunkRetry=1`;
+export const cacheBust = (url: string, retry = 1): string => {
+  const cleanUrl = url
+    .replace(/([?&])chunkRetry=\d+(&|$)/, '$1')
+    .replace(/[?&]$/, '');
+  const separator = cleanUrl.indexOf('?') === -1 ? '?' : '&';
+  return cleanUrl + separator + 'chunkRetry=' + retry;
+};
+
+const wait = (ms: number): Promise<void> =>
+  new Promise((resolve) => setTimeout(resolve, ms));
 
 /**
  * A dynamic `import()`, built at runtime instead of written inline.
@@ -83,12 +100,12 @@ export function lazy<T extends Component<any>>(
   let comp: () => T | undefined;
   let p: Promise<{ default: T }> | undefined;
 
-  // Retry the import exactly once before giving up. On a TV the chunk fetch is
-  // the fragile part — a brief dropout as the viewer presses OK on a rail
-  // rejects the import, and because `p` memoises the promise that single
-  // rejection is replayed for the rest of the session: the route never renders
-  // again, not even on a later navigation. One retry turns the common transient
-  // failure into a marginally slower navigation.
+  // Retry the import up to 3 times before giving up, with a backoff of 500ms, 2s,
+  // and 5s between retries. On a TV the chunk fetch is the fragile part — a brief
+  // dropout as the viewer presses OK on a rail rejects the import, and because
+  // `p` memoises the promise that single rejection is replayed for the rest of
+  // the session: the route never renders again, not even on a later navigation.
+  // Retries with backoff turn transient failures into a slightly delayed navigation.
   //
   // How it retries depends on which module system failed, because the two need
   // opposite things.
@@ -101,26 +118,59 @@ export function lazy<T extends Component<any>>(
   //
   // Native ESM does the opposite. The module map memoises the *failure*, so a
   // second `import()` of the same specifier resolves straight to the cached
-  // rejection without ever touching the network — the retry is a no-op exactly
-  // where it is needed. It also names one module and only one, the one handed to
-  // `import()`, so a cache-busted re-import of it is both safe and necessary: a
-  // distinct URL gets a fresh module-map entry and really re-fetches.
+  // rejection without ever touching the network — re-running `fn` is a no-op
+  // exactly where it is needed. It also names one module and only one, the one
+  // handed to `import()`, so a cache-busted re-import of it is both safe and
+  // necessary: each retry gets a distinct URL (`chunkRetry=1`, `chunkRetry=2`,
+  // `chunkRetry=3`), creating a fresh module-map entry that really re-fetches.
   //
   // The cost there is a duplicate module record for this one chunk. Its own
   // imports are unaffected — they resolve to their normal, already-cached URLs —
   // so the duplication does not spread, and it only happens on a retry that
   // would otherwise have left the route dead.
-  const load = (): Promise<{ default: T }> =>
-    fn().catch((error: unknown) => {
-      const url = cacheBustableUrl(error);
-      if (url === undefined) return fn();
-      // Null when this engine cannot compile a dynamic import, or a CSP forbids
-      // compiling one — see `getNativeImport`. Re-running the loader is then the
-      // best available retry, exactly as it is for every SystemJS failure.
-      const importer = getNativeImport();
-      if (importer === null) return fn();
-      return importer(cacheBust(url)) as Promise<{ default: T }>;
-    });
+  //
+  // Written using explicit Promise chaining instead of `async`/`await` so older
+  // engines (such as Chrome 38/53 on webOS) and ES5 downleveling do not require
+  // regeneratorRuntime or complex state-machine transpilation helpers.
+  const load = (): Promise<{ default: T }> => {
+    let url: string | undefined;
+
+    const attemptLoad = (attempt: number): Promise<{ default: T }> => {
+      let p: Promise<{ default: T }>;
+      try {
+        if (attempt === 0) {
+          p = fn();
+        } else if (url !== undefined) {
+          // Null when this engine cannot compile a dynamic import, or a CSP
+          // forbids compiling one — see `getNativeImport`. Re-running the
+          // loader is then the best available retry, exactly as it is for
+          // every SystemJS failure.
+          const importer = getNativeImport();
+          p = (
+            importer !== null ? importer(cacheBust(url, attempt)) : fn()
+          ) as Promise<{ default: T }>;
+        } else {
+          p = fn();
+        }
+      } catch (syncError: unknown) {
+        p = Promise.reject(syncError);
+      }
+
+      return p.catch((error: unknown) => {
+        const nextUrl = cacheBustableUrl(error);
+        url = nextUrl !== undefined ? nextUrl : url;
+        if (attempt < RETRY_DELAYS.length) {
+          const delay = RETRY_DELAYS[attempt];
+          if (delay !== undefined) {
+            return wait(delay).then(() => attemptLoad(attempt + 1));
+          }
+        }
+        return Promise.reject(error);
+      });
+    };
+
+    return attemptLoad(0);
+  };
 
   const wrap: T & { preload?: () => void } = ((props: any) => {
     const ctx = sharedConfig.context;
