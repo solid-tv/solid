@@ -27,6 +27,22 @@ const App = () => {
 };
 ```
 
+### Event Target
+
+`useFocusManager` binds `keydown` and `keyup` on `document`. A host without a
+document, such as a native runtime that reports remote presses through its own
+bridge, passes the object to listen on as the second argument. It needs only
+`addEventListener` and `removeEventListener` for those two event types (the
+`KeyEventTarget` type), and the events it delivers need only the fields the
+focus manager reads: `key`, `keyCode` and `repeat` (`KeyEventLike`). Key
+handlers then receive the host's event object in place of a `KeyboardEvent`.
+
+```jsx
+useFocusManager(undefined, keyBridge);
+```
+
+Browser apps are unaffected: leave the argument out and `document` is used.
+
 ### Focus Path Tracking
 
 `focusPath` is a signal holding the array of elements that currently have focus, from the focused leaf up to the root. It is imported separately — `useFocusManager` itself returns nothing:
