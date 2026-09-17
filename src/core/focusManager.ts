@@ -558,7 +558,37 @@ const handleKeyEvents = (keydown?: KeyboardEvent, keyup?: KeyboardEvent) => {
   }
 };
 
-export const useFocusManager = (userKeyMap?: Partial<KeyMap>) => {
+/**
+ * What the focus manager reads off a key event. A browser's `KeyboardEvent`
+ * has these; a host without a DOM raises objects that carry at least them,
+ * and key handlers receive whichever object the host raised.
+ */
+export interface KeyEventLike {
+  readonly key: string;
+  readonly keyCode: number;
+  readonly repeat: boolean;
+}
+
+/**
+ * Where {@link useFocusManager} listens for `keydown` and `keyup`: `document`
+ * in a browser, or anything with the same two methods on a host without one,
+ * such as a native key bridge.
+ */
+export interface KeyEventTarget {
+  addEventListener(
+    type: 'keydown' | 'keyup',
+    listener: (event: KeyEventLike) => void,
+  ): void;
+  removeEventListener(
+    type: 'keydown' | 'keyup',
+    listener: (event: KeyEventLike) => void,
+  ): void;
+}
+
+export const useFocusManager = (
+  userKeyMap?: Partial<KeyMap>,
+  target: KeyEventTarget = document,
+) => {
   if (userKeyMap) {
     flattenKeyMap(userKeyMap, keyMapEntries);
   }
@@ -577,17 +607,19 @@ export const useFocusManager = (userKeyMap?: Partial<KeyMap>) => {
   Config.setActiveElement = (elm) =>
     ownerContext(() => setActiveElementSignal(elm));
 
-  const keyPressHandler = (event: KeyboardEvent) =>
-    ownerContext(() => handleKeyEvents(event, undefined));
-  const keyUpHandler = (event: KeyboardEvent) =>
-    ownerContext(() => handleKeyEvents(undefined, event));
+  // Handlers are typed as KeyboardEvent throughout; on a host that raises
+  // its own objects they see those, which carry the fields read here.
+  const keyPressHandler = (event: KeyEventLike) =>
+    ownerContext(() => handleKeyEvents(event as KeyboardEvent, undefined));
+  const keyUpHandler = (event: KeyEventLike) =>
+    ownerContext(() => handleKeyEvents(undefined, event as KeyboardEvent));
 
-  document.addEventListener('keydown', keyPressHandler);
-  document.addEventListener('keyup', keyUpHandler);
+  target.addEventListener('keydown', keyPressHandler);
+  target.addEventListener('keyup', keyUpHandler);
 
   onCleanup(() => {
-    document.removeEventListener('keydown', keyPressHandler);
-    document.removeEventListener('keyup', keyUpHandler);
+    target.removeEventListener('keydown', keyPressHandler);
+    target.removeEventListener('keyup', keyUpHandler);
     suppressedKeys.clear();
   });
 };

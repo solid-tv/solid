@@ -7,6 +7,8 @@ export {
   printFocusHistory,
   getFocusHistory,
   type FocusHistoryEntry,
+  type KeyEventLike,
+  type KeyEventTarget,
   type KeyMap,
 } from '../core/focusManager.js';
 export { activeElement, setActiveElement } from '../core/activeElement.js';
