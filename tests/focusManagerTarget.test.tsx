@@ -60,12 +60,21 @@ v.describe('useFocusManager event target', () => {
   });
 
   v.test('leaves document alone when a target is given', async () => {
+    // Test files share this worker's module state (`isolate: false`), and
+    // other files bind the focus manager to document, so a key dispatched on
+    // document is not a clean signal here. Check the registration itself.
+    const addEventListener = v.vi.spyOn(document, 'addEventListener');
     const target = new FakeTarget();
-    const { onEnter, dispose } = await setup(target);
+    const { dispose } = await setup(target);
 
-    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));
-    v.assert.equal(onEnter.mock.calls.length, 0);
+    const keyRegistrations = addEventListener.mock.calls.filter(
+      ([type]) => type === 'keydown' || type === 'keyup',
+    );
+    v.assert.equal(keyRegistrations.length, 0);
+    v.assert.equal(target.listeners.keydown.length, 1);
+    v.assert.equal(target.listeners.keyup.length, 1);
 
+    addEventListener.mockRestore();
     dispose();
   });
 
