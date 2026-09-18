@@ -6,6 +6,8 @@
 
 SolidTV is a UI framework for building high-performance TV applications. It allows you to declaratively construct UI nodes with reactive primitives, providing incredible performance on even the most constrained hardware.
 
+**[Commercial support available](https://solidtv.dev/#services)** from the creator of SolidTV: support plans, performance audits, migrations and Apple TV ports.
+
 ## Used by companies worldwide
 
 <div style="display: flex; align-items: center; gap: 20px;">
@@ -25,6 +27,8 @@ SolidTV is a UI framework for building high-performance TV applications. It allo
 [SolidTV Docs](https://solid-tv.github.io/solid/)
 
 Join the [SolidTV Discord](https://discord.com/invite/solidjs) - #SolidTV channel and message chiefcll
+
+[Commercial support](https://solidtv.dev/#services) - support plans with priority answers and bug fixes, performance audits for any web-based TV app, migrations to SolidTV, Apple TV ports and team training
 
 ## Documentation
 

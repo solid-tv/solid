@@ -4,6 +4,8 @@
 
 `@solidtv/solid` is an integration for the [SolidTV Renderer](https://github.com/solid-tv/renderer) built with [SolidJS](https://www.solidjs.com/) [Universal Renderer](https://github.com/solidjs/solid/releases/tag/v1.2.0). It allows you to declaratively construct WebGL nodes with SolidJS reactive primitives. It includes everything you need to rapidly build performant TV Apps.
 
+?> **Commercial support available.** Support plans, performance audits, migrations to SolidTV, Apple TV ports and team training from the creator of SolidTV. [See support & services](https://solidtv.dev/#services).
+
 ## Starter Template
 
 Clone starter template:
