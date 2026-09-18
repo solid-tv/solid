@@ -58,6 +58,7 @@
   - [Tizen/Samsung](/deploy/tizen.md)
   - [WebOS/LG](/deploy/lg.md)
   - [Android TV](/deploy/androidtv.md)
+  - [Apple TV](/deploy/appletv.md)
   - [Legacy Devices](/deploy/legacy.md)
 - Tooling
   - [SolidTV Devtools](/tools/solid_devtools.md)
