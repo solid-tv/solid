@@ -42,6 +42,9 @@ useFocusManager(undefined, keyBridge);
 ```
 
 Browser apps are unaffected: leave the argument out and `document` is used.
+Anything passed there that cannot listen is ignored in favour of `document`
+too, so an app still passing the removed hold options object (see below)
+keeps working.
 
 ### Focus Path Tracking
 
@@ -113,6 +116,26 @@ For more granular control, you can add a `throttleInput` property directly to an
 // This Row will only accept a keypress every 500ms
 <Row throttleInput={500}>...</Row>
 ```
+
+### Consumed Keys (`Config.preventDefaultOnHandledKeys`)
+
+A host with no browser between the remote and the app decides for itself what
+an unhandled press does: on tvOS, a Menu press nothing handled returns to the
+Home screen. Such a host needs to know which presses the app consumed. Set
+`Config.preventDefaultOnHandledKeys` and the focus manager calls
+`preventDefault()` on every key event the app consumed: a handler returned
+`true`, or the focus manager dropped the press itself (a throttled press, a
+repeat suppressed by `useHold`). An event without a `preventDefault` method is
+left alone.
+
+```javascript
+import { Config } from '@solidtv/solid';
+
+Config.preventDefaultOnHandledKeys = true;
+```
+
+It is off by default, since in a browser it changes what handled keys do: a
+handled arrow no longer scrolls the page, say.
 
 ### Focus History Logging
 
