@@ -146,6 +146,9 @@ Besides `rendererOptions`, the `Config` object exposes several properties specif
   Allows simple CSS-like transition properties without full engine overhead.
 - **throttleInput**: `number`
   Rate-limiting for key handling in milliseconds.
+- **preventDefaultOnHandledKeys**: `boolean` (Default: `false`)
+  Calls `preventDefault()` on every key event the app consumed, for a host that
+  passes unhandled presses to the system. See [useFocusManager](/primitives/useFocusManager.md#consumed-keys-configpreventdefaultonhandledkeys).
 - **lockStyles**: `boolean` (Default: `true`)
   Enables locking on styles to prevent unintended overrides.
 - **convertToShader**: `(node: ElementNode, v: StyleEffects) => IRendererShader`

@@ -397,7 +397,10 @@ const propagateKeyPress = (
           `Keypress throttled by global Config.throttleInput: ${Config.throttleInput}ms`,
         );
       }
-      return false;
+      // Dropped on purpose, so consumed: the same answer an element's own
+      // throttleInput gives below, and what a host asking through
+      // Config.preventDefaultOnHandledKeys needs to hear.
+      return true;
     }
     lastGlobalKeyPressTime = currentTime;
   }
@@ -529,33 +532,40 @@ export const releaseKeySuppression = (
   liftSuppression(keyIdentities(keyOrEvent));
 };
 
-const handleKeyEvents = (keydown?: KeyboardEvent, keyup?: KeyboardEvent) => {
+// Returns whether the app consumed the event: a handler took it, or the focus
+// manager dropped it on purpose (a suppressed repeat, a throttled press).
+const handleKeyEvents = (
+  keydown?: KeyboardEvent,
+  keyup?: KeyboardEvent,
+): boolean => {
   if (keydown) {
     const ids = keyIdentities(keydown);
     if (keydown.repeat) {
-      if (findSuppression(ids)) return;
+      if (findSuppression(ids)) return true;
     } else {
       // A fresh press starts a new gesture, so the previous one is over even
       // though its key-up never arrived. Settle it before handling this press.
       liftSuppression(ids);
     }
 
-    propagateKeyPress(
+    return propagateKeyPress(
       keydown,
       keyMapEntries[keydown.key] || keyMapEntries[keydown.keyCode],
     );
-  } else if (keyup) {
+  }
+  if (keyup) {
     // The key is up: whatever was suppressing its repeats is done. Settle it
     // before propagating, so a suppressor that is still in the focus path sees
     // its own release callback rather than a second one via the key-up below.
     liftSuppression(keyIdentities(keyup));
 
-    propagateKeyPress(
+    return propagateKeyPress(
       keyup,
       keyMapEntries[keyup.key] || keyMapEntries[keyup.keyCode],
       true,
     );
   }
+  return false;
 };
 
 /**
@@ -567,6 +577,12 @@ export interface KeyEventLike {
   readonly key: string;
   readonly keyCode: number;
   readonly repeat: boolean;
+  /**
+   * Called on an event the app consumed when
+   * `Config.preventDefaultOnHandledKeys` is set; optional, since a host's
+   * own event objects need not have it.
+   */
+  preventDefault?(): void;
 }
 
 /**
@@ -587,11 +603,18 @@ export interface KeyEventTarget {
 
 export const useFocusManager = (
   userKeyMap?: Partial<KeyMap>,
-  target: KeyEventTarget = document,
+  target?: KeyEventTarget,
 ) => {
   if (userKeyMap) {
     flattenKeyMap(userKeyMap, keyMapEntries);
   }
+
+  // Before the target parameter existed the second argument was ignored, and
+  // an object that cannot listen (the removed hold options, say) still is.
+  const eventTarget: KeyEventTarget =
+    target !== undefined && isFunction(target.addEventListener)
+      ? target
+      : document;
 
   // Capture the calling owner so signal updates and key-event reactions
   // can run inside it — needed for programmatic .setFocus(), post-mutation
@@ -610,16 +633,30 @@ export const useFocusManager = (
   // Handlers are typed as KeyboardEvent throughout; on a host that raises
   // its own objects they see those, which carry the fields read here.
   const keyPressHandler = (event: KeyEventLike) =>
-    ownerContext(() => handleKeyEvents(event as KeyboardEvent, undefined));
+    ownerContext(() => {
+      if (
+        handleKeyEvents(event as KeyboardEvent, undefined) &&
+        Config.preventDefaultOnHandledKeys
+      ) {
+        event.preventDefault?.();
+      }
+    });
   const keyUpHandler = (event: KeyEventLike) =>
-    ownerContext(() => handleKeyEvents(undefined, event as KeyboardEvent));
+    ownerContext(() => {
+      if (
+        handleKeyEvents(undefined, event as KeyboardEvent) &&
+        Config.preventDefaultOnHandledKeys
+      ) {
+        event.preventDefault?.();
+      }
+    });
 
-  target.addEventListener('keydown', keyPressHandler);
-  target.addEventListener('keyup', keyUpHandler);
+  eventTarget.addEventListener('keydown', keyPressHandler);
+  eventTarget.addEventListener('keyup', keyUpHandler);
 
   onCleanup(() => {
-    target.removeEventListener('keydown', keyPressHandler);
-    target.removeEventListener('keyup', keyUpHandler);
+    eventTarget.removeEventListener('keydown', keyPressHandler);
+    eventTarget.removeEventListener('keyup', keyUpHandler);
     suppressedKeys.clear();
   });
 };

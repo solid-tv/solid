@@ -73,6 +73,15 @@ export interface Config {
   lockStyles?: boolean;
   fontWeightAlias?: Record<string, number | string>;
   throttleInput?: number;
+  /**
+   * Call `preventDefault()` on every key event the app consumed: a handler
+   * returned `true`, or the focus manager dropped the press itself (a
+   * throttled press, a suppressed repeat). A host that hands the system
+   * whatever the app leaves unhandled, such as the Menu button on tvOS,
+   * reads it to tell the two apart. Off by default: in a browser it would
+   * also stop the default action of every handled key.
+   */
+  preventDefaultOnHandledKeys: boolean;
   taskDelay?: number;
   convertToShader: (_node: ElementNode, v: StyleEffects) => IRendererShader;
   stateOrder?: DollarString[];
@@ -106,6 +115,7 @@ export const Config: Config = {
   },
   focusStateKey: '$focus',
   lockStyles: true,
+  preventDefaultOnHandledKeys: false,
   rendererOptions: {},
   stateOrder: [],
 };

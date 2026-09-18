@@ -89,4 +89,27 @@ v.describe('useFocusManager event target', () => {
     target.press('keydown', 'Enter');
     v.assert.equal(onEnter.mock.calls.length, 0);
   });
+
+  v.test(
+    'listens on document when the second argument cannot listen',
+    async () => {
+      // Before the target parameter existed the argument was ignored; an app
+      // still passing the removed hold options there must keep working.
+      const addEventListener = v.vi.spyOn(document, 'addEventListener');
+      const legacyOptions = { userKeyHoldMap: {}, holdThreshold: 1000 };
+      const dispose = renderer.render(() => {
+        useFocusManager(undefined, legacyOptions as unknown as KeyEventTarget);
+        return <view autofocus />;
+      }) as unknown as () => void;
+      await waitForUpdate();
+
+      const keyRegistrations = addEventListener.mock.calls.filter(
+        ([type]) => type === 'keydown' || type === 'keyup',
+      );
+      v.assert.equal(keyRegistrations.length, 2);
+
+      addEventListener.mockRestore();
+      dispose();
+    },
+  );
 });
