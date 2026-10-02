@@ -14,11 +14,9 @@ const loadFont = vi.fn(() => Promise.resolve());
 vi.mock('@solidtv/renderer', () => {
   class RendererMain {
     root = {};
-    stage = {
-      renderer: { mode: 'webgl' },
-      textRenderers: { sdf: {} },
-      loadFont,
-    };
+    // @solidtv/renderer 2.0: the stage is the renderer (no Stage, no
+    // renderer.mode, no textRenderers).
+    stage = { loadFont };
     on() {}
   }
   return { RendererMain, prefetchFont };
@@ -89,6 +87,35 @@ describe('loadFonts', () => {
     init.startLightningRenderer({}, document.createElement('div'));
 
     await expect(pending).rejects.toThrow('boom');
+  });
+
+  it('neither prefetches nor waits for a web font: the renderer draws SDF fonts only', async () => {
+    const init = await freshInit();
+    const webFont = { fontFamily: 'Ubuntu', fontUrl: 'Ubuntu.ttf' };
+
+    // Nothing is owed to a stage that does not exist yet: it settles now.
+    let settled = false;
+    void init.loadFonts([webFont]).then(() => {
+      settled = true;
+    });
+    await flush();
+    expect(settled).toBe(true);
+    expect(prefetchFont).not.toHaveBeenCalled();
+
+    init.startLightningRenderer({}, document.createElement('div'));
+    await flush();
+    expect(loadFont).not.toHaveBeenCalled();
+  });
+
+  it('hands an existing renderer its SDF fonts and no web font', async () => {
+    const init = await freshInit();
+    init.startLightningRenderer({}, document.createElement('div'));
+    const webFont = { fontFamily: 'Ubuntu', fontUrl: 'Ubuntu.ttf' };
+
+    await init.loadFonts([sdfFont, webFont]);
+
+    expect(loadFont).toHaveBeenCalledTimes(1);
+    expect(loadFont).toHaveBeenCalledWith('sdf', sdfFont);
   });
 
   it('registers every alias of a multi-name font', async () => {

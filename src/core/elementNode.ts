@@ -38,12 +38,11 @@ import { Config, isDomRendererActive } from './config.js';
 import type {
   RendererMain,
   INode,
-  INodeAnimateProps,
+  AnimateProps,
   IAnimationController,
   LinearGradientProps,
   RadialGradientProps,
   ShadowProps,
-  CoreShaderNode,
   ITextNodeProps,
   INodeProps,
 } from '@solidtv/renderer';
@@ -211,7 +210,10 @@ export function convertToShader(
   let type = 'rounded';
   if (v.border) type += 'WithBorder';
   if (v.shadow) type += 'WithShadow';
-  return renderer.createShader(type, v);
+  return renderer.createShader(
+    type,
+    v as Record<string, unknown>,
+  ) as IRendererShader;
 }
 
 function getPropertyAlias(name: string) {
@@ -245,14 +247,14 @@ const LightningRendererNumberProps = [
   'scaleX',
   'scaleY',
   'w',
-  'worldX',
-  'worldY',
   'x',
   'y',
   'zIndex',
-  'zIndexLocked',
 ];
 
+// Forwarded to the renderer node (lng[key] = v). Only the renderer's props:
+// on a @solidtv/renderer 2.0 node any other name becomes a field of its
+// own. fontStretch, the DOM renderer's alone, has an accessor below.
 const LightningRendererNonAnimatingProps = [
   'absX',
   'absY',
@@ -264,9 +266,7 @@ const LightningRendererNonAnimatingProps = [
   'data',
   'destroyed',
   'forceLoad',
-  'fontStretch',
   'fontStyle',
-  'group',
   'ignoreParentAlpha',
   'imageType',
   'letterSpacing',
@@ -276,24 +276,16 @@ const LightningRendererNonAnimatingProps = [
   'offsetY',
   'overflowSuffix',
   'placeholderColor',
-  'preventCleanup',
-  'scrollable',
-  'scrollY',
   'srcHeight',
   'srcWidth',
   'srcX',
   'srcY',
-  'strictBounds',
   'text',
   'textAlign',
-  'textBaseline',
-  'textOverflow',
   'texture',
   'textureOptions',
-  'textRendererOverride',
   'verticalAlign',
   'wordBreak',
-  'wordWrap',
 ];
 
 declare global {
@@ -322,7 +314,7 @@ export interface ElementNode extends RendererNode, FocusNode {
   _queueDelete?: number;
   _animationQueue?:
     | Array<{
-        props: Partial<INodeAnimateProps<CoreShaderNode>>;
+        props: Partial<AnimateProps>;
         animationSettings?: AnimationSettings;
       }>
     | undefined;
@@ -1057,7 +1049,7 @@ export class ElementNode {
   }
 
   animate(
-    props: Partial<INodeAnimateProps<CoreShaderNode>>,
+    props: Partial<AnimateProps>,
     animationSettings?: AnimationSettings,
   ): IAnimationController {
     if (!this.rendered) {
@@ -1070,10 +1062,7 @@ export class ElementNode {
     );
   }
 
-  chain(
-    props: Partial<INodeAnimateProps<CoreShaderNode>>,
-    animationSettings?: AnimationSettings,
-  ) {
+  chain(props: Partial<AnimateProps>, animationSettings?: AnimationSettings) {
     if (this._animationRunning) {
       this._animationQueue = [];
       this._animationRunning = false;
@@ -1714,7 +1703,7 @@ export class ElementNode {
       if (isDev) log('Rendering: ', this, props);
 
       node.lng = renderer.createNode(
-        props as Partial<INodeProps<any>> & Partial<IRendererNodeProps>,
+        props as Partial<INodeProps> & Partial<IRendererNodeProps>,
       );
 
       if (node._hasRenderedChildren) {
@@ -1801,6 +1790,20 @@ for (const key of LightningRendererNonAnimatingProps) {
     },
   });
 }
+
+// The DOM renderer draws fontStretch; a rendered WebGL text node has no such
+// prop, and a @solidtv/renderer 2.0 node would take it as a field of its own.
+// Before render the value waits in the props bag, which the renderer's
+// createTextNode ignores.
+Object.defineProperty(ElementNode.prototype, 'fontStretch', {
+  get(this: ElementNode): unknown {
+    return (this.lng as unknown as Record<string, unknown>).fontStretch;
+  },
+  set(this: ElementNode, v: unknown) {
+    if (this.rendered && !isDomRendererActive()) return;
+    (this.lng as unknown as Record<string, unknown>).fontStretch = v;
+  },
+});
 
 export function createRawShaderAccessor<T>(key: keyof StyleEffects) {
   return {

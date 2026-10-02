@@ -59,11 +59,25 @@ export interface Effects {
 
 export type StyleEffects = Effects;
 
-export type FontLoadOptions = Parameters<lngr.Stage['loadFont']>[1] & {
+/**
+ * A font for loadFonts(): an SDF font (atlasUrl, atlasDataUrl, type) for the
+ * renderer, or a web font (fontUrl) for the DOM renderer. The renderer draws
+ * SDF text only (2.0), so its own FontLoadOptions has no fontUrl.
+ */
+export interface FontLoadOptions {
+  fontFamily: string | string[];
+  metrics?: lngr.FontMetrics;
+  fontUrl?: string;
+  atlasUrl?: string;
+  atlasDataUrl?: string;
   type?: 'ssdf' | 'msdf';
-};
+}
 
-export type CoreShaderManager = lngr.Stage['shManager'];
+/** What registers shader types: the renderer (2.0 has no stage.shManager). */
+export type CoreShaderManager = Pick<
+  lngr.RendererMain,
+  'registerShaderType' | 'createShader'
+>;
 
 export type NewOmit<T, K extends PropertyKey> = {
   [P in keyof T as Exclude<P, K>]: T[P];

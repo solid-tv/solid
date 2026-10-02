@@ -9,16 +9,16 @@ import {
   ShaderShadowPrefixedProps,
 } from '../shaders.js';
 
-/** Based on {@link lng.CoreRenderer} */
+/** Based on 1.10's CoreRenderer (2.0 has one backend, and no such type) */
 export interface IRendererCoreRenderer {
   mode: 'canvas' | 'webgl' | undefined;
   boundsMargin?: number;
 }
-/** Based on {@link lng.TrFontManager} */
+/** Based on 1.10's TrFontManager (2.0 has no such type) */
 export interface IRendererFontManager {
   addFontFace: (...a: any[]) => void;
 }
-/** Based on {@link lng.Stage} */
+/** Based on {@link lng.RendererMain} (1.10's Stage: in 2.0 the stage is the renderer) */
 export interface IRendererStage {
   root: IRendererNode;
   renderer: IRendererCoreRenderer;
@@ -27,18 +27,18 @@ export interface IRendererStage {
     registerAnimation: (anim: any) => void;
     unregisterAnimation: (anim: any) => void;
   };
-  loadFont: lng.Stage['loadFont'];
+  loadFont: lng.RendererMain['loadFont'];
   reprocessUpdates?: (callback?: () => void) => void;
   requestRender: () => void;
   cleanup(full: boolean): void;
 }
 
-/** Based on {@link lng.CoreShaderManager} */
+/** Based on {@link lng.RendererMain}'s registerShaderType (1.10's CoreShaderManager) */
 export interface IRendererShaderManager {
   registerShaderType: (name: string, shader: any) => void;
 }
 
-/** Based on {@link lng.CoreShaderType} */
+/** Based on {@link lng.ShaderType} (1.10's CoreShaderType) */
 export interface IRendererShaderType {}
 
 export type IRendererShaderProps = Partial<ShaderBorderPrefixedProps> &
@@ -48,8 +48,8 @@ export type IRendererShaderProps = Partial<ShaderBorderPrefixedProps> &
   Partial<ShaderRadialGradientProps> &
   Partial<ShaderLinearGradientProps>;
 
-/** Based on {@link lng.CoreShaderNode} */
-export interface IRendererShader extends Partial<lng.CoreShaderType> {
+/** Based on {@link lng.ShaderNode} */
+export interface IRendererShader extends Partial<lng.ShaderType> {
   shaderType: IRendererShaderType;
   props?: IRendererShaderProps;
   program?: {};
@@ -75,7 +75,7 @@ export interface IRendererNodeShaded extends EventEmitter {
   stage: IRendererStage;
   id: number;
   animate: (
-    props: Partial<lng.INodeAnimateProps<any>>,
+    props: Partial<lng.AnimateProps>,
     settings: Partial<lng.AnimationSettings>,
   ) => lng.IAnimationController;
   get absX(): number;
@@ -91,7 +91,7 @@ export interface IRendererNodeProps extends Omit<
   parent: IRendererNode | null;
 }
 
-/** Based on {@link lng.CoreNode} */
+/** Based on {@link lng.Node} (1.10's CoreNode) */
 export interface IRendererNode extends IRendererNodeShaded, IRendererNodeProps {
   div?: HTMLElement;
   props: IRendererNodeProps;

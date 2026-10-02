@@ -1,12 +1,8 @@
 import * as lng from '@solidtv/solid';
 import * as v from 'vitest';
-import { WebGlCoreRenderer, SdfTextRenderer } from '@solidtv/renderer/webgl';
-import { CanvasTextRenderer } from '@solidtv/renderer/canvas';
 
-lng.Config.rendererOptions = {
-  fontEngines: [CanvasTextRenderer],
-  renderEngine: WebGlCoreRenderer,
-};
+// @solidtv/renderer 2.0 has one engine (WebGL, SDF text): nothing to choose.
+lng.Config.rendererOptions = {};
 lng.Config.domRendererEnabled = true;
 
 globalThis.ResizeObserver = class MockResizeObserver {

@@ -134,7 +134,7 @@ class AnimationController implements lng.IAnimationController {
 
   constructor(
     public node: DOMNode,
-    props: Partial<lng.INodeAnimateProps<any>>,
+    props: Partial<lng.AnimateProps>,
     rawSettings: Partial<lng.AnimationSettings>,
   ) {
     this.settings = {
@@ -143,6 +143,7 @@ class AnimationController implements lng.IAnimationController {
       easing: rawSettings.easing ?? 'linear',
       loop: rawSettings.loop ?? false,
       repeat: rawSettings.repeat ?? 1,
+      repeatDelay: rawSettings.repeatDelay ?? 0,
       stopMethod: false,
       adaptiveDuration: rawSettings.adaptiveDuration ?? false,
     };
@@ -214,7 +215,7 @@ class AnimationController implements lng.IAnimationController {
 
 function animate(
   this: DOMNode,
-  props: Partial<lng.INodeAnimateProps<any>>,
+  props: Partial<lng.AnimateProps>,
   settings: Partial<lng.AnimationSettings>,
 ): lng.IAnimationController {
   return new AnimationController(this, props, settings);
@@ -1302,7 +1303,6 @@ function resolveTextNodeDefaults(
   return {
     ...resolveNodeDefaults(props),
     text: props.text ?? '',
-    textRendererOverride: props.textRendererOverride ?? null,
     fontSize: props.fontSize ?? 16,
     fontFamily: props.fontFamily ?? 'sans-serif',
     fontStyle: props.fontStyle ?? 'normal',
@@ -2009,13 +2009,6 @@ class DOMText extends DOMNode {
     this.props.verticalAlign = v;
     updateNodeStyles(this);
   }
-  get textRendererOverride() {
-    return this.props.textRendererOverride;
-  }
-  set textRendererOverride(v) {
-    this.props.textRendererOverride = v;
-    updateNodeStyles(this);
-  }
   get offsetY() {
     return this.props.offsetY;
   }
@@ -2246,7 +2239,7 @@ export class DOMRendererMain implements IRendererMain {
     return {
       // @ts-ignore
       shaderType,
-      props,
+      props: props as Record<string, unknown>,
       program: {},
     };
   }

@@ -131,7 +131,6 @@ export function Grid<T>(props: GridProps<T>): JSX.Element {
       onLeft={chainFunctions(props.onLeft, () => handleHorizontalFocus(-1))}
       onRight={chainFunctions(props.onRight, () => handleHorizontalFocus(1))}
       onFocus={chainFunctions(props.onFocus, () => handleHorizontalFocus(0))}
-      strictBounds={false}
       y={scrollY()}
     >
       <Index each={props.items}>
