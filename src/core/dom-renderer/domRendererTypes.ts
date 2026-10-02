@@ -12,7 +12,7 @@ import {
 /** Based on {@link lng.CoreRenderer} */
 export interface IRendererCoreRenderer {
   mode: 'canvas' | 'webgl' | undefined;
-  boundsMargin?: number;
+  boundsMargin?: number | [number, number, number, number];
 }
 /** Based on {@link lng.TrFontManager} */
 export interface IRendererFontManager {
@@ -148,9 +148,8 @@ export interface DomRendererMainSettings {
    * Preload margin around the viewport, in logical pixels (default: 200)
    *
    * @remarks
-   * A single number applied to all sides. The `[top, right, bottom, left]`
-   * array form was dropped in renderer 1.8; it is still tolerated at runtime
-   * (the largest edge wins, with a warning) but should be replaced.
+   * A single number applied to all sides, or a per-side
+   * `[top, right, bottom, left]` tuple.
    */
-  boundsMargin?: number;
+  boundsMargin?: number | [number, number, number, number];
 }

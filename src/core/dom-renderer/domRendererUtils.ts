@@ -222,30 +222,19 @@ export function nodeHasTextureSource(node: DOMNode): boolean {
 }
 
 /**
- * Coerce a `boundsMargin` value to the scalar the renderer takes since 1.8.
- *
- * @remarks
- * The `[top, right, bottom, left]` array form was dropped in renderer 1.8. An
- * untyped app upgrading from 1.7 can still pass it, so mirror the WebGL
- * renderer and take the widest edge rather than letting the margin arithmetic
- * go wrong.
+ * Normalize a `boundsMargin` value (scalar or per-side tuple) into a
+ * `[top, right, bottom, left]` tuple.
  */
 export function normalizeBoundsMargin(
   margin: number | number[] | null | undefined,
-): number {
-  if (margin == null) return 0;
-  if (Array.isArray(margin) === false) return margin as number;
-  const arr = margin as number[];
-  let max = 0;
-  for (let i = 0; i < arr.length; i++) {
-    if (arr[i]! > max) {
-      max = arr[i]!;
-    }
+): [number, number, number, number] {
+  if (margin == null) return [0, 0, 0, 0];
+  if (Array.isArray(margin) === false) {
+    const m = (margin as number) || 0;
+    return [m, m, m, m];
   }
-  console.warn(
-    `boundsMargin array form is no longer supported, using the largest edge value: ${max}`,
-  );
-  return max;
+  const arr = margin as number[];
+  return [arr[0] || 0, arr[1] || 0, arr[2] || 0, arr[3] || 0];
 }
 
 export function computeRenderStateForNode(
@@ -273,10 +262,10 @@ export function computeRenderStateForNode(
   const right = left + width;
   const bottom = top + height;
 
-  const expandedLeft = rootLeft - margin;
-  const expandedTop = rootTop - margin;
-  const expandedRight = rootRight + margin;
-  const expandedBottom = rootBottom + margin;
+  const expandedLeft = rootLeft - margin[3];
+  const expandedTop = rootTop - margin[0];
+  const expandedRight = rootRight + margin[1];
+  const expandedBottom = rootBottom + margin[2];
 
   const intersectsBounds =
     right >= expandedLeft &&
