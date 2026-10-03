@@ -898,6 +898,42 @@ v.describe('Row and Column: transitions and throttleInput', () => {
   );
 
   v.it(
+    'the merged transition is one object per direction and base `transition`, not one per press (1.7)',
+    async () => {
+      let row!: lng.ElementNode;
+      const [base, setBase] = s.createSignal<lng.NodeProps['transition']>();
+      dispose = await mount(() => (
+        <view width={1920} height={1080}>
+          <Row ref={row} autofocus transition={base()}>
+            {items(6)}
+          </Row>
+        </view>
+      ));
+      await press('ArrowRight');
+      const right = row.transition;
+      await press('ArrowRight');
+      v.expect(row.transition).toBe(right);
+      await press('ArrowLeft');
+      const left = row.transition;
+      v.expect(left).not.toBe(right);
+      await press('ArrowLeft', 'ArrowRight');
+      v.expect(row.transition).toBe(right);
+
+      // A new base transition from the app gives new merged objects, again
+      // one per direction.
+      setBase({ alpha: true });
+      await press('ArrowRight');
+      const right2 = row.transition;
+      v.expect(right2).toEqual({
+        x: { duration: 180, easing: 'cubic-bezier(0.2, 0, 0, 1)' },
+        alpha: true,
+      });
+      await press('ArrowRight');
+      v.expect(row.transition).toBe(right2);
+    },
+  );
+
+  v.it(
     'throttleInput on a Row: the same key within the window is dropped; another key is not',
     async () => {
       let now = 1000;
