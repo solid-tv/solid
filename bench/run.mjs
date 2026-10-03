@@ -51,6 +51,7 @@ const { values: args } = parseArgs({
     flex: { type: 'string', default: 'new' },
     'alloc-interval': { type: 'string', default: '1' },
     'profile-interval': { type: 'string', default: '50' },
+    'save-profiles': { type: 'boolean', default: false },
     'idle-timeout': { type: 'string', default: '10000' },
     summarize: { type: 'string' },
     help: { type: 'boolean', default: false },
@@ -430,6 +431,11 @@ async function runOnce({ origin, arm, scenario, mode, run }) {
           .slice(0, 40)
           .map(([k, v]) => [k, v / measured]),
       };
+      if (args['save-profiles']) {
+        // Written beside the result as <result>.cpuprofile (Chrome DevTools
+        // format), for inclusive-time analysis; not kept in the JSON.
+        record.rawProfile = profile;
+      }
     } else {
       record.stats = countStats(ops, record.hooks.flexHooks > 0);
       const details = await page.evaluate(() =>
@@ -497,6 +503,13 @@ for (const mode of modes) {
           outDir,
           `${scenario}.${label(arm)}.${mode}.${run}.json`,
         );
+        if (r.rawProfile !== undefined) {
+          writeFileSync(
+            file.replace(/\.json$/, '.cpuprofile'),
+            JSON.stringify(r.rawProfile),
+          );
+          r.rawProfile = undefined;
+        }
         writeFileSync(file, JSON.stringify(r, null, 1));
         let line = `${mode} ${scenario} ${label(arm)} #${run}:`;
         if (r.errors.length > 0) {

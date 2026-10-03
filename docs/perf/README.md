@@ -29,6 +29,7 @@ node bench/run.mjs --summarize docs/perf/results/2026-10-03   # rebuild summary.
 | `--no-chunks`        | off                        | Single-chunk build (labelled `-nochunks`): to check that chunking does not move timings           |
 | `--alloc-interval`   | 1                          | Heap sampling interval in bytes (1: every allocation)                                             |
 | `--profile-interval` | 50                         | CPU profiler sampling interval in µs                                                              |
+| `--save-profiles`    | off                        | Also write each profile run's raw CPU profile as `<result>.cpuprofile` (DevTools format)          |
 | `--idle-timeout`     | 10000                      | ms to wait for an op to settle before marking it `timedOut`                                       |
 
 Each run writes `<out>/<scenario>.<arm>.<mode>.<run>.json` (every op's raw
