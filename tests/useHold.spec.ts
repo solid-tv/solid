@@ -4,7 +4,10 @@ import type { ElementNode } from '../src/core/elementNode.ts';
 
 const suppressKeyUntilRelease =
   vi.fn<(e: KeyboardEvent | string | number, onRelease?: () => void) => void>();
-vi.mock('../src/core/focusManager.ts', () => ({
+// Vitest runs files in one worker without isolation, so useHold.ts may already
+// be loaded with the real focus manager: load a fresh copy against the mock.
+vi.resetModules();
+vi.doMock('../src/core/focusManager.ts', () => ({
   suppressKeyUntilRelease: (...args: unknown[]) =>
     (suppressKeyUntilRelease as (...a: unknown[]) => void)(...args),
 }));

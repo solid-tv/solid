@@ -14,3 +14,4 @@ package-lock.json
 bench/.arms
 bench/dist
 bench/.results-tmp
+.vitest-attachments
