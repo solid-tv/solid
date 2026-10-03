@@ -56,7 +56,7 @@
     "lint:eslint": "eslint .",
     "lint:fix:eslint": "eslint --fix .",
     "build": "rm -rf dist && pnpm run tsc && cp jsx-runtime.d.ts dist/",
-    "tsc": "tsc",
+    "tsc": "tsc && tsc -p tests/tsconfig.contract.json",
     "watch": "tsc -w",
     "prepare": "husky",
     "prepack": "pnpm run build",
