@@ -739,3 +739,55 @@ v.describe('VirtualColumn', () => {
   );
 });
 
+v.describe('VirtualRow: work per press (1.7)', () => {
+  // Counts the row's flex passes: updateLayout calls, from the post-mutation
+  // layout phase and from VirtualRow itself.
+  const countLayouts = (row: lng.ElementNode) => {
+    const counter = { n: 0 };
+    const updateLayout = row.updateLayout;
+    row.updateLayout = function (this: lng.ElementNode) {
+      counter.n++;
+      return updateLayout.call(this);
+    };
+    return counter;
+  };
+
+  // Eight Right presses then four Left presses.
+  const expected = {
+    auto: [0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+    always: [0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+    edge: [0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 1],
+  };
+  for (const mode of ['auto', 'always', 'edge'] as const) {
+    v.it(`scroll="${mode}": a press lays the row out at most once`, async () => {
+      let row!: lng.ElementNode;
+      dispose = await mount(() => (
+        <view width={1920} height={1080}>
+          <VirtualRow
+            ref={row}
+            autofocus
+            x={50}
+            each={twelve}
+            displaySize={4}
+            scroll={mode}
+          >
+            {(item) => <Item item={item()} />}
+          </VirtualRow>
+        </view>
+      ));
+      const counter = countLayouts(row);
+      const passes: number[] = [];
+      for (const key of [
+        ...Array.from({ length: 8 }, () => 'ArrowRight'),
+        ...Array.from({ length: 4 }, () => 'ArrowLeft'),
+      ]) {
+        counter.n = 0;
+        await press(key);
+        passes.push(counter.n);
+      }
+      // One pass for a press that changes the window, none for a press that
+      // only moves the row or the focus (it was two and one).
+      v.expect(passes).toEqual(expected[mode]);
+    });
+  }
+});
