@@ -272,76 +272,8 @@ function writeShaderValue(
   return wrote;
 }
 
-/**
- * Update the props of a gradient shader the node made, as createShader
- * would have built them from `value`: a declared prop `value` does not name
- * takes its default. The DOM renderer keeps the given object as the props.
- */
-function setShaderProps(
-  shader: IRendererShader,
-  value: Record<string, unknown>,
-): void {
-  const type = shader.shaderType as unknown;
-  const defs = isObject(type) ? type.props : undefined;
-  if (!isObject(defs)) {
-    shader.props = value as IRendererShaderProps;
-    return;
-  }
-  const props = shader.props as Record<string, unknown>;
-  for (const name in defs) {
-    const def = defs[name];
-    const given = value[name];
-    if (given !== undefined) {
-      // createShader copies an array, unless the prop resolves (copies) it.
-      props[name] =
-        isObject(def) && def.resolve !== undefined ? given : copyOf(given);
-    } else if (!isObject(def) || def.set === undefined) {
-      // An alias (`set`) only writes when given, as in createShader.
-      props[name] = shaderPropDefault(shader, name);
-    }
-  }
-}
-
 /** The gradient shaders the raw accessors made, by accessor key. */
 const gradientShaders = new WeakMap<object, string>();
-
-/**
- * Whether `next` would leave a node's states as they are, by the rules of
- * `States.merge`: an array or a string replaces the list, an object adds
- * its truthy keys (`has`) and removes its falsy ones.
- */
-function sameStates(current: States, next: NodeStates): boolean {
-  const len = current.length;
-  if (isArray(next)) {
-    if (next.length !== len) {
-      return false;
-    }
-    for (let i = 0; i < len; i++) {
-      if (next[i] !== current[i]) {
-        return false;
-      }
-    }
-    return true;
-  }
-  if (isString(next)) {
-    return len === 1 && current[0] === next;
-  }
-  for (const key in next) {
-    const state = key as DollarString;
-    if (next[state]) {
-      if (!current.has(state)) {
-        return false;
-      }
-    } else {
-      for (let i = 0; i < len; i++) {
-        if (current[i] === state) {
-          return false;
-        }
-      }
-    }
-  }
-  return true;
-}
 
 /** Marks a key a state change tracks but has not written yet. */
 const UNWRITTEN = {};
@@ -1513,7 +1445,36 @@ export class ElementNode {
       return;
     }
     // An unchanged list is a no-op (design 3.3.3): nothing to re-apply.
-    if (sameStates(current, states)) {
+    // "Unchanged" by the rules of States.merge: an array or a string
+    // replaces the list, an object adds its truthy keys (`has`) and removes
+    // its falsy ones. (Inline on purpose here and in the gradient accessor:
+    // terser's default `reduce_funcs` turns a single-use helper into a
+    // closure per call.)
+    const len = current.length;
+    let changed = false;
+    if (isArray(states)) {
+      changed = states.length !== len;
+      for (let i = 0; !changed && i < len; i++) {
+        changed = states[i] !== current[i];
+      }
+    } else if (isString(states)) {
+      changed = len !== 1 || current[0] !== states;
+    } else {
+      for (const key in states) {
+        const state = key as DollarString;
+        if (states[state]) {
+          changed = !current.has(state);
+        } else {
+          for (let i = 0; !changed && i < len; i++) {
+            changed = current[i] === state;
+          }
+        }
+        if (changed) {
+          break;
+        }
+      }
+    }
+    if (!changed) {
       return;
     }
     current.merge(states);
@@ -2091,8 +2052,31 @@ export function createRawShaderAccessor<T>(key: keyof StyleEffects) {
         isObject(value) &&
         gradientShaders.get(shader) === key
       ) {
-        // The gradient shader this accessor made: update it, not a new one.
-        setShaderProps(shader, value);
+        // The gradient shader this accessor made: update it, not a new one,
+        // to the props createShader would have built from `value`: a
+        // declared prop `value` does not name takes its default.
+        const type = shader.shaderType as unknown;
+        const defs = isObject(type) ? type.props : undefined;
+        if (!isObject(defs)) {
+          // The DOM renderer keeps the given object as the props.
+          shader.props = value as IRendererShaderProps;
+        } else {
+          const props = shader.props as Record<string, unknown>;
+          for (const name in defs) {
+            const def = defs[name];
+            const given = value[name];
+            if (given !== undefined) {
+              // createShader copies an array, unless the prop resolves it.
+              props[name] =
+                isObject(def) && def.resolve !== undefined
+                  ? given
+                  : copyOf(given);
+            } else if (!isObject(def) || def.set === undefined) {
+              // An alias (`set`) only writes when given, as in createShader.
+              props[name] = shaderPropDefault(shader, name);
+            }
+          }
+        }
         if (this.rendered && isDomRendererActive()) {
           // The DOM renderer restyles when its shader is assigned.
           (this.lng as IRendererNode).shader = shader;
