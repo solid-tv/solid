@@ -7,9 +7,9 @@
 //
 // Rows are 400px tall from y=40: rows 0-2 are on screen, rows 3-6 start below
 // the bottom of the 1080px screen. Posters are 205px apart from x=160: about
-// the first 10 of a Row are on screen. Most of a page is therefore out of
-// bounds, as most of a route's tree is, and text under an out-of-bounds parent
-// is where renderers differ.
+// the first 10 of a Row are in bounds. Most of a page is therefore out of
+// bounds, as most of a route's tree is (a swap lays out 63 of its 287 texts),
+// and text under an out-of-bounds parent is where renderers differ.
 import type { ElementNode, NodeStyles, TextStyles } from '@solidtv/solid';
 import { Column, Row } from '@solidtv/solid/primitives';
 import { createSignal, For, onCleanup, Show } from 'solid-js';
