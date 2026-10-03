@@ -73,15 +73,23 @@ function createVirtual<T>(
     atStart: boolean;
     cursor: number;
   };
-  const [slice, setSlice] = s.createSignal<SliceState>({
+  const noItems: T[] = [];
+  // One state object, updated in place by computeSlice, so a press allocates
+  // no state. The mounted items have a signal of their own: <List> re-runs
+  // only when the window's items change, not on every press.
+  const slice: SliceState = {
     start: 0,
-    slice: [],
+    slice: noItems,
     selected: 0,
     delta: 0,
     shiftBy: 0,
     atStart: true,
     cursor: 0,
-  });
+  };
+  const [sliceItems, setSliceItems] = s.createSignal<T[]>(noItems);
+  // Set when the window's items change, cleared by the row's next flex pass
+  // (onLayout): the window shift lays the row out only if nothing else has.
+  let layoutPending = false;
 
   function normalizeDeltaForWindow(delta: number, windowLen: number): number {
     if (!windowLen) return 0;
@@ -116,33 +124,46 @@ function createVirtual<T>(
     return 0;
   }
 
-  function computeSlice(
-    c: number,
+  function applySlice(
+    start: number,
+    windowItems: T[],
+    selected: number,
     delta: number,
-    prev: SliceState,
+    shiftBy: number,
+    atStart: boolean,
+    c: number,
   ): SliceState {
+    const prevItems = slice.slice;
+    slice.start = start;
+    slice.slice = windowItems;
+    slice.selected = selected;
+    slice.delta = delta;
+    slice.shiftBy = shiftBy;
+    slice.atStart = atStart;
+    slice.cursor = c;
+    if (windowItems !== prevItems) {
+      layoutPending = true;
+      setSliceItems(windowItems);
+    }
+    return slice;
+  }
+
+  function computeSlice(c: number, delta: number): SliceState {
+    const prev = slice;
     const total = itemCount();
-    if (total === 0)
-      return {
-        start: 0,
-        slice: [],
-        selected: 0,
-        delta,
-        shiftBy: 0,
-        atStart: true,
-        cursor: 0,
-      };
+    if (total === 0) return applySlice(0, noItems, 0, delta, 0, true, 0);
 
     if (total <= props.displaySize) {
-      return {
-        start: 0,
-        slice: items() as T[],
-        selected: utils.clamp(c, 0, total - 1),
+      const clamped = utils.clamp(c, 0, total - 1);
+      return applySlice(
+        0,
+        items() as T[],
+        clamped,
         delta,
-        shiftBy: 0,
-        atStart: c <= 0,
-        cursor: utils.clamp(c, 0, total - 1),
-      };
+        0,
+        c <= 0,
+        clamped,
+      );
     }
 
     const length = props.displaySize + bufferSize();
@@ -351,23 +372,16 @@ function createVirtual<T>(
 
     let newSlice = prev.slice;
     if (start !== prev.start || newSlice.length === 0) {
-      newSlice = effectiveWrap()
-        ? (Array.from(
-          { length },
-          (_, i) => items()[utils.mod(start + i, total)],
-        ) as T[])
-        : items().slice(start, start + length);
+      const all = items();
+      if (effectiveWrap()) {
+        newSlice = new Array<T>(length);
+        for (let i = 0; i < length; i++) {
+          newSlice[i] = all[utils.mod(start + i, total)] as T;
+        }
+      } else {
+        newSlice = all.slice(start, start + length) as T[];
+      }
     }
-
-    const state: SliceState = {
-      start,
-      slice: newSlice,
-      selected,
-      delta,
-      shiftBy,
-      atStart,
-      cursor: c,
-    };
 
     if (props.debugInfo) {
       console.log(`[Virtual]`, {
@@ -376,11 +390,11 @@ function createVirtual<T>(
         start,
         selected,
         shiftBy,
-        slice: state.slice,
+        slice: newSlice,
       });
     }
 
-    return state;
+    return applySlice(start, newSlice, selected, delta, shiftBy, atStart, c);
   }
 
   let viewRef!: lngp.NavigableElement;
@@ -414,6 +428,46 @@ function createVirtual<T>(
   }
 
   let originalPosition: number | undefined;
+
+  // The window shift after a press, run in a microtask once the new window
+  // is mounted. One function for every press (no closure per press): the
+  // press stores what it needs here.
+  let shiftView!: lng.ElementNode;
+  let shiftActive!: lng.ElementNode;
+  let shiftPrevChildPos = 0;
+  function applyShift() {
+    const view = shiftView;
+    const active = shiftActive;
+    // One flex pass per window shift: lay out here only if the post-mutation
+    // layout has not already run since the window changed.
+    if (layoutPending) view.updateLayout();
+    const childSize = computeSize(slice.selected);
+
+    if (
+      cachedAnimationController &&
+      cachedAnimationController.state === 'running'
+    ) {
+      cachedAnimationController.stop();
+    }
+
+    if (lng.Config.animationsEnabled) {
+      view.lng[axis] = shiftPrevChildPos - active[axis];
+      targetPosition = view.lng[axis] + childSize * slice.shiftBy;
+      cachedAnimationController = view
+        .animate(
+          { [axis]: targetPosition },
+          {
+            ...view.animationSettings,
+            duration: getAdaptiveDuration(view.animationSettings?.duration),
+          },
+        )
+        .start();
+    } else {
+      view.lng[axis] =
+        shiftPrevChildPos - active[axis] + childSize * slice.shiftBy;
+    }
+  }
+
   const onSelectedChanged: lngp.OnSelectedChanged = function (
     _idx,
     elm,
@@ -435,59 +489,32 @@ function createVirtual<T>(
 
     const rawDelta = idx - (lastIdx ?? 0);
     const windowLen = elm?.children?.length ?? props.displaySize + bufferSize();
-    const delta = effectiveWrap()
-      ? normalizeDeltaForWindow(rawDelta, windowLen)
-      : rawDelta;
+    const wrap = effectiveWrap();
+    const delta = wrap ? normalizeDeltaForWindow(rawDelta, windowLen) : rawDelta;
 
-    setCursor((c) => {
-      const next = c + delta;
-      return effectiveWrap()
-        ? utils.mod(next, total)
-        : utils.clamp(next, 0, total - 1);
-    });
+    const next = s.untrack(cursor) + delta;
+    const c = wrap ? utils.mod(next, total) : utils.clamp(next, 0, total - 1);
+    setCursor(c);
 
-    const newState = computeSlice(cursor(), delta, slice());
-    setSlice(newState);
+    const newState = computeSlice(c, delta);
     elm.selected = newState.selected;
 
     if (!wrapUnlocked() && rawDelta > 0) setWrapUnlocked(true);
 
     if (
       props.onEndReachedThreshold !== undefined &&
-      cursor() >= itemCount() - props.onEndReachedThreshold
+      c >= itemCount() - props.onEndReachedThreshold
     ) {
       props.onEndReached?.();
     }
 
     if (newState.shiftBy === 0) return;
 
-    const prevChildPos = (targetPosition ?? this[axis]) + active[axis];
-
-    queueMicrotask(() => {
-      elm.updateLayout();
-      const childSize = computeSize(slice().selected);
-
-      if (
-        cachedAnimationController &&
-        cachedAnimationController.state === 'running'
-      ) {
-        cachedAnimationController.stop();
-      }
-
-      if (lng.Config.animationsEnabled) {
-        this.lng[axis] = prevChildPos - active[axis];
-        targetPosition = this.lng[axis] + childSize * slice().shiftBy;
-        cachedAnimationController = this.animate(
-          { [axis]: targetPosition },
-          {
-            ...this.animationSettings,
-            duration: getAdaptiveDuration(this.animationSettings?.duration),
-          },
-        ).start();
-      } else {
-        this.lng[axis] = (prevChildPos - active[axis]) + childSize * slice().shiftBy;
-      }
-    });
+    // `elm` is the row (`this`): navigation calls it on itself.
+    shiftView = elm;
+    shiftActive = active;
+    shiftPrevChildPos = (targetPosition ?? this[axis]) + active[axis];
+    queueMicrotask(applyShift);
   };
 
   const updateSelected = ([sel, _items]: [number?, any?]) => {
@@ -495,11 +522,10 @@ function createVirtual<T>(
     const safeSel = utils.clamp(sel, 0, itemCount() - 1);
     const item = items()[safeSel];
     setCursor(safeSel);
-    const newState = computeSlice(safeSel, 0, slice());
-    setSlice(newState);
+    const shiftBy = computeSlice(safeSel, 0).shiftBy;
 
     queueMicrotask(() => {
-      viewRef.updateLayout();
+      if (layoutPending) viewRef.updateLayout();
       const activeIndex = viewRef.children.findIndex((x) => x.item === item);
       if (activeIndex === -1) return;
       viewRef.selected = activeIndex;
@@ -507,9 +533,9 @@ function createVirtual<T>(
         viewRef.children[activeIndex]?.setFocus();
       }
 
-      if (newState.shiftBy === 0) return;
+      if (shiftBy === 0) return;
 
-      const childSize = computeSize(slice().selected);
+      const childSize = computeSize(slice.selected);
       // Original Position is offset to support scrollToIndex
       originalPosition = originalPosition ?? viewRef.lng[axis];
       targetPosition = targetPosition ?? viewRef.lng[axis];
@@ -532,7 +558,7 @@ function createVirtual<T>(
       }
       // offset just for wrap so we keep one item before
       queueMicrotask(() => {
-        const childSize = computeSize(slice().selected);
+        const childSize = computeSize(slice.selected);
         viewRef.lng[axis] = (viewRef.lng[axis] || 0) + childSize * -1;
         // Original Position is offset to support scrollToIndex
         originalPosition = viewRef.lng[axis];
@@ -551,13 +577,18 @@ function createVirtual<T>(
         c = Math.max(0, itemCount() - 1);
         setCursor(c);
       }
-      const newState = computeSlice(c, 0, slice());
-      setSlice(newState);
-      viewRef.selected = newState.selected;
+      viewRef.selected = computeSlice(c, 0).selected;
     }),
   );
 
-  return (
+  // Clears layoutPending: the row's flex pass has run since the window
+  // changed. The app's onLayout still runs, read when called.
+  function onLayout(this: lng.ElementNode, target: lng.ElementNode) {
+    layoutPending = false;
+    return props.onLayout?.call(this, target);
+  }
+
+  const view = (
     <view
       transitionLeft={isRow ? defaultTransitionBack : undefined}
       transitionRight={isRow ? defaultTransitionForward : undefined}
@@ -570,10 +601,10 @@ function createVirtual<T>(
       }, props.ref)}
       wrap={effectiveWrap()}
       selected={selected()}
-      cursor={cursor()}
       forwardFocus={/* @once */ lngp.navigableForwardFocus}
       scrollToIndex={/* @once */ scrollToIndex}
       onSelectedChanged={/* @once */ onSelectedChanged}
+      onLayout={/* @once */ onLayout}
       style={
         /* @once */ lng.combineStyles(
         props.style,
@@ -590,9 +621,17 @@ function createVirtual<T>(
       )
       }
     >
-      <List each={slice().slice}>{props.children}</List>
+      <List each={sliceItems()}>{props.children}</List>
     </view>
   );
+
+  // `cursor` has an effect of its own: in the spread above, a cursor change
+  // (every press) re-ran every prop of the spread.
+  s.createRenderEffect(() => {
+    viewRef.cursor = cursor();
+  });
+
+  return view;
 }
 
 export function VirtualRow<T>(props: VirtualProps<T>) {
