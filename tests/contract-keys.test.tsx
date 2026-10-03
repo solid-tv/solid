@@ -4,7 +4,7 @@
 // and per-element throttleInput. Behavioural only: handler call order,
 // arguments and return values, never underscore fields.
 import * as v from 'vitest';
-import { createRoot } from 'solid-js';
+import { createRoot, type JSX } from 'solid-js';
 import { Config, type ElementNode } from '@solidtv/solid';
 import {
   useFocusManager,
@@ -352,6 +352,61 @@ v.describe('contract: capture → bubble → onKeyPress order', () => {
       v.expect(r.calls[0]!.args).toEqual([e, n.outer, n.leaf, 'Enter']);
       v.expect(r.calls[3]!.args).toEqual([e, n.leaf, n.leaf]);
       dispose();
+    },
+  );
+
+  // A handler is a node field, however it got there: style and $state blocks
+  // assign their keys onto the node, and so can a ref. Mounted before any JSX
+  // capture or release prop in this test, so it also holds when this test
+  // runs alone.
+  v.it(
+    'capture and release handlers from style, a $focus block or a ref assignment fire like JSX-prop handlers',
+    async () => {
+      const handlers = (r: Rec) => ({
+        onCaptureEnter: r.handler('onCaptureEnter'),
+        onCaptureEnterRelease: r.handler('onCaptureEnterRelease'),
+        onEnterRelease: r.handler('onEnterRelease'),
+      });
+      const press = async (view: (r: Rec) => JSX.Element) => {
+        const r = recorder();
+        const { target, dispose } = await mount(() => view(r));
+        target.down('Enter');
+        target.up('Enter');
+        dispose();
+        return r.order();
+      };
+
+      const delivered = await press((r) => (
+        <view id="outer" style={handlers(r)}>
+          <view id="mid" $focus={handlers(r)}>
+            <view
+              id="leaf"
+              autofocus
+              ref={(el: ElementNode) => Object.assign(el, handlers(r))}
+            />
+          </view>
+        </view>
+      ));
+      const asProps = await press((r) => (
+        <view id="outer" {...handlers(r)}>
+          <view id="mid" {...handlers(r)}>
+            <view id="leaf" autofocus {...handlers(r)} />
+          </view>
+        </view>
+      ));
+
+      v.expect(delivered).toEqual([
+        'outer.onCaptureEnter',
+        'mid.onCaptureEnter',
+        'leaf.onCaptureEnter',
+        'outer.onCaptureEnterRelease',
+        'mid.onCaptureEnterRelease',
+        'leaf.onCaptureEnterRelease',
+        'leaf.onEnterRelease',
+        'mid.onEnterRelease',
+        'outer.onEnterRelease',
+      ]);
+      v.expect(delivered).toEqual(asProps);
     },
   );
 });

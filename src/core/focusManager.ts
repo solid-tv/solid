@@ -87,23 +87,6 @@ const handlerNamesOf = (
   return names;
 };
 
-// Raised the first time any node is given a prop that could be a capture or a
-// release handler (the renderer's setProperty reports every `on…` name). Until
-// then the capture walk and the key-up bubble walk cannot find a handler, so
-// they are skipped. Never lowered.
-let hasCaptureHandler = false;
-let hasReleaseHandler = false;
-
-/** @internal Called by the renderer's setProperty with every `on…` prop name. */
-export const noteHandlerProp = (name: string): void => {
-  if (!hasCaptureHandler && name.startsWith('onCapture')) {
-    hasCaptureHandler = true;
-  }
-  if (!hasReleaseHandler && name.endsWith('Release')) {
-    hasReleaseHandler = true;
-  }
-};
-
 let needFocusDebugStyles = true;
 const addFocusDebug = (
   prevFocusPath: ElementNode[],
@@ -409,14 +392,12 @@ const runCapturePhase = (
   currentTime: number,
 ): boolean => {
   const finalFocusElm = fp[0]!;
-  const capture = hasCaptureHandler;
   const captureEvent = isUp ? names.onCaptureRelease : names.onCapture;
   const captureKey = isUp ? 'onCaptureKeyRelease' : 'onCaptureKey';
 
   for (let i = fp.length - 1; i >= 0; i--) {
     const elm = fp[i]!;
     if (checkThrottle && isElementThrottled(elm, currentTime)) return true;
-    if (!capture) continue;
 
     const captureHandler = elm[captureEvent] || elm[captureKey];
     if (
@@ -430,10 +411,6 @@ const runCapturePhase = (
   return false;
 };
 
-// The last element runBubblePhase saw with *any* matching handler, for the
-// no-handler debug log.
-let lastHandlerSeen: ElementNode | undefined;
-
 // Walk focus path leaf→root. Returns whether the event was handled.
 const runBubblePhase = (
   fp: ElementNode[],
@@ -446,7 +423,8 @@ const runBubblePhase = (
 ): boolean => {
   const finalFocusElm = fp[0]!;
   const eventHandlerKey = isUp ? names.onRelease : names.on;
-  lastHandlerSeen = undefined;
+  // The last element with *any* matching handler, for the no-handler log.
+  let lastHandlerSeen: ElementNode | undefined;
 
   for (let i = 0; i < fp.length; i++) {
     const elm = fp[i]!;
@@ -473,6 +451,15 @@ const runBubblePhase = (
     if (handled) {
       if (!isUp) elm._lastAnyKeyPressTime = currentTime;
       return true;
+    }
+  }
+
+  if (isDev && Config.keyDebug && !isUp) {
+    const detail = `key="${e.key}", mappedEvent=${mappedEvent}, isUp=${isUp}`;
+    if (lastHandlerSeen) {
+      console.log(`Keypress bubbled, ${detail}`, lastHandlerSeen);
+    } else {
+      console.log(`No event handler available for keypress: ${detail}`);
     }
   }
   return false;
@@ -519,16 +506,12 @@ const propagateKeyPress = (
   // Only a repeat of the same key can be throttled, and only on key-down.
   const checkThrottle = !isUp && sameKey;
 
-  // Each walk runs only when it could find something; when it runs, it is
-  // the same walk in the same order.
   if (
-    (hasCaptureHandler || checkThrottle) &&
     runCapturePhase(fp, e, mappedEvent, names, isUp, checkThrottle, currentTime)
   ) {
     return true;
   }
-  if (isUp && !hasReleaseHandler) return false;
-  const handled = runBubblePhase(
+  return runBubblePhase(
     fp,
     e,
     mappedEvent,
@@ -537,19 +520,6 @@ const propagateKeyPress = (
     checkThrottle,
     currentTime,
   );
-
-  if (!handled && isDev && Config.keyDebug && !isUp) {
-    const detail = `key="${e.key}", mappedEvent=${mappedEvent}, isUp=${isUp}`;
-    if (lastHandlerSeen) {
-      console.log(`Keypress bubbled, ${detail}`, lastHandlerSeen);
-    } else {
-      console.log(`No event handler available for keypress: ${detail}`);
-    }
-  }
-  // Don't keep a node alive until the next key.
-  lastHandlerSeen = undefined;
-
-  return handled;
 };
 
 // `key` is not a stable identity for a physical key across key-down and key-up.

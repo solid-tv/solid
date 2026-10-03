@@ -7,7 +7,6 @@ import {
   type ElementText,
   enqueueDelete,
 } from './core/index.js';
-import { noteHandlerProp } from './core/focusManager.js';
 import type { SolidNode, SolidRendererOptions } from './types.js';
 
 export default {
@@ -26,10 +25,6 @@ export default {
     parent.text = parent.getText();
   },
   setProperty(node: ElementNode, name: string, value: any): void {
-    // "on…": tell the focus manager which key-handler walks can find anything.
-    if (name.charCodeAt(0) === 111 && name.charCodeAt(1) === 110) {
-      noteHandlerProp(name);
-    }
     node[name] = value;
   },
   insertNode(parent: ElementNode, node: SolidNode, anchor: SolidNode): void {
