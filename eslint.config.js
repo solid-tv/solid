@@ -60,11 +60,13 @@ export default tseslint.config(
     },
   },
   {
-    // The benchmark harness's Node scripts.
+    // The benchmark harness's Node scripts, which also hold functions that
+    // run in the page (Playwright's evaluate).
     files: ['bench/**/*.mjs'],
     languageOptions: {
       globals: {
         ...globals.node,
+        ...globals.browser,
       },
     },
   },
