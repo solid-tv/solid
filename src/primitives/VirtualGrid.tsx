@@ -156,8 +156,15 @@ export function VirtualGrid<T>(props: VirtualGridProps<T>): s.JSX.Element {
   const chainedOnSelectedChanged = lngp.chainFunctions(props.onSelectedChanged, onSelectedChanged)!;
 
   let cachedSelected: number | undefined;
+  let selectedRunBefore = false;
   const updateSelected = ([selected, _items]: [number?, any?]) => {
-    if (!viewRef || selected == null) return;
+    if (!viewRef) return;
+    // B15: the first run (mount) has no previous selection. Given the child
+    // index the node got at mount, onSelectedChanged saw no row change and
+    // skipped the scroll to an initial `selected` row.
+    const firstRun = !selectedRunBefore;
+    selectedRunBefore = true;
+    if (selected == null) return;
 
     if (cachedSelected !== undefined) {
       selected = cachedSelected;
@@ -172,7 +179,7 @@ export function VirtualGrid<T>(props: VirtualGridProps<T>): s.JSX.Element {
 
     const item = items()[selected];
     let active = viewRef.children.find(x => x.item === item);
-    const lastSelected = viewRef.selected;
+    const lastSelected = firstRun ? undefined : viewRef.selected;
 
     if (active instanceof lng.ElementNode) {
       viewRef.selected = viewRef.children.indexOf(active);
