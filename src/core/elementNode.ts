@@ -61,7 +61,8 @@ import {
 
 // Unified post-mutation scheduler.
 //
-// Three phases run in one microtask (or one renderer-tick callback):
+// Three phases run in one microtask (or, for a `loaded` handler, in the
+// renderer frame between its walks: schedulePostMutationInFrame):
 //   1. delete-flush — destroy nodes that were removed and not re-inserted
 //   2. layout       — recompute flex layout for any dirty subtree
 //   3. focus        — resolve forwardFocus on deferred elements, then apply
@@ -69,15 +70,30 @@ import {
 // Order matters: layout reads the rendered tree (so destroyed nodes must be
 // gone), and focus reads the laid-out tree.
 let postMutationQueued = false;
+let postMutationInFrame = false;
 let nextActiveElement: ElementNode | null = null;
 let deferredFocusElement: ElementNode | null = null;
-const layoutQueue = new Set<ElementNode>();
-const elementDeleteQueue: ElementNode[] = [];
+// Entries past elementDeleteCount are undefined; the array keeps its
+// capacity between runs.
+const elementDeleteQueue: Array<ElementNode | undefined> = [];
+let elementDeleteCount = 0;
+
+// The layout queue: containers bucketed by depth (the root's children are at
+// depth 1), laid out deepest first, so a container runs after every queued
+// container inside it. A node is in at most one bucket entry that counts
+// (`_layoutQueued`); updateLayout() clears it, so a node laid out directly is
+// skipped when its entry comes up. Buckets keep their capacity: no allocation
+// per run once the tree's depth has been seen.
+const layoutBuckets: Array<Array<ElementNode | undefined>> = [];
+const layoutBucketSize: number[] = [];
+let layoutMaxDepth = -1; // deepest bucket that may hold a node
+let layoutSweepDepth = -1; // bucket the layout phase is on, -1 outside it
 
 export function enqueueDelete(node: ElementNode, n: number): void {
   if (node._queueDelete === undefined) {
     node._queueDelete = n;
-    if (elementDeleteQueue.push(node) === 1) {
+    elementDeleteQueue[elementDeleteCount++] = node;
+    if (elementDeleteCount === 1) {
       schedulePostMutation();
     }
   } else {
@@ -88,35 +104,44 @@ export function enqueueDelete(node: ElementNode, n: number): void {
 function schedulePostMutation() {
   if (postMutationQueued) return;
   postMutationQueued = true;
-  if ('reprocessUpdates' in renderer.stage && renderer.stage.reprocessUpdates) {
-    renderer.stage.reprocessUpdates(runPostMutation);
-  }
   queueMicrotask(runPostMutation);
+}
+
+/**
+ * Also runs the post-mutation pass inside the renderer's current or next
+ * frame, after its walk and before the draw, so what it writes is drawn in
+ * that frame. For handlers the renderer calls between its walks (`loaded`).
+ */
+function schedulePostMutationInFrame(): void {
+  schedulePostMutation();
+  if (postMutationInFrame) return;
+  const stage = renderer.stage;
+  if ('reprocessUpdates' in stage && stage.reprocessUpdates) {
+    postMutationInFrame = true;
+    stage.reprocessUpdates(runPostMutation);
+  }
 }
 
 function runPostMutation() {
   postMutationQueued = false;
+  postMutationInFrame = false;
 
-  // Phase 1: delete-flush
-  if (elementDeleteQueue.length > 0) {
-    for (const el of elementDeleteQueue) {
+  // Phase 1: delete-flush (the count is read every time: a destroy can
+  // queue more)
+  if (elementDeleteCount > 0) {
+    for (let i = 0; i < elementDeleteCount; i++) {
+      const el = elementDeleteQueue[i]!;
+      elementDeleteQueue[i] = undefined;
       if ((el._queueDelete ?? 0) < 0) {
         el.destroy();
       }
       el._queueDelete = undefined;
     }
-    elementDeleteQueue.length = 0;
+    elementDeleteCount = 0;
   }
 
   // Phase 2: layout
-  while (layoutQueue.size > 0) {
-    const queue = [...layoutQueue];
-    layoutQueue.clear();
-    for (let i = queue.length - 1; i >= 0; i--) {
-      const node = queue[i] as ElementNode;
-      node.updateLayout();
-    }
-  }
+  runLayoutQueue();
 
   // Phase 3: focus.  setFocus() may have evaluated forwardFocus pre-render
   // (when no children existed yet); deferredFocusElement re-runs setFocus
@@ -132,9 +157,59 @@ function runPostMutation() {
   }
 }
 
-function addToLayoutQueue(node: ElementNode) {
-  layoutQueue.add(node);
+function enqueueLayout(node: ElementNode): void {
+  if (node._layoutQueued === true) return;
+  node._layoutQueued = true;
+  let depth = 0;
+  for (let p = node.parent; p !== undefined && p !== null; p = p.parent) {
+    depth++;
+  }
+  while (layoutBuckets.length <= depth) {
+    layoutBuckets.push([]);
+    layoutBucketSize.push(0);
+  }
+  const size = layoutBucketSize[depth]!;
+  layoutBuckets[depth]![size] = node;
+  layoutBucketSize[depth] = size + 1;
+  // During a sweep, a node at the bucket being run or shallower is reached
+  // by that sweep; a deeper one needs another.
+  if (depth > layoutMaxDepth && depth > layoutSweepDepth) {
+    layoutMaxDepth = depth;
+  }
+}
+
+/**
+ * Queue `node`'s layout (flex and `onLayout`) for the post-mutation pass.
+ * Within one pass, containers run deepest first, each at most once unless a
+ * child's size changed after its run.
+ */
+function queueLayout(node: ElementNode): void {
+  enqueueLayout(node);
   schedulePostMutation();
+}
+
+function runLayoutQueue(): void {
+  // Start from the deepest bucket there is, so entries a run that threw left
+  // behind are not stranded.
+  layoutMaxDepth = layoutBuckets.length - 1;
+  while (layoutMaxDepth >= 0) {
+    let depth = layoutMaxDepth;
+    layoutMaxDepth = -1;
+    for (; depth >= 0; depth--) {
+      layoutSweepDepth = depth;
+      const bucket = layoutBuckets[depth]!;
+      // Read the size every time: a run can queue more at this depth.
+      for (let i = 0; i < layoutBucketSize[depth]!; i++) {
+        const node = bucket[i];
+        bucket[i] = undefined;
+        if (node !== undefined && node._layoutQueued === true) {
+          node.updateLayout();
+        }
+      }
+      layoutBucketSize[depth] = 0;
+    }
+    layoutSweepDepth = -1;
+  }
 }
 
 // Text-default template, built once on first use.  Config.fontSettings is
@@ -322,6 +397,8 @@ export interface ElementNode extends RendererNode, FocusNode {
   _flexBase?: number;
   /** @internal flexGrow record (B8): the size the last growth wrote. */
   _flexGrown?: number;
+  /** @internal in the layout queue (queueLayout) */
+  _layoutQueued: boolean;
   _hasRenderedChildren?: boolean;
   _effects?: Record<string, any>;
   _fontFamily?: string;
@@ -822,6 +899,7 @@ export class ElementNode {
     this._display = undefined;
     this._onLayout = undefined;
     this._requiresLayout = false;
+    this._layoutQueued = false;
   }
 
   get effects(): StyleEffects | undefined {
@@ -963,7 +1041,7 @@ export class ElementNode {
       }
 
       if (this.requiresLayout()) {
-        addToLayoutQueue(this);
+        queueLayout(this);
       }
     }
   }
@@ -1138,9 +1216,22 @@ export class ElementNode {
   }
 
   _layoutOnLoad() {
+    // The size the parent's last layout saw: a load that leaves it unchanged
+    // needs no layout. Until Solid measures text itself, this is how a text
+    // size reaches flex: queue the parent and run the pass in the frame.
+    let width = this.width;
+    let height = this.height;
     (this.lng as IRendererNode).on('loaded', () => {
-      schedulePostMutation();
-      this.parent!.updateLayout();
+      const w = this.width;
+      const h = this.height;
+      if (w === width && h === height) return;
+      width = w;
+      height = h;
+      const parent = this.parent;
+      if (parent !== undefined && parent !== null) {
+        enqueueLayout(parent);
+        schedulePostMutationInFrame();
+      }
     });
   }
 
@@ -1372,32 +1463,50 @@ export class ElementNode {
   }
 
   updateLayout() {
-    if (this.hasChildren) {
-      if (isDev) log('Layout: ', this);
+    this._layoutQueued = false;
+    const children = this.children;
+    const numChildren = children.length;
+    if (numChildren === 0) return;
+    if (isDev) log('Layout: ', this);
 
-      if (this.display === 'flex' && this.flexGrow && this.width === 0) {
-        return;
-      }
+    const isFlex = this._display === 'flex';
+    if (isFlex && this.flexGrow && this.width === 0) {
+      return;
+    }
 
-      const flexChanged = this.display === 'flex' && calculateFlex(this);
-      layoutQueue.delete(this);
-      const onLayoutChanged =
-        isFunction(this.onLayout) && this.onLayout.call(this, this);
+    const flexChanged = isFlex && calculateFlex(this);
+    const onLayout = this._onLayout;
+    const onLayoutChanged =
+      onLayout !== undefined &&
+      isFunction(onLayout) &&
+      onLayout.call(this, this);
 
-      if ((flexChanged || onLayoutChanged) && this.parent) {
-        addToLayoutQueue(this.parent);
-      }
+    // A container whose size changed queues its parent (one with nothing to
+    // lay out would do nothing).
+    const parent = this.parent;
+    if ((flexChanged || onLayoutChanged) && parent && parent._requiresLayout) {
+      queueLayout(parent);
+    }
 
-      if (this._containsFlexGrow === true) {
-        // Need to reprocess children
-        this.children.forEach((c) => {
-          if (c.display === 'flex' && isElementNode(c)) {
-            // calculating directly to prevent infinite loops recalculating parents
-            calculateFlex(c);
-            isFunction(c.onLayout) && c.onLayout.call(c, c);
-            addToLayoutQueue(this);
+    if (this._containsFlexGrow === true) {
+      // This pass grew or shrank its children: lay out the flex ones again,
+      // directly, so they do not queue this container back through their
+      // own size. Run this container again only if one of them resized.
+      let childResized = false;
+      for (let i = 0; i < numChildren; i++) {
+        const c = children[i]!;
+        if (isElementNode(c) && c._display === 'flex') {
+          if (calculateFlex(c)) childResized = true;
+          const childOnLayout = c._onLayout;
+          if (childOnLayout !== undefined && isFunction(childOnLayout)) {
+            childOnLayout.call(c, c);
           }
-        });
+        }
+      }
+      if (childResized) {
+        queueLayout(this);
+      } else {
+        this._containsFlexGrow = null;
       }
     }
   }
@@ -1521,7 +1630,7 @@ export class ElementNode {
     }
 
     if (parent.requiresLayout()) {
-      layoutQueue.add(parent);
+      queueLayout(parent);
     }
 
     if (this.rendered) {
