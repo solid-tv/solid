@@ -216,12 +216,6 @@ export function convertToShader(
   ) as IRendererShader;
 }
 
-function getPropertyAlias(name: string) {
-  if (name === 'w') return 'width';
-  if (name === 'h') return 'height';
-  return name;
-}
-
 declare global {
   interface HTMLElement {
     /** Assigned for development, to quickly get ElementNode from selected HTMLElement */
@@ -960,7 +954,16 @@ export class ElementNode {
     let animationSettings: AnimationSettings | undefined;
     if (transition !== true) {
       const own = transition[name];
-      const setting = own || transition[getPropertyAlias(name)];
+      // The transition may name w/h as width/height. Written inline: a
+      // single-use helper here is what terser inlines as an IIFE (a closure
+      // per call) under its default compress options.
+      const setting =
+        own ||
+        (name === 'w'
+          ? transition.width
+          : name === 'h'
+            ? transition.height
+            : undefined);
       if (!setting) {
         return false;
       }
