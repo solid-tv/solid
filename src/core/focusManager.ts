@@ -1,4 +1,10 @@
-import { createSignal, getOwner, onCleanup, runWithOwner } from 'solid-js';
+import {
+  batch,
+  createSignal,
+  getOwner,
+  onCleanup,
+  runWithOwner,
+} from 'solid-js';
 import { Config, isDev } from './config.js';
 import { IRendererNode } from './dom-renderer/domRendererTypes.js';
 export type * from './focusKeyTypes.js';
@@ -9,8 +15,6 @@ import {
   activeElement,
   setActiveElement as setActiveElementSignal,
 } from './activeElement.js';
-
-let _signalWrapper: (cb: () => void) => void = (cb) => cb();
 
 type KeyMapEntries = Record<KeyNameOrKeyCode, string>;
 
@@ -31,20 +35,56 @@ const keyOf = (e: KeyboardEvent): KeyNameOrKeyCode => e.key || e.keyCode;
 const flattenKeyMap = (
   keyMap: Partial<KeyMap>,
   targetMap: KeyMapEntries,
-): KeyMapEntries => {
-  const newTargetMap = targetMap;
-  for (const [key, value] of Object.entries(keyMap)) {
+): void => {
+  for (const name in keyMap) {
+    const value = keyMap[name];
     if (Array.isArray(value)) {
-      value.forEach((v) => {
-        newTargetMap[v] = key;
-      });
+      for (let i = 0; i < value.length; i++) {
+        targetMap[value[i]!] = name;
+      }
     } else if (value === null) {
-      delete newTargetMap[key];
+      // Unmap every key mapped to this name, defaults included (B4). The
+      // entry keyed by the name itself goes too, as it always did.
+      for (const key in targetMap) {
+        if (targetMap[key] === name) delete targetMap[key];
+      }
+      delete targetMap[name];
     } else {
-      newTargetMap[value as KeyNameOrKeyCode] = key;
+      targetMap[value as KeyNameOrKeyCode] = name;
     }
   }
-  return newTargetMap;
+};
+
+// The handler prop names dispatch looks up for one key, built once per mapped
+// name (or per `e.key` of an unmapped key) so no event concatenates strings.
+interface HandlerNames {
+  /** `on<Name>`; undefined for an unmapped key, which only onKeyPress hears. */
+  on: string | undefined;
+  onRelease: string | undefined;
+  onCapture: string;
+  onCaptureRelease: string;
+}
+
+const mappedHandlerNames = new Map<string, HandlerNames>();
+const unmappedHandlerNames = new Map<string, HandlerNames>();
+
+const handlerNamesOf = (
+  mappedEvent: string | undefined,
+  key: string,
+): HandlerNames => {
+  const cache = mappedEvent ? mappedHandlerNames : unmappedHandlerNames;
+  const base = mappedEvent || key;
+  let names = cache.get(base);
+  if (names === undefined) {
+    names = {
+      on: mappedEvent ? 'on' + base : undefined,
+      onRelease: mappedEvent ? 'on' + base + 'Release' : undefined,
+      onCapture: 'onCapture' + base,
+      onCaptureRelease: 'onCapture' + base + 'Release',
+    };
+    cache.set(base, names);
+  }
+  return names;
 };
 
 let needFocusDebugStyles = true;
@@ -117,8 +157,11 @@ const elementFocusData = new WeakMap<
   { focusCount: number; lastFocusedAt: number }
 >();
 
-/** The key that triggered the most recent (non-throttled) propagation pass. */
-let _pendingHistoryKey: {
+/**
+ * The key that triggered the most recent (non-throttled) propagation pass.
+ * One record, updated in place: history entries copy its fields.
+ */
+const _pendingHistoryKey: {
   keyPressed: string | number | undefined;
   mappedKey: string | undefined;
 } = { keyPressed: undefined, mappedKey: undefined };
@@ -212,10 +255,28 @@ export const printFocusHistory = (count: number): void => {
 export const setActiveElementCore = (elm: ElementNode) => {
   const prev = activeElement();
   if (elm === prev) return;
+  _focusTarget = elm;
+  _focusPrev = prev;
+  // The whole focus phase runs in one batch (5.1): the callbacks keep their
+  // order, and the effects their signal writes trigger, like those of
+  // focusPath and the active element, run once, after the last of them.
+  batch(applyFocus);
+};
+
+// The focus change setActiveElementCore hands to applyFocus, so the batch
+// takes no closure. applyFocus reads both on entry.
+let _focusTarget: ElementNode | undefined;
+let _focusPrev: ElementNode | undefined;
+
+const applyFocus = (): void => {
+  const elm = _focusTarget!;
+  const prev = _focusPrev;
+  _focusTarget = _focusPrev = undefined;
   updateFocusPath(elm, prev);
   recordFocusHistory(elm, prev);
   // Reset key attribution so programmatic focus changes show '—' for key fields
-  _pendingHistoryKey = { keyPressed: undefined, mappedKey: undefined };
+  _pendingHistoryKey.keyPressed = undefined;
+  _pendingHistoryKey.mappedKey = undefined;
   // Publish through the swappable hook rather than writing the signal directly,
   // so the active-element signal stays decoupled from this focus manager.
   Config.setActiveElement(elm);
@@ -223,21 +284,45 @@ export const setActiveElementCore = (elm: ElementNode) => {
 
 export const [focusPath, setFocusPath] = createSignal<ElementNode[]>([]);
 
+// Each focus change takes a new generation and stamps it on every node of the
+// new path; a node of the previous path without that stamp lost focus. O(depth),
+// no membership scan.
+let focusGen = 0;
+// The new path is built here, leaf first, then published as a copy: the
+// signal's value must be a fresh array per change, since readers keep it.
+const pathBuffer: ElementNode[] = [];
+// True while updateFocusPath runs. A focus callback that calls
+// setActiveElementCore re-enters it: the inner change builds its own array,
+// and the outer one, whose stamps it overwrote, falls back to a scan.
+let updatingPath = false;
+
 const updateFocusPath = (
   currentFocusedElm: ElementNode,
   prevFocusedElm: ElementNode | undefined,
 ) => {
+  const nested = updatingPath;
+  updatingPath = true;
+  try {
+    buildFocusPath(currentFocusedElm, prevFocusedElm, nested ? [] : pathBuffer);
+  } finally {
+    updatingPath = nested;
+  }
+};
+
+const buildFocusPath = (
+  currentFocusedElm: ElementNode,
+  prevFocusedElm: ElementNode | undefined,
+  fp: ElementNode[],
+) => {
+  const focusKey = Config.focusStateKey;
+  const gen = ++focusGen;
+  let length = 0;
   let current: ElementNode | undefined = currentFocusedElm;
-  // fp escapes through the focusPath signal, so it must be a fresh array; the
-  // membership test below runs on paths of a handful of elements every single
-  // keypress, where a linear scan beats allocating and hashing a Set.
-  const fp: ElementNode[] = [];
   while (current) {
-    if (
-      !current.states.has(Config.focusStateKey) ||
-      current === currentFocusedElm
-    ) {
-      current.states.add(Config.focusStateKey);
+    current._focusGen = gen;
+    const states = current.states;
+    if (!states.has(focusKey) || current === currentFocusedElm) {
+      states.add(focusKey);
       current.onFocus?.call(
         current,
         currentFocusedElm,
@@ -252,15 +337,17 @@ const updateFocusPath = (
         current,
       );
     }
-    fp.push(current);
+    fp[length++] = current;
     current = current.parent;
   }
+  fp.length = length;
 
   const prevFp = focusPath();
   for (let i = 0; i < prevFp.length; i++) {
     const elm = prevFp[i]!;
-    if (fp.indexOf(elm) === -1) {
-      elm.states.remove(Config.focusStateKey);
+    // focusGen moves on only when a callback changed focus re-entrantly.
+    if (focusGen === gen ? elm._focusGen !== gen : fp.indexOf(elm) === -1) {
+      elm.states.remove(focusKey);
       elm.onBlur?.call(elm, currentFocusedElm, prevFocusedElm!, elm);
       elm.onFocusChanged?.call(
         elm,
@@ -272,95 +359,87 @@ const updateFocusPath = (
     }
   }
 
+  const newFp = fp.slice();
   if (Config.focusDebug) {
-    addFocusDebug(prevFp, fp);
+    addFocusDebug(prevFp, newFp);
   }
 
-  _signalWrapper(() => setFocusPath(fp));
+  setFocusPath(newFp);
 };
 
 let lastGlobalKeyPressTime = 0;
 let lastInputKey: string | number | undefined;
 
-const isElementThrottled = (
-  elm: ElementNode,
-  sameKey: boolean,
-  currentTime: number,
-): boolean =>
-  elm.throttleInput !== undefined &&
-  sameKey &&
-  elm._lastAnyKeyPressTime !== undefined &&
-  currentTime - elm._lastAnyKeyPressTime < elm.throttleInput;
+// Per-element throttleInput applies to key presses only, like the global
+// Config.throttleInput: a release is never dropped and never starts a window
+// (B3).
+const isElementThrottled = (elm: ElementNode, currentTime: number): boolean => {
+  const throttle = elm.throttleInput;
+  if (throttle === undefined) return false;
+  const last = elm._lastAnyKeyPressTime;
+  return last !== undefined && currentTime - last < throttle;
+};
 
 // Walk focus path root→leaf. Returns true if a capture handler claimed the
-// event (or an element on the path is currently rate-limited).
+// event (or, for a repeated press, an element on the path is rate-limited).
 const runCapturePhase = (
   fp: ElementNode[],
   e: KeyboardEvent,
   mappedEvent: string | undefined,
+  names: HandlerNames,
   isUp: boolean,
-  sameKey: boolean,
+  checkThrottle: boolean,
   currentTime: number,
 ): boolean => {
   const finalFocusElm = fp[0]!;
-  const keyBase = mappedEvent || e.key;
-  const captureEvent = `onCapture${keyBase}${isUp ? 'Release' : ''}`;
+  const captureEvent = isUp ? names.onCaptureRelease : names.onCapture;
   const captureKey = isUp ? 'onCaptureKeyRelease' : 'onCaptureKey';
 
   for (let i = fp.length - 1; i >= 0; i--) {
     const elm = fp[i]!;
-    if (isElementThrottled(elm, sameKey, currentTime)) return true;
+    if (checkThrottle && isElementThrottled(elm, currentTime)) return true;
 
     const captureHandler = elm[captureEvent] || elm[captureKey];
     if (
       isFunction(captureHandler) &&
       captureHandler.call(elm, e, elm, finalFocusElm, mappedEvent) === true
     ) {
-      elm._lastAnyKeyPressTime = currentTime;
+      if (!isUp) elm._lastAnyKeyPressTime = currentTime;
       return true;
     }
   }
   return false;
 };
 
-// Walk focus path leaf→root. Returns whether the event was handled and the
-// last element that had *any* matching handler (for the no-handler debug log).
+// Walk focus path leaf→root. Returns whether the event was handled.
 const runBubblePhase = (
   fp: ElementNode[],
   e: KeyboardEvent,
   mappedEvent: string | undefined,
+  names: HandlerNames,
   isUp: boolean,
-  sameKey: boolean,
+  checkThrottle: boolean,
   currentTime: number,
-): { handled: boolean; lastHandlerSeen: ElementNode | undefined } => {
+): boolean => {
   const finalFocusElm = fp[0]!;
-  const eventHandlerKey = mappedEvent
-    ? isUp
-      ? `on${mappedEvent}Release`
-      : `on${mappedEvent}`
-    : undefined;
-  const fallbackHandlerKey: 'onKeyPress' | undefined = isUp
-    ? undefined
-    : 'onKeyPress';
-
+  const eventHandlerKey = isUp ? names.onRelease : names.on;
+  // The last element with *any* matching handler, for the no-handler log.
   let lastHandlerSeen: ElementNode | undefined;
 
   for (let i = 0; i < fp.length; i++) {
     const elm = fp[i]!;
-    if (isElementThrottled(elm, sameKey, currentTime)) {
-      return { handled: true, lastHandlerSeen };
-    }
+    if (checkThrottle && isElementThrottled(elm, currentTime)) return true;
 
     let handled = false;
-    if (eventHandlerKey) {
+    if (eventHandlerKey !== undefined) {
       const eventHandler = elm[eventHandlerKey];
       if (isFunction(eventHandler)) {
         lastHandlerSeen = elm;
         handled = eventHandler.call(elm, e, elm, finalFocusElm) === true;
       }
     }
-    if (!handled && fallbackHandlerKey) {
-      const fallbackHandler = elm[fallbackHandlerKey];
+    if (!handled && !isUp) {
+      const fallbackHandler = elm.onKeyPress;
       if (isFunction(fallbackHandler)) {
         lastHandlerSeen = elm;
         handled =
@@ -370,17 +449,26 @@ const runBubblePhase = (
     }
 
     if (handled) {
-      elm._lastAnyKeyPressTime = currentTime;
-      return { handled: true, lastHandlerSeen };
+      if (!isUp) elm._lastAnyKeyPressTime = currentTime;
+      return true;
     }
   }
-  return { handled: false, lastHandlerSeen };
+
+  if (isDev && Config.keyDebug && !isUp) {
+    const detail = `key="${e.key}", mappedEvent=${mappedEvent}, isUp=${isUp}`;
+    if (lastHandlerSeen) {
+      console.log(`Keypress bubbled, ${detail}`, lastHandlerSeen);
+    } else {
+      console.log(`No event handler available for keypress: ${detail}`);
+    }
+  }
+  return false;
 };
 
 const propagateKeyPress = (
   e: KeyboardEvent,
-  mappedEvent?: string,
-  isUp: boolean = false,
+  mappedEvent: string | undefined,
+  isUp: boolean,
 ): boolean => {
   const currentTime = performance.now();
   const key = keyOf(e);
@@ -407,36 +495,31 @@ const propagateKeyPress = (
 
   // Keyup events don't trigger focus changes, so don't record their key.
   if (!isUp) {
-    _pendingHistoryKey = { keyPressed: key, mappedKey: mappedEvent };
+    _pendingHistoryKey.keyPressed = key;
+    _pendingHistoryKey.mappedKey = mappedEvent;
   }
 
   const fp = focusPath();
   if (fp.length === 0) return false;
 
-  if (runCapturePhase(fp, e, mappedEvent, isUp, sameKey, currentTime)) {
+  const names = handlerNamesOf(mappedEvent, e.key);
+  // Only a repeat of the same key can be throttled, and only on key-down.
+  const checkThrottle = !isUp && sameKey;
+
+  if (
+    runCapturePhase(fp, e, mappedEvent, names, isUp, checkThrottle, currentTime)
+  ) {
     return true;
   }
-
-  const { handled, lastHandlerSeen } = runBubblePhase(
+  return runBubblePhase(
     fp,
     e,
     mappedEvent,
+    names,
     isUp,
-    sameKey,
+    checkThrottle,
     currentTime,
   );
-  if (handled) return true;
-
-  if (isDev && Config.keyDebug && !isUp) {
-    const detail = `key="${e.key}", mappedEvent=${mappedEvent}, isUp=${isUp}`;
-    if (lastHandlerSeen) {
-      console.log(`Keypress bubbled, ${detail}`, lastHandlerSeen);
-    } else {
-      console.log(`No event handler available for keypress: ${detail}`);
-    }
-  }
-
-  return false;
 };
 
 // `key` is not a stable identity for a physical key across key-down and key-up.
@@ -446,16 +529,23 @@ const propagateKeyPress = (
 // carries, and two events are the same key if any identity matches.
 const UNIDENTIFIED = 'Unidentified';
 
+// An event's two identities, read as two values so dispatch builds no array.
+// 'Unidentified' names no particular key. Treating it as an identity would
+// conflate every key that reports it.
+const keyNameId = (e: KeyboardEvent): KeyNameOrKeyCode | undefined =>
+  e.key && e.key !== UNIDENTIFIED ? e.key : undefined;
+const keyCodeId = (e: KeyboardEvent): KeyNameOrKeyCode | undefined =>
+  e.keyCode ? e.keyCode : undefined;
+
 const keyIdentities = (
   keyOrEvent: KeyboardEvent | KeyNameOrKeyCode,
 ): KeyNameOrKeyCode[] => {
   if (typeof keyOrEvent !== 'object') return [keyOrEvent];
   const ids: KeyNameOrKeyCode[] = [];
-  // 'Unidentified' names no particular key. Treating it as an identity would
-  // conflate every key that reports it.
-  if (keyOrEvent.key && keyOrEvent.key !== UNIDENTIFIED)
-    ids.push(keyOrEvent.key);
-  if (keyOrEvent.keyCode) ids.push(keyOrEvent.keyCode);
+  const name = keyNameId(keyOrEvent);
+  if (name !== undefined) ids.push(name);
+  const code = keyCodeId(keyOrEvent);
+  if (code !== undefined) ids.push(code);
   return ids;
 };
 
@@ -480,19 +570,30 @@ type Suppression = {
 // key differently still finds it. Entries for one key share a Suppression.
 const suppressedKeys = new Map<KeyNameOrKeyCode, Suppression>();
 
-const findSuppression = (ids: KeyNameOrKeyCode[]): Suppression | undefined => {
-  for (const id of ids) {
-    const found = suppressedKeys.get(id);
-    if (found) return found;
+// `name` and `code` are a key's identities (see keyNameId/keyCodeId), either
+// one possibly undefined.
+const findSuppression = (
+  name: KeyNameOrKeyCode | undefined,
+  code: KeyNameOrKeyCode | undefined,
+): Suppression | undefined => {
+  if (suppressedKeys.size === 0) return undefined;
+  let found: Suppression | undefined;
+  if (name !== undefined) found = suppressedKeys.get(name);
+  if (found === undefined && code !== undefined) {
+    found = suppressedKeys.get(code);
   }
-  return undefined;
+  return found;
 };
 
-const liftSuppression = (ids: KeyNameOrKeyCode[]): void => {
-  const found = findSuppression(ids);
+const liftSuppression = (
+  name: KeyNameOrKeyCode | undefined,
+  code: KeyNameOrKeyCode | undefined,
+): void => {
+  const found = findSuppression(name, code);
   if (!found) return;
   // Drop every alias, not just the one that matched.
-  for (const id of found.ids) suppressedKeys.delete(id);
+  const ids = found.ids;
+  for (let i = 0; i < ids.length; i++) suppressedKeys.delete(ids[i]!);
   found.onRelease?.();
 };
 
@@ -529,7 +630,8 @@ export const suppressKeyUntilRelease = (
 export const releaseKeySuppression = (
   keyOrEvent: KeyboardEvent | KeyNameOrKeyCode,
 ): void => {
-  liftSuppression(keyIdentities(keyOrEvent));
+  if (typeof keyOrEvent !== 'object') liftSuppression(keyOrEvent, undefined);
+  else liftSuppression(keyNameId(keyOrEvent), keyCodeId(keyOrEvent));
 };
 
 // Returns whether the app consumed the event: a handler took it, or the focus
@@ -539,25 +641,27 @@ const handleKeyEvents = (
   keyup?: KeyboardEvent,
 ): boolean => {
   if (keydown) {
-    const ids = keyIdentities(keydown);
+    const name = keyNameId(keydown);
+    const code = keyCodeId(keydown);
     if (keydown.repeat) {
-      if (findSuppression(ids)) return true;
+      if (findSuppression(name, code)) return true;
     } else {
       // A fresh press starts a new gesture, so the previous one is over even
       // though its key-up never arrived. Settle it before handling this press.
-      liftSuppression(ids);
+      liftSuppression(name, code);
     }
 
     return propagateKeyPress(
       keydown,
       keyMapEntries[keydown.key] || keyMapEntries[keydown.keyCode],
+      false,
     );
   }
   if (keyup) {
     // The key is up: whatever was suppressing its repeats is done. Settle it
     // before propagating, so a suppressor that is still in the focus path sees
     // its own release callback rather than a second one via the key-up below.
-    liftSuppression(keyIdentities(keyup));
+    liftSuppression(keyNameId(keyup), keyCodeId(keyup));
 
     return propagateKeyPress(
       keyup,
@@ -601,6 +705,41 @@ export interface KeyEventTarget {
   ): void;
 }
 
+// The element Config.setActiveElement (as useFocusManager sets it) hands to
+// publishActiveElement, so a focus change allocates no closure.
+let _activeToPublish: ElementNode | undefined;
+
+const publishActiveElement = (): void => {
+  setActiveElementSignal(_activeToPublish);
+};
+
+// The event being dispatched, handed to dispatchKeyDown/dispatchKeyUp so a key
+// event allocates no closure. Each reads it on entry, so a handler that raises
+// another key event cannot disturb the one in progress.
+let _dispatchEvent: KeyEventLike | undefined;
+
+// Handlers are typed as KeyboardEvent throughout; on a host that raises its
+// own objects they see those, which carry the fields read here.
+const dispatchKeyDown = (): void => {
+  const event = _dispatchEvent!;
+  if (
+    handleKeyEvents(event as KeyboardEvent, undefined) &&
+    Config.preventDefaultOnHandledKeys
+  ) {
+    event.preventDefault?.();
+  }
+};
+
+const dispatchKeyUp = (): void => {
+  const event = _dispatchEvent!;
+  if (
+    handleKeyEvents(undefined, event as KeyboardEvent) &&
+    Config.preventDefaultOnHandledKeys
+  ) {
+    event.preventDefault?.();
+  }
+};
+
 export const useFocusManager = (
   userKeyMap?: Partial<KeyMap>,
   target?: KeyEventTarget,
@@ -620,36 +759,27 @@ export const useFocusManager = (
   // can run inside it — needed for programmatic .setFocus(), post-mutation
   // focus, and any effect subscribers that rely on onCleanup.
   const owner = getOwner();
-  const ownerContext = (cb: () => void) => {
-    runWithOwner(owner, cb);
-  };
-  _signalWrapper = ownerContext;
   // Drive the active-element signal inside this owner so its effect subscribers
   // have a parent for cleanup. Consumers replacing the focus manager can wire
   // Config.setActiveElement themselves instead of calling useFocusManager.
-  Config.setActiveElement = (elm) =>
-    ownerContext(() => setActiveElementSignal(elm));
+  Config.setActiveElement = (elm) => {
+    _activeToPublish = elm;
+    runWithOwner(owner, publishActiveElement);
+    _activeToPublish = undefined;
+  };
 
-  // Handlers are typed as KeyboardEvent throughout; on a host that raises
-  // its own objects they see those, which carry the fields read here.
-  const keyPressHandler = (event: KeyEventLike) =>
-    ownerContext(() => {
-      if (
-        handleKeyEvents(event as KeyboardEvent, undefined) &&
-        Config.preventDefaultOnHandledKeys
-      ) {
-        event.preventDefault?.();
-      }
-    });
-  const keyUpHandler = (event: KeyEventLike) =>
-    ownerContext(() => {
-      if (
-        handleKeyEvents(undefined, event as KeyboardEvent) &&
-        Config.preventDefaultOnHandledKeys
-      ) {
-        event.preventDefault?.();
-      }
-    });
+  // Key handlers run inside the owner too: runWithOwner batches their signal
+  // writes, so effects run once, after the handler.
+  const keyPressHandler = (event: KeyEventLike) => {
+    _dispatchEvent = event;
+    runWithOwner(owner, dispatchKeyDown);
+    _dispatchEvent = undefined;
+  };
+  const keyUpHandler = (event: KeyEventLike) => {
+    _dispatchEvent = event;
+    runWithOwner(owner, dispatchKeyUp);
+    _dispatchEvent = undefined;
+  };
 
   eventTarget.addEventListener('keydown', keyPressHandler);
   eventTarget.addEventListener('keyup', keyUpHandler);

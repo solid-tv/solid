@@ -10,6 +10,7 @@ import {
   type ElementNode,
   activeElement as coreActiveElement,
   setActiveElement,
+  setActiveElementCore,
 } from '@solidtv/solid';
 import { activeElement, focusPath, Row } from '@solidtv/solid/primitives';
 import { flush, mount, recorder } from './contract-focus-helpers.js';
@@ -246,6 +247,104 @@ v.describe('contract: onFocus / onBlur / onFocusChanged order', () => {
         ['Config.setActiveElement', true],
       ]);
       v.expect(activeElement()).toBe(n.B);
+      dispose();
+    },
+  );
+
+  // Changed in 1.7 (decision 5.1, MIGRATION 2.1): the focus phase runs in one
+  // batch. Before, each signal write in a focus callback flushed on its own,
+  // so this effect ran twice, in between the callbacks.
+  v.it(
+    'signals written in onFocus and onFocusChanged drive one effect run per focus change, after the last callback',
+    async () => {
+      const [a, setA] = createSignal(0);
+      const [b, setB] = createSignal(0);
+      const log: string[] = [];
+      const n = {} as Record<'A' | 'B', ElementNode>;
+      const { dispose } = await mount(() => {
+        createEffect(
+          on([a, b], ([x, y]) => log.push(`effect ${x},${y}`), {
+            defer: true,
+          }),
+        );
+        return (
+          <view id="P">
+            <view
+              id="A"
+              ref={n.A}
+              autofocus
+              onBlur={() => log.push('A.onBlur')}
+            />
+            <view
+              id="B"
+              ref={n.B}
+              onFocus={() => {
+                log.push('B.onFocus');
+                setA(a() + 1);
+              }}
+              onFocusChanged={() => {
+                log.push('B.onFocusChanged');
+                setB(b() + 1);
+              }}
+            />
+          </view>
+        );
+      });
+      log.length = 0;
+      await focus(n.B);
+      v.expect(log).toEqual([
+        'B.onFocus',
+        'B.onFocusChanged',
+        'A.onBlur',
+        'effect 1,1',
+      ]);
+      dispose();
+    },
+  );
+
+  v.it(
+    "setActiveElementCore called from an ancestor's onFocus: the inner change runs whole, then the outer one finishes and wins (current behaviour)",
+    async () => {
+      const { log, n, dispose } = await mountTree();
+      await focus(n.C);
+      log.clear();
+      let nested = false;
+      n.P1.onFocus = function () {
+        log.calls.push({
+          node: 'P1',
+          owner: 'P1',
+          handler: 'onFocus',
+          self: this,
+          args: [],
+        });
+        if (!nested) {
+          nested = true;
+          setActiveElementCore(n.A);
+        }
+      };
+      await focus(n.B);
+      v.expect(log.order()).toEqual([
+        'B.onFocus',
+        'B.onFocusChanged(true)',
+        'P1.onFocus',
+        'A.onFocus',
+        'A.onFocusChanged(true)',
+        'C.onBlur',
+        'C.onFocusChanged(false)',
+        'P2.onBlur',
+        'P2.onFocusChanged(false)',
+        'P1.onFocusChanged(true)',
+        'A.onBlur',
+        'A.onFocusChanged(false)',
+      ]);
+      v.expect(activeElement()).toBe(n.B);
+      v.expect(focusPath()).toEqual([n.B, n.P1, n.G, renderer.rootNode]);
+      for (const id of ['B', 'P1', 'G'] as const) {
+        v.expect(hasFocusState(n[id]), id).toBe(true);
+      }
+      for (const id of ['A', 'C', 'P2'] as const) {
+        v.expect(hasFocusState(n[id]), id).toBe(false);
+      }
       dispose();
     },
   );

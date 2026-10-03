@@ -6,7 +6,15 @@ export type NodeStates =
   | Record<DollarString, boolean | undefined>;
 
 export default class States extends Array<DollarString> {
-  private onChange: () => void;
+  // Assigned in the constructor, not a class field (no field emit).
+  declare private onChange: () => void;
+
+  // Array methods (slice, splice, filter, …) build a plain Array, not a
+  // States: building a States ran this constructor with a length as its
+  // callback, once per remove().
+  static override get [Symbol.species]() {
+    return Array;
+  }
 
   constructor(callback: () => void, initialState: NodeStates = {}) {
     if (isArray(initialState)) {
@@ -14,11 +22,10 @@ export default class States extends Array<DollarString> {
     } else if (isString(initialState)) {
       super(initialState); // Assert as DollarString
     } else {
-      super(
-        ...Object.entries(initialState)
-          .filter(([_key, value]) => value)
-          .map(([key]) => key as DollarString), // Assert as DollarString
-      );
+      super();
+      for (const key in initialState) {
+        if (initialState[key as DollarString]) this.push(key as DollarString);
+      }
     }
 
     this.onChange = callback;
@@ -82,7 +89,7 @@ export default class States extends Array<DollarString> {
         } else {
           const stateIndexToRemove = this.indexOf(state as DollarString);
           if (stateIndexToRemove >= 0) {
-            this.splice(stateIndexToRemove, 1);
+            this.removeAt(stateIndexToRemove);
           }
         }
       }
@@ -91,10 +98,23 @@ export default class States extends Array<DollarString> {
   }
 
   remove(state: DollarString) {
-    const stateIndexToRemove = this.indexOf(state);
+    let stateIndexToRemove = this.indexOf(state);
+    // remove('focus') removes '$focus', as has('focus') matches it (B2).
+    if (stateIndexToRemove < 0 && state.charCodeAt(0) !== 36) {
+      stateIndexToRemove = this.indexOf(('$' + state) as DollarString);
+    }
     if (stateIndexToRemove >= 0) {
-      this.splice(stateIndexToRemove, 1);
+      this.removeAt(stateIndexToRemove);
       this.onChange();
     }
+  }
+
+  // Shift in place: splice would allocate the array of removed entries.
+  private removeAt(index: number) {
+    const last = this.length - 1;
+    for (let i = index; i < last; i++) {
+      this[i] = this[i + 1]!;
+    }
+    this.length = last;
   }
 }
