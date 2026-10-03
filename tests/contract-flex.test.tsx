@@ -779,6 +779,23 @@ const cases: FlexCase[] = [
     // y 0, 0 and 60.
   },
   {
+    name: 'flexWrap + alignItems center: each line offsets the centre in the full container height',
+    container: {
+      width: 250,
+      height: 110,
+      gap: 10,
+      flexWrap: 'wrap',
+      alignItems: 'center',
+    },
+    kids: [view(100, 100), view(100, 100), view(100, 100)],
+    // Line start + (110 - 100) / 2; the height then fits the two lines.
+    expected: res(true, { w: 250, h: 210 }, [
+      { x: 0, y: 5, w: 100, h: 100 },
+      { x: 110, y: 5, w: 100, h: 100 },
+      { x: 0, y: 115, w: 100, h: 100 },
+    ]),
+  },
+  {
     name: 'flexWrap with no container height: wrapped items move to the next line',
     container: { width: 250, gap: 10, flexWrap: 'wrap' },
     kids: [view(100, 50), view(100, 50), view(100, 50)],

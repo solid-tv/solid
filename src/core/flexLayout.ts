@@ -456,9 +456,12 @@ export default function (node: ElementNode): boolean {
         lineStart[k] = line;
       }
 
-      // B9: items are placed on their line even when the container has no
-      // cross size. B7: center and flexEnd align inside the line. B10:
-      // wrap-reverse mirrors the lines, so the first one is at the end.
+      // Each item is aligned from its line's start; center and flexEnd
+      // measure against the container's cross size (B7: less its padding),
+      // as before 1.7. B9: a container with no cross size places its items
+      // too, against the line. B10: wrap-reverse mirrors the lines, so the
+      // first one is at the end.
+      const alignSize = crossAlign ? crossBox : lineSize;
       for (let p = 0; p < n; p++) {
         const k = order[p]!;
         alignCross(
@@ -469,7 +472,7 @@ export default function (node: ElementNode): boolean {
           isWrapReverse
             ? line + paddingCrossStart - lineStart[k]!
             : lineStart[k]!,
-          lineSize,
+          alignSize,
         );
       }
 
