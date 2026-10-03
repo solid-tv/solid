@@ -132,24 +132,10 @@ describe('contract: text props reach the renderer node (el.lng)', () => {
     dispose();
   });
 
-  it('contain "width" without a width: maxWidth = parent width - x (marginRight is ignored today)', () => {
-    let t!: lng.ElementNode;
-    const dispose = renderer.render(() => (
-      <view width={800} height={600}>
-        <text ref={t} contain="width" x={100} marginRight={40}>
-          B
-        </text>
-      </view>
-    ));
-    expect(raw(t).maxWidth).toBe(700);
-    expect(raw(t).maxLines).toBe(99);
-    dispose();
-  });
-
-  // BUG: src/core/elementNode.ts:1612 (and :1617 for marginBottom) reads
-  // marginRight from the renderer props bag, where it is never stored (margins
-  // live on the ElementNode), so the subtraction is always 0.
-  it.skip('BUG: contain "width" without a width subtracts marginRight from maxWidth', () => {
+  // B11: before the fix marginRight was read from the renderer props bag,
+  // where it is never stored (margins live on the ElementNode), so the
+  // subtraction was always 0 (maxWidth 700).
+  it('contain "width" without a width: maxWidth = parent width - x - marginRight', () => {
     let t!: lng.ElementNode;
     const dispose = renderer.render(() => (
       <view width={800} height={600}>
@@ -159,6 +145,29 @@ describe('contract: text props reach the renderer node (el.lng)', () => {
       </view>
     ));
     expect(raw(t).maxWidth).toBe(660);
+    expect(raw(t).maxLines).toBe(99);
+    dispose();
+  });
+
+  // B11: as above for marginBottom (maxHeight was 550).
+  it('contain "both" without a size: maxHeight = parent height - y - marginBottom', () => {
+    let t!: lng.ElementNode;
+    const dispose = renderer.render(() => (
+      <view width={800} height={600}>
+        <text
+          ref={t}
+          contain="both"
+          x={100}
+          y={50}
+          marginRight={40}
+          marginBottom={30}
+        >
+          B
+        </text>
+      </view>
+    ));
+    expect(raw(t).maxWidth).toBe(660);
+    expect(raw(t).maxHeight).toBe(520);
     dispose();
   });
 
@@ -224,6 +233,30 @@ describe('contract: text props reach the renderer node (el.lng)', () => {
     expect(raw(withLineHeight).maxHeight).toBe(40);
     expect(withLineHeight.height).toBe(40);
     expect(raw(withFontSize).maxHeight).toBe(30);
+    dispose();
+  });
+
+  // B12: a lineHeight at or below 3 is a multiplier of the font size (as the
+  // renderer reads it). Before the fix maxHeight was the bare multiplier
+  // (1.2 px), so the text was 1.2 px high in flex.
+  it('maxLines={1} with contain and a multiplier lineHeight: maxHeight = lineHeight * fontSize', () => {
+    let t!: lng.ElementNode;
+    const dispose = renderer.render(() => (
+      <view width={800} height={600}>
+        <text
+          ref={t}
+          contain="width"
+          width={300}
+          maxLines={1}
+          lineHeight={1.2}
+          fontSize={30}
+        >
+          E
+        </text>
+      </view>
+    ));
+    expect(raw(t).maxHeight).toBe(36);
+    expect(t.height).toBe(36);
     dispose();
   });
 
