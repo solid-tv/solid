@@ -953,12 +953,7 @@ export class ElementNode {
     }
 
     this._fontWeight = v;
-    const weight =
-      (Config.fontWeightAlias &&
-        (Config.fontWeightAlias[v as string] as number | string)) ??
-      v;
-    (this.lng as ElementNode).fontFamily =
-      `${this.fontFamily || Config.fontSettings?.fontFamily}${weight}`;
+    this._writeFontFamily();
   }
 
   get fontWeight() {
@@ -967,11 +962,30 @@ export class ElementNode {
 
   set fontFamily(v) {
     this._fontFamily = v;
-    (this.lng as ElementNode).fontFamily = v;
+    this._writeFontFamily();
   }
 
   get fontFamily() {
     return this._fontFamily;
+  }
+
+  /**
+   * The renderer's family name from `fontFamily` and `fontWeight`, resolved
+   * in one place so either JSX order gives the same name (B17).
+   */
+  _writeFontFamily() {
+    const weight = this._fontWeight as number | string | undefined;
+    if (weight === undefined) {
+      (this.lng as ElementNode).fontFamily = this._fontFamily;
+      return;
+    }
+    const alias = Config.fontWeightAlias;
+    const aliased =
+      alias !== undefined && alias !== null
+        ? (alias[weight] as number | string | undefined)
+        : undefined;
+    (this.lng as ElementNode).fontFamily =
+      `${this._fontFamily || Config.fontSettings?.fontFamily}${aliased ?? weight}`;
   }
 
   insertChild(
