@@ -59,5 +59,14 @@ export default tseslint.config(
       ],
     },
   },
+  {
+    // The benchmark harness's Node scripts.
+    files: ['bench/**/*.mjs'],
+    languageOptions: {
+      globals: {
+        ...globals.node,
+      },
+    },
+  },
   prettierConfig,
 );
