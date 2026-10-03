@@ -383,28 +383,40 @@ describe('contract: font defaults from Config.fontSettings', () => {
     dispose();
   });
 
-  it('fontWeight before fontFamily: the weight is lost (prop order matters today)', () => {
-    let t!: lng.ElementNode;
+  // B17 (fixed in 1.7): the fontFamily setter used to overwrite the
+  // family+weight name that `set fontWeight` wrote, so fontWeight before
+  // fontFamily lost the weight ('Roboto'). Pinned before the fix as
+  // 'fontWeight before fontFamily: the weight is lost'.
+  it('fontWeight and fontFamily give the same family in either order (B17)', () => {
+    let weightFirst!: lng.ElementNode;
+    let familyFirst!: lng.ElementNode;
     const dispose = renderer.render(() => (
-      <text ref={t} fontWeight="bold" fontFamily="Roboto">
-        a
-      </text>
+      <view>
+        <text ref={weightFirst} fontWeight="bold" fontFamily="Roboto">
+          a
+        </text>
+        <text ref={familyFirst} fontFamily="Roboto" fontWeight="bold">
+          b
+        </text>
+      </view>
     ));
-    expect(raw(t).fontFamily).toBe('Roboto');
+    expect(raw(weightFirst).fontFamily).toBe('Roboto700');
+    expect(raw(familyFirst).fontFamily).toBe('Roboto700');
     dispose();
   });
 
-  // BUG: the fontFamily setter (src/core/elementNode.ts, `set fontFamily`)
-  // overwrites the family+weight name that `set fontWeight` wrote, so the
-  // result depends on JSX attribute order.
-  it.skip('BUG: fontWeight and fontFamily give the same family in either order', () => {
+  it('a fontFamily change after render keeps the weight (B17)', () => {
+    const [family, setFamily] = s.createSignal('Roboto');
     let t!: lng.ElementNode;
     const dispose = renderer.render(() => (
-      <text ref={t} fontWeight="bold" fontFamily="Roboto">
+      <text ref={t} fontWeight="bold" fontFamily={family()}>
         a
       </text>
     ));
     expect(raw(t).fontFamily).toBe('Roboto700');
+    setFamily('Ubuntu');
+    expect(raw(t).fontFamily).toBe('Ubuntu700');
+    expect(t.fontFamily).toBe('Ubuntu');
     dispose();
   });
 
