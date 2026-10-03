@@ -290,6 +290,40 @@ v.describe('Grid', () => {
     },
   );
 
+  v.it(
+    'a vertical move re-runs only the props that depend on it: an unrelated prop getter is not read again (1.7)',
+    async () => {
+      let grid!: lng.ElementNode;
+      let reads = 0;
+      const probe = () => {
+        reads++;
+        return 1;
+      };
+      dispose = await mount(() => (
+        <view width={1920} height={1080}>
+          <Grid
+            ref={grid}
+            autofocus
+            y={20}
+            items={tenItems}
+            columns={3}
+            itemWidth={100}
+            itemHeight={50}
+            itemOffset={10}
+            probe={probe()}
+          >
+            {Cell}
+          </Grid>
+        </view>
+      ));
+      const before = reads;
+      await press('ArrowDown', 'ArrowDown', 'ArrowUp');
+      v.expect([focusedId(), grid.y]).toEqual(['g3', -40]);
+      // It was read again on every vertical move: `y` was in the spread.
+      v.expect(reads).toBe(before);
+    },
+  );
+
   v.it('scroll="none": y does not follow the focused row', async () => {
     let grid!: lng.ElementNode;
     dispose = await mount(() => (

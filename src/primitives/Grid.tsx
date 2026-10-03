@@ -1,4 +1,4 @@
-import { createSignal, createMemo, createEffect, JSX, untrack, Index } from "solid-js";
+import { createSignal, createMemo, createEffect, createRenderEffect, JSX, untrack, Index } from "solid-js";
 import { type NodeProps, ElementNode, NewOmit, hasFocus } from "@solidtv/solid";
 import { chainRefs } from "./utils/chainFunctions.js";
 
@@ -137,7 +137,7 @@ export function Grid<T>(props: GridProps<T>): JSX.Element {
   const onFocus = chainProp("onFocus", () => handleHorizontalFocus(0));
 
   let gridRef!: ElementNode;
-  return (
+  const view = (
     <view
       {...props}
       ref={chainRefs(el => gridRef = el, props.ref)}
@@ -149,7 +149,7 @@ export function Grid<T>(props: GridProps<T>): JSX.Element {
       onLeft={/* @once */ onLeft}
       onRight={/* @once */ onRight}
       onFocus={/* @once */ onFocus}
-      y={scrollY()}
+      y={/* @once */ untrack(scrollY)}
     >
       <Index each={props.items}>
         {(item, index) => (
@@ -165,4 +165,12 @@ export function Grid<T>(props: GridProps<T>): JSX.Element {
       </Index>
     </view>
   );
+
+  // `y` has an effect of its own: in the spread above, every vertical move
+  // (a focusedIndex change) re-ran every prop of the spread.
+  createRenderEffect(() => {
+    gridRef.y = scrollY();
+  });
+
+  return view;
 };
