@@ -1,11 +1,14 @@
 // Benchmark entry: ?scenario=<id> mounts one scenario. The runner drives it
-// through window.__bench.
+// through window.__bench (bench/run.mjs, bench/harness/probe.mjs).
 import { Config, createRenderer, loadFonts } from '@solidtv/solid';
 import { useFocusManager } from '@solidtv/solid/primitives';
 import { registerShaders, rendererOptions } from 'bench-arm-init';
 import { scenarios } from './scenarios/index.js';
 
 declare const __BENCH_ARM__: string;
+declare const __BENCH_RENDERER_MAJOR__: number;
+declare const __BENCH_INSTRUMENT__: boolean;
+declare const __BENCH_FLEX__: string;
 
 const params = new URLSearchParams(location.search);
 const id = params.get('scenario') ?? 'smoke';
@@ -57,7 +60,18 @@ render(() => {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 (window as any).__bench = {
   arm: __BENCH_ARM__,
+  rendererMajor: __BENCH_RENDERER_MAJOR__,
+  /** The count-mode build (BENCH_INSTRUMENT=1). */
+  instrumented: __BENCH_INSTRUMENT__,
+  /** 'new' (src/core/flexLayout.ts, as the demo app) or 'old' (flex.ts). */
+  flex: __BENCH_FLEX__,
   scenario,
+  /** Every scenario in this build, for the runner's default list. */
+  scenarios: scenarios.map((s) => ({
+    id: s.id,
+    title: s.title,
+    text: s.text === true,
+  })),
   renderer,
   fontsLoaded,
   Config,

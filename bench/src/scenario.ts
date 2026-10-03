@@ -36,4 +36,18 @@ export interface Scenario {
   warmup?: number;
   /** Operations measured. Default 60. */
   measured?: number;
+  /**
+   * A JSON-serializable snapshot of the scene's state (focus path, list
+   * offsets, mounted counts). The runner records it after mount, after the
+   * warmup and after the measured operations, and flags a run whose two
+   * last snapshots differ (when `warmup` and `measured` are whole cycles,
+   * they must match) and a scenario whose final state differs between arms.
+   */
+  probe?: () => unknown;
+  /**
+   * The kind of operation `i` (for example `'create'` or `'destroy'` in a
+   * workload that alternates them). The summary reports each kind on its
+   * own row as well as all of them together.
+   */
+  opKind?: (i: number) => string;
 }
