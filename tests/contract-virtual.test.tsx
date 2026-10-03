@@ -278,17 +278,20 @@ v.describe('VirtualRow: window and scroll modes', () => {
     );
   }
 
-  // Today scroll="none" (and "center", which VirtualRow does not implement
-  // and treats like "none") never moves the window: only items 0-5 are ever
-  // mounted, Right stops at v5 and the press bubbles; cursor never passes 5.
-  // Row and Column with scroll="none" keep every child reachable.
-  v.it.skip(
-    'BUG: scroll="none"/"center" on VirtualRow cannot reach items past displaySize + bufferSize (Virtual.tsx:329-334)',
+  // B13 (fixed in 1.7): scroll="none" (and "center", which VirtualRow does
+  // not implement and treats like "none") never moved the window: only items
+  // 0-5 were ever mounted, Right stopped at v5 and the press bubbled. Now the
+  // window follows the cursor, keeping one item mounted on each side of it;
+  // the row itself still never scrolls (x stays 50), like a Row with
+  // scroll="none".
+  v.it(
+    'B13: scroll="none"/"center" on VirtualRow: the window follows the cursor, so every item is reachable; x never changes',
     async () => {
       for (const mode of ['none', 'center'] as const) {
         let row!: lng.ElementNode;
+        const parentRight = v.vi.fn(() => true);
         dispose = await mount(() => (
-          <view width={1920} height={1080}>
+          <view width={1920} height={1080} onRight={parentRight}>
             <VirtualRow
               ref={row}
               autofocus
@@ -301,8 +304,129 @@ v.describe('VirtualRow: window and scroll modes', () => {
             </VirtualRow>
           </view>
         ));
-        await press(...Array.from({ length: 11 }, () => 'ArrowRight'));
-        v.expect([focusedId(), row.cursor]).toEqual(['v11', 11]);
+        const seen: Step[] = [rowStep(row)];
+        for (let i = 0; i < 13; i++) {
+          await press('ArrowRight');
+          seen.push(rowStep(row));
+        }
+        for (let i = 0; i < 7; i++) {
+          await press('ArrowLeft');
+          seen.push(rowStep(row));
+        }
+        v.expect(seen).toEqual([
+          ['v0', 0, 0, 50, '0,1,2,3,4,5'],
+          ['v1', 1, 1, 50, '0,1,2,3,4,5'],
+          ['v2', 2, 2, 50, '0,1,2,3,4,5'],
+          ['v3', 3, 3, 50, '0,1,2,3,4,5'],
+          ['v4', 4, 4, 50, '0,1,2,3,4,5'],
+          // The next item must stay mounted: the window moves.
+          ['v5', 4, 5, 50, '1,2,3,4,5,6'],
+          ['v6', 4, 6, 50, '2,3,4,5,6,7'],
+          ['v7', 4, 7, 50, '3,4,5,6,7,8'],
+          ['v8', 4, 8, 50, '4,5,6,7,8,9'],
+          ['v9', 4, 9, 50, '5,6,7,8,9,10'],
+          ['v10', 4, 10, 50, '6,7,8,9,10,11'],
+          ['v11', 5, 11, 50, '6,7,8,9,10,11'],
+          // At the end the press bubbles.
+          ['v11', 5, 11, 50, '6,7,8,9,10,11'],
+          ['v11', 5, 11, 50, '6,7,8,9,10,11'],
+          ['v10', 4, 10, 50, '6,7,8,9,10,11'],
+          ['v9', 3, 9, 50, '6,7,8,9,10,11'],
+          ['v8', 2, 8, 50, '6,7,8,9,10,11'],
+          ['v7', 1, 7, 50, '6,7,8,9,10,11'],
+          ['v6', 1, 6, 50, '5,6,7,8,9,10'],
+          ['v5', 1, 5, 50, '4,5,6,7,8,9'],
+          ['v4', 1, 4, 50, '3,4,5,6,7,8'],
+        ]);
+        v.expect(parentRight).toHaveBeenCalledTimes(2);
+        dispose();
+        dispose = undefined;
+      }
+    },
+  );
+
+  // B14 (fixed in 1.7): with factorScale, the window shift is the item size
+  // times its focus scale, plus the gap. The scale was read from
+  // `style.focus`, which is never set, so it was seen only when the size was
+  // first measured after the child had focus (its `scale` was then 1.2):
+  // the plain case below. With wrap or an initial `selected`, the size was
+  // measured before focus and cached unscaled (230): x was -180 at mount and
+  // the shift 230. It is now read from `$focus`, so every case shifts by
+  // 200 * 1.2 + 30 = 270.
+  //
+  // Flex lays the children out unscaled (a 230 slot), so a 270 shift moves
+  // the focused item 40 further per shift: the drift is visible below. It
+  // comes with factorScale, before and after B14.
+  v.it(
+    'B14: factorScale with a $focus scale: the window shift is the scaled item size + gap',
+    async () => {
+      const cases = {
+        // Unchanged by B14.
+        plain: [
+          ['v0', 0, 0, 50, '0,1,2,3,4,5'],
+          ['v1', 1, 1, -220, '0,1,2,3,4,5'],
+          ['v2', 1, 2, -260, '1,2,3,4,5,6'],
+          ['v3', 1, 3, -300, '2,3,4,5,6,7'],
+          ['v2', 1, 2, -260, '1,2,3,4,5,6'],
+          ['v1', 1, 1, -220, '0,1,2,3,4,5'],
+        ],
+        // B14: was -180 after every press.
+        wrap: [
+          ['v0', 1, 0, -220, '11,0,1,2,3,4'],
+          ['v1', 1, 1, -260, '0,1,2,3,4,5'],
+          ['v2', 1, 2, -260, '1,2,3,4,5,6'],
+          ['v3', 1, 3, -260, '2,3,4,5,6,7'],
+          ['v2', 1, 2, -180, '1,2,3,4,5,6'],
+          ['v1', 1, 1, -180, '0,1,2,3,4,5'],
+        ],
+        // B14: was -180, then 50 after every press.
+        selected: [
+          ['v5', 1, 5, -220, '4,5,6,7,8,9'],
+          ['v6', 1, 6, 10, '5,6,7,8,9,10'],
+          ['v7', 1, 7, 10, '6,7,8,9,10,11'],
+          ['v8', 1, 8, 10, '7,8,9,10,11'],
+          ['v7', 1, 7, 90, '6,7,8,9,10,11'],
+          ['v6', 1, 6, 90, '5,6,7,8,9,10'],
+        ],
+      };
+      for (const [variant, expected] of Object.entries(cases)) {
+        let row!: lng.ElementNode;
+        dispose = await mount(() => (
+          <view width={1920} height={1080}>
+            <VirtualRow
+              ref={row}
+              autofocus
+              x={50}
+              each={twelve}
+              displaySize={4}
+              factorScale
+              wrap={variant === 'wrap'}
+              selected={variant === 'selected' ? 5 : undefined}
+            >
+              {(item) => (
+                <view
+                  id={`v${item()}`}
+                  item={item()}
+                  width={200}
+                  height={100}
+                  style={{ $focus: { scale: 1.2 } }}
+                />
+              )}
+            </VirtualRow>
+          </view>
+        ));
+        const seen: Step[] = [rowStep(row)];
+        for (const key of [
+          'ArrowRight',
+          'ArrowRight',
+          'ArrowRight',
+          'ArrowLeft',
+          'ArrowLeft',
+        ]) {
+          await press(key);
+          seen.push(rowStep(row));
+        }
+        v.expect([variant, seen]).toEqual([variant, expected]);
         dispose();
         dispose = undefined;
       }
@@ -614,3 +738,4 @@ v.describe('VirtualColumn', () => {
     },
   );
 });
+

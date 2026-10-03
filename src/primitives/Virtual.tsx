@@ -101,7 +101,12 @@ function createVirtual<T>(
 
       if (prevSelectedChild instanceof lng.ElementNode) {
         const itemSize = prevSelectedChild[dimension] || 0;
-        const focusStyle = prevSelectedChild.style?.focus as lng.NodeStyles;
+        // B14: the focus state's styles are on the node under `$focus`;
+        // `style.focus` was never set, so the scale was missed whenever the
+        // size was measured before the child had focus.
+        const focusStyle = prevSelectedChild.$focus as
+          | lng.NodeStyles
+          | undefined;
         const scale = focusStyle?.scale ?? prevSelectedChild.scale ?? 1;
         const scaledSize = itemSize * (props.factorScale ? scale : 1) + gap;
         cachedScaledSize = scaledSize;
@@ -328,8 +333,18 @@ function createVirtual<T>(
       }
       case 'none':
       default:
-        start = 0;
-        selected = c;
+        // B13: the window follows the cursor, keeping an item mounted on
+        // each side of it so the next press finds a child. The row itself
+        // does not scroll. VirtualRow does not implement "center": it
+        // behaves as "none".
+        start = prev.start;
+        if (c + 1 >= start + length) {
+          start = c + 2 - length;
+        } else if (c - 1 < start) {
+          start = c - 1;
+        }
+        start = utils.clamp(start, 0, Math.max(0, total - length));
+        selected = c - start;
         shiftBy = 0;
         break;
     }
