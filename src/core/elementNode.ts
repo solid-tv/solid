@@ -222,76 +222,6 @@ function getPropertyAlias(name: string) {
   return name;
 }
 
-// Forwarded to the renderer node (lng[key] = v). Only the renderer's props:
-// on a @solidtv/renderer 2.0 node any other name becomes a field of its
-// own. fontStretch, the DOM renderer's alone, has an accessor below.
-const LightningRendererNumberProps = [
-  'alpha',
-  'color',
-  'colorTop',
-  'colorRight',
-  'colorLeft',
-  'colorBottom',
-  'colorTl',
-  'colorTr',
-  'colorBl',
-  'colorBr',
-  'h',
-  'mount',
-  'mountX',
-  'mountY',
-  'pivot',
-  'pivotX',
-  'pivotY',
-  'rotation',
-  'scale',
-  'scaleX',
-  'scaleY',
-  'w',
-  'x',
-  'y',
-  'zIndex',
-];
-
-const LightningRendererNonAnimatingProps = [
-  'autosize',
-  'clipping',
-  'componentName',
-  'componentLocation',
-  'data',
-  'ignoreParentAlpha',
-  'imageType',
-  'placeholderColor',
-  'srcHeight',
-  'srcWidth',
-  'srcX',
-  'srcY',
-  'texture',
-  'textureOptions',
-];
-
-// Text only: forwarded on a `<text>`, kept on the ElementNode elsewhere.
-const TextNumberProps = ['fontSize', 'lineHeight'];
-
-const TextNonAnimatingProps = [
-  'contain',
-  'forceLoad',
-  'fontStyle',
-  'letterSpacing',
-  'maxHeight',
-  'maxLines',
-  'maxWidth',
-  'offsetY',
-  'overflowSuffix',
-  'text',
-  'textAlign',
-  'verticalAlign',
-  'wordBreak',
-];
-
-// Read-only on the renderer node: a write would throw there (B20).
-const ReadOnlyProps = ['absX', 'absY', 'destroyed'];
-
 declare global {
   interface HTMLElement {
     /** Assigned for development, to quickly get ElementNode from selected HTMLElement */
@@ -1016,45 +946,47 @@ export class ElementNode {
       : shaderProps;
   }
 
-  _sendToLightningAnimatable(name: string, value: number) {
-    if (
-      this.rendered &&
-      this.transition &&
-      Config.animationsEnabled &&
-      (this.transition === true ||
-        this.transition[name] ||
-        this.transition[getPropertyAlias(name)])
-    ) {
-      const animationSettings =
-        this.transition === true || this.transition[name] === true
-          ? undefined
-          : this.transition[name] ||
-            (this.transition[getPropertyAlias(name)] as
-              | undefined
-              | AnimationSettings);
-
-      // If the renderer doesn't support animateProp,
-      // keep backwards compatible with LightningRenderer
-      if (!('animateProp' in this.lng)) {
-        const animationController = this.animate(
-          { [name]: value },
-          animationSettings,
-        );
-        this._fireAnimationEvents(name, value, animationSettings);
-        return animationController.start();
+  /**
+   * The transition path of an animatable prop's setter, which calls it only
+   * when the node has a `transition`. Returns true when the write became an
+   * animation; false when the setter stores the value itself (the common
+   * case is a direct store in the setter, under its own name).
+   */
+  _sendToLightningAnimatable(name: string, value: number): boolean {
+    const transition = this.transition;
+    if (!this.rendered || !transition || !Config.animationsEnabled) {
+      return false;
+    }
+    let animationSettings: AnimationSettings | undefined;
+    if (transition !== true) {
+      const own = transition[name];
+      const setting = own || transition[getPropertyAlias(name)];
+      if (!setting) {
+        return false;
       }
-
-      const result = (this.lng as INode).animateProp(
-        name,
-        value,
-        animationSettings || this.animationSettings || {},
-      );
-      this._fireAnimationEvents(name, value, animationSettings);
-      return result;
+      animationSettings =
+        own === true ? undefined : (setting as AnimationSettings | undefined);
     }
 
-    (this.lng[name as keyof (IRendererNode | INode)] as number | string) =
-      value;
+    // If the renderer doesn't support animateProp,
+    // keep backwards compatible with LightningRenderer
+    if (!('animateProp' in this.lng)) {
+      const animationController = this.animate(
+        { [name]: value },
+        animationSettings,
+      );
+      this._fireAnimationEvents(name, value, animationSettings);
+      animationController.start();
+      return true;
+    }
+
+    (this.lng as INode).animateProp(
+      name,
+      value,
+      animationSettings || this.animationSettings || {},
+    );
+    this._fireAnimationEvents(name, value, animationSettings);
+    return true;
   }
 
   _fireAnimationEvents(
@@ -1795,6 +1727,22 @@ export class ElementNode {
   }
 }
 
+// Props forwarded to the renderer node, one accessor per prop (design
+// 3.6.6): every getter and setter below loads or stores one constant name,
+// so each has its own inline cache. A shared `this.lng[key]` body made from
+// a loop sees every name at one site: a megamorphic keyed access, and into
+// renderer v2's prototype accessors a call V8 does not inline (the double
+// it returns is boxed). Written out rather than made with `new Function`,
+// which a TV app's CSP may forbid.
+//
+// `lng` is the props bag before render and the renderer node after it. An
+// animatable setter stores directly unless the node has a `transition`,
+// then `_sendToLightningAnimatable` may animate instead.
+type Forwarding = Pick<
+  ElementNode,
+  'transition' | '_sendToLightningAnimatable'
+> & { lng: Record<string, unknown> };
+
 const NO_TEXT_PROPS: Readonly<Record<string, unknown>> = Object.freeze({});
 
 /**
@@ -1824,62 +1772,603 @@ function textPropsOf(node: ElementNode): Readonly<Record<string, unknown>> {
   return own === undefined ? NO_TEXT_PROPS : own;
 }
 
-for (const key of LightningRendererNumberProps) {
-  Object.defineProperty(ElementNode.prototype, key, {
-    get(): number {
-      return this.lng[key];
-    },
-    set(this: ElementNode, v: number) {
-      this._sendToLightningAnimatable(key, v);
-    },
-  });
-}
+/** The setter of a read-only forwarded prop: the write is ignored. */
+function ignoreWrite(_v: unknown) {}
 
-for (const key of LightningRendererNonAnimatingProps) {
-  Object.defineProperty(ElementNode.prototype, key, {
-    get(): unknown {
-      return this.lng[key];
+Object.defineProperties(ElementNode.prototype, {
+  // Animatable
+  alpha: {
+    get(this: Forwarding) {
+      return this.lng.alpha;
     },
-    set(v: unknown) {
-      this.lng[key] = v;
-    },
-  });
-}
-
-for (const key of TextNumberProps) {
-  Object.defineProperty(ElementNode.prototype, key, {
-    get(this: ElementNode): unknown {
-      return textPropsOf(this)[key];
-    },
-    set(this: ElementNode, v: number) {
-      if (this._type === NodeType.TextNode) {
-        this._sendToLightningAnimatable(key, v);
-      } else {
-        textPropsFor(this)[key] = v;
+    set(this: Forwarding, v: number) {
+      if (
+        this.transition === undefined ||
+        !this._sendToLightningAnimatable('alpha', v)
+      ) {
+        this.lng.alpha = v;
       }
     },
-  });
-}
-
-for (const key of TextNonAnimatingProps) {
-  Object.defineProperty(ElementNode.prototype, key, {
-    get(this: ElementNode): unknown {
-      return textPropsOf(this)[key];
+  },
+  color: {
+    get(this: Forwarding) {
+      return this.lng.color;
+    },
+    set(this: Forwarding, v: number) {
+      if (
+        this.transition === undefined ||
+        !this._sendToLightningAnimatable('color', v)
+      ) {
+        this.lng.color = v;
+      }
+    },
+  },
+  colorTop: {
+    get(this: Forwarding) {
+      return this.lng.colorTop;
+    },
+    set(this: Forwarding, v: number) {
+      if (
+        this.transition === undefined ||
+        !this._sendToLightningAnimatable('colorTop', v)
+      ) {
+        this.lng.colorTop = v;
+      }
+    },
+  },
+  colorRight: {
+    get(this: Forwarding) {
+      return this.lng.colorRight;
+    },
+    set(this: Forwarding, v: number) {
+      if (
+        this.transition === undefined ||
+        !this._sendToLightningAnimatable('colorRight', v)
+      ) {
+        this.lng.colorRight = v;
+      }
+    },
+  },
+  colorLeft: {
+    get(this: Forwarding) {
+      return this.lng.colorLeft;
+    },
+    set(this: Forwarding, v: number) {
+      if (
+        this.transition === undefined ||
+        !this._sendToLightningAnimatable('colorLeft', v)
+      ) {
+        this.lng.colorLeft = v;
+      }
+    },
+  },
+  colorBottom: {
+    get(this: Forwarding) {
+      return this.lng.colorBottom;
+    },
+    set(this: Forwarding, v: number) {
+      if (
+        this.transition === undefined ||
+        !this._sendToLightningAnimatable('colorBottom', v)
+      ) {
+        this.lng.colorBottom = v;
+      }
+    },
+  },
+  colorTl: {
+    get(this: Forwarding) {
+      return this.lng.colorTl;
+    },
+    set(this: Forwarding, v: number) {
+      if (
+        this.transition === undefined ||
+        !this._sendToLightningAnimatable('colorTl', v)
+      ) {
+        this.lng.colorTl = v;
+      }
+    },
+  },
+  colorTr: {
+    get(this: Forwarding) {
+      return this.lng.colorTr;
+    },
+    set(this: Forwarding, v: number) {
+      if (
+        this.transition === undefined ||
+        !this._sendToLightningAnimatable('colorTr', v)
+      ) {
+        this.lng.colorTr = v;
+      }
+    },
+  },
+  colorBl: {
+    get(this: Forwarding) {
+      return this.lng.colorBl;
+    },
+    set(this: Forwarding, v: number) {
+      if (
+        this.transition === undefined ||
+        !this._sendToLightningAnimatable('colorBl', v)
+      ) {
+        this.lng.colorBl = v;
+      }
+    },
+  },
+  colorBr: {
+    get(this: Forwarding) {
+      return this.lng.colorBr;
+    },
+    set(this: Forwarding, v: number) {
+      if (
+        this.transition === undefined ||
+        !this._sendToLightningAnimatable('colorBr', v)
+      ) {
+        this.lng.colorBr = v;
+      }
+    },
+  },
+  h: {
+    get(this: Forwarding) {
+      return this.lng.h;
+    },
+    set(this: Forwarding, v: number) {
+      if (
+        this.transition === undefined ||
+        !this._sendToLightningAnimatable('h', v)
+      ) {
+        this.lng.h = v;
+      }
+    },
+  },
+  mount: {
+    get(this: Forwarding) {
+      return this.lng.mount;
+    },
+    set(this: Forwarding, v: number) {
+      if (
+        this.transition === undefined ||
+        !this._sendToLightningAnimatable('mount', v)
+      ) {
+        this.lng.mount = v;
+      }
+    },
+  },
+  mountX: {
+    get(this: Forwarding) {
+      return this.lng.mountX;
+    },
+    set(this: Forwarding, v: number) {
+      if (
+        this.transition === undefined ||
+        !this._sendToLightningAnimatable('mountX', v)
+      ) {
+        this.lng.mountX = v;
+      }
+    },
+  },
+  mountY: {
+    get(this: Forwarding) {
+      return this.lng.mountY;
+    },
+    set(this: Forwarding, v: number) {
+      if (
+        this.transition === undefined ||
+        !this._sendToLightningAnimatable('mountY', v)
+      ) {
+        this.lng.mountY = v;
+      }
+    },
+  },
+  pivot: {
+    get(this: Forwarding) {
+      return this.lng.pivot;
+    },
+    set(this: Forwarding, v: number) {
+      if (
+        this.transition === undefined ||
+        !this._sendToLightningAnimatable('pivot', v)
+      ) {
+        this.lng.pivot = v;
+      }
+    },
+  },
+  pivotX: {
+    get(this: Forwarding) {
+      return this.lng.pivotX;
+    },
+    set(this: Forwarding, v: number) {
+      if (
+        this.transition === undefined ||
+        !this._sendToLightningAnimatable('pivotX', v)
+      ) {
+        this.lng.pivotX = v;
+      }
+    },
+  },
+  pivotY: {
+    get(this: Forwarding) {
+      return this.lng.pivotY;
+    },
+    set(this: Forwarding, v: number) {
+      if (
+        this.transition === undefined ||
+        !this._sendToLightningAnimatable('pivotY', v)
+      ) {
+        this.lng.pivotY = v;
+      }
+    },
+  },
+  rotation: {
+    get(this: Forwarding) {
+      return this.lng.rotation;
+    },
+    set(this: Forwarding, v: number) {
+      if (
+        this.transition === undefined ||
+        !this._sendToLightningAnimatable('rotation', v)
+      ) {
+        this.lng.rotation = v;
+      }
+    },
+  },
+  scale: {
+    get(this: Forwarding) {
+      return this.lng.scale;
+    },
+    set(this: Forwarding, v: number) {
+      if (
+        this.transition === undefined ||
+        !this._sendToLightningAnimatable('scale', v)
+      ) {
+        this.lng.scale = v;
+      }
+    },
+  },
+  scaleX: {
+    get(this: Forwarding) {
+      return this.lng.scaleX;
+    },
+    set(this: Forwarding, v: number) {
+      if (
+        this.transition === undefined ||
+        !this._sendToLightningAnimatable('scaleX', v)
+      ) {
+        this.lng.scaleX = v;
+      }
+    },
+  },
+  scaleY: {
+    get(this: Forwarding) {
+      return this.lng.scaleY;
+    },
+    set(this: Forwarding, v: number) {
+      if (
+        this.transition === undefined ||
+        !this._sendToLightningAnimatable('scaleY', v)
+      ) {
+        this.lng.scaleY = v;
+      }
+    },
+  },
+  w: {
+    get(this: Forwarding) {
+      return this.lng.w;
+    },
+    set(this: Forwarding, v: number) {
+      if (
+        this.transition === undefined ||
+        !this._sendToLightningAnimatable('w', v)
+      ) {
+        this.lng.w = v;
+      }
+    },
+  },
+  x: {
+    get(this: Forwarding) {
+      return this.lng.x;
+    },
+    set(this: Forwarding, v: number) {
+      if (
+        this.transition === undefined ||
+        !this._sendToLightningAnimatable('x', v)
+      ) {
+        this.lng.x = v;
+      }
+    },
+  },
+  y: {
+    get(this: Forwarding) {
+      return this.lng.y;
+    },
+    set(this: Forwarding, v: number) {
+      if (
+        this.transition === undefined ||
+        !this._sendToLightningAnimatable('y', v)
+      ) {
+        this.lng.y = v;
+      }
+    },
+  },
+  zIndex: {
+    get(this: Forwarding) {
+      return this.lng.zIndex;
+    },
+    set(this: Forwarding, v: number) {
+      if (
+        this.transition === undefined ||
+        !this._sendToLightningAnimatable('zIndex', v)
+      ) {
+        this.lng.zIndex = v;
+      }
+    },
+  },
+  // Animatable, text only
+  fontSize: {
+    get(this: ElementNode) {
+      return textPropsOf(this).fontSize;
+    },
+    set(this: ElementNode, v: number) {
+      if (
+        this._type !== NodeType.TextNode ||
+        this.transition === undefined ||
+        !this._sendToLightningAnimatable('fontSize', v)
+      ) {
+        textPropsFor(this).fontSize = v;
+      }
+    },
+  },
+  lineHeight: {
+    get(this: ElementNode) {
+      return textPropsOf(this).lineHeight;
+    },
+    set(this: ElementNode, v: number) {
+      if (
+        this._type !== NodeType.TextNode ||
+        this.transition === undefined ||
+        !this._sendToLightningAnimatable('lineHeight', v)
+      ) {
+        textPropsFor(this).lineHeight = v;
+      }
+    },
+  },
+  // Not animated
+  autosize: {
+    get(this: Forwarding) {
+      return this.lng.autosize;
+    },
+    set(this: Forwarding, v: unknown) {
+      this.lng.autosize = v;
+    },
+  },
+  clipping: {
+    get(this: Forwarding) {
+      return this.lng.clipping;
+    },
+    set(this: Forwarding, v: unknown) {
+      this.lng.clipping = v;
+    },
+  },
+  componentName: {
+    get(this: Forwarding) {
+      return this.lng.componentName;
+    },
+    set(this: Forwarding, v: unknown) {
+      this.lng.componentName = v;
+    },
+  },
+  componentLocation: {
+    get(this: Forwarding) {
+      return this.lng.componentLocation;
+    },
+    set(this: Forwarding, v: unknown) {
+      this.lng.componentLocation = v;
+    },
+  },
+  data: {
+    get(this: Forwarding) {
+      return this.lng.data;
+    },
+    set(this: Forwarding, v: unknown) {
+      this.lng.data = v;
+    },
+  },
+  ignoreParentAlpha: {
+    get(this: Forwarding) {
+      return this.lng.ignoreParentAlpha;
+    },
+    set(this: Forwarding, v: unknown) {
+      this.lng.ignoreParentAlpha = v;
+    },
+  },
+  imageType: {
+    get(this: Forwarding) {
+      return this.lng.imageType;
+    },
+    set(this: Forwarding, v: unknown) {
+      this.lng.imageType = v;
+    },
+  },
+  placeholderColor: {
+    get(this: Forwarding) {
+      return this.lng.placeholderColor;
+    },
+    set(this: Forwarding, v: unknown) {
+      this.lng.placeholderColor = v;
+    },
+  },
+  srcHeight: {
+    get(this: Forwarding) {
+      return this.lng.srcHeight;
+    },
+    set(this: Forwarding, v: unknown) {
+      this.lng.srcHeight = v;
+    },
+  },
+  srcWidth: {
+    get(this: Forwarding) {
+      return this.lng.srcWidth;
+    },
+    set(this: Forwarding, v: unknown) {
+      this.lng.srcWidth = v;
+    },
+  },
+  srcX: {
+    get(this: Forwarding) {
+      return this.lng.srcX;
+    },
+    set(this: Forwarding, v: unknown) {
+      this.lng.srcX = v;
+    },
+  },
+  srcY: {
+    get(this: Forwarding) {
+      return this.lng.srcY;
+    },
+    set(this: Forwarding, v: unknown) {
+      this.lng.srcY = v;
+    },
+  },
+  texture: {
+    get(this: Forwarding) {
+      return this.lng.texture;
+    },
+    set(this: Forwarding, v: unknown) {
+      this.lng.texture = v;
+    },
+  },
+  textureOptions: {
+    get(this: Forwarding) {
+      return this.lng.textureOptions;
+    },
+    set(this: Forwarding, v: unknown) {
+      this.lng.textureOptions = v;
+    },
+  },
+  // Not animated, text only
+  contain: {
+    get(this: ElementNode) {
+      return textPropsOf(this).contain;
     },
     set(this: ElementNode, v: unknown) {
-      textPropsFor(this)[key] = v;
+      textPropsFor(this).contain = v;
     },
-  });
-}
-
-for (const key of ReadOnlyProps) {
-  Object.defineProperty(ElementNode.prototype, key, {
-    get(): unknown {
-      return this.lng[key];
+  },
+  forceLoad: {
+    get(this: ElementNode) {
+      return textPropsOf(this).forceLoad;
     },
-    set(_v: unknown) {},
-  });
-}
+    set(this: ElementNode, v: unknown) {
+      textPropsFor(this).forceLoad = v;
+    },
+  },
+  fontStyle: {
+    get(this: ElementNode) {
+      return textPropsOf(this).fontStyle;
+    },
+    set(this: ElementNode, v: unknown) {
+      textPropsFor(this).fontStyle = v;
+    },
+  },
+  letterSpacing: {
+    get(this: ElementNode) {
+      return textPropsOf(this).letterSpacing;
+    },
+    set(this: ElementNode, v: unknown) {
+      textPropsFor(this).letterSpacing = v;
+    },
+  },
+  maxHeight: {
+    get(this: ElementNode) {
+      return textPropsOf(this).maxHeight;
+    },
+    set(this: ElementNode, v: unknown) {
+      textPropsFor(this).maxHeight = v;
+    },
+  },
+  maxLines: {
+    get(this: ElementNode) {
+      return textPropsOf(this).maxLines;
+    },
+    set(this: ElementNode, v: unknown) {
+      textPropsFor(this).maxLines = v;
+    },
+  },
+  maxWidth: {
+    get(this: ElementNode) {
+      return textPropsOf(this).maxWidth;
+    },
+    set(this: ElementNode, v: unknown) {
+      textPropsFor(this).maxWidth = v;
+    },
+  },
+  offsetY: {
+    get(this: ElementNode) {
+      return textPropsOf(this).offsetY;
+    },
+    set(this: ElementNode, v: unknown) {
+      textPropsFor(this).offsetY = v;
+    },
+  },
+  overflowSuffix: {
+    get(this: ElementNode) {
+      return textPropsOf(this).overflowSuffix;
+    },
+    set(this: ElementNode, v: unknown) {
+      textPropsFor(this).overflowSuffix = v;
+    },
+  },
+  text: {
+    get(this: ElementNode) {
+      return textPropsOf(this).text;
+    },
+    set(this: ElementNode, v: unknown) {
+      textPropsFor(this).text = v;
+    },
+  },
+  textAlign: {
+    get(this: ElementNode) {
+      return textPropsOf(this).textAlign;
+    },
+    set(this: ElementNode, v: unknown) {
+      textPropsFor(this).textAlign = v;
+    },
+  },
+  verticalAlign: {
+    get(this: ElementNode) {
+      return textPropsOf(this).verticalAlign;
+    },
+    set(this: ElementNode, v: unknown) {
+      textPropsFor(this).verticalAlign = v;
+    },
+  },
+  wordBreak: {
+    get(this: ElementNode) {
+      return textPropsOf(this).wordBreak;
+    },
+    set(this: ElementNode, v: unknown) {
+      textPropsFor(this).wordBreak = v;
+    },
+  },
+  // Read-only on the renderer node: a write would throw there (B20)
+  absX: {
+    get(this: Forwarding) {
+      return this.lng.absX;
+    },
+    set: ignoreWrite,
+  },
+  absY: {
+    get(this: Forwarding) {
+      return this.lng.absY;
+    },
+    set: ignoreWrite,
+  },
+  destroyed: {
+    get(this: Forwarding) {
+      return this.lng.destroyed;
+    },
+    set: ignoreWrite,
+  },
+});
 
 // The DOM renderer draws fontStretch; a rendered WebGL text node has no such
 // prop, and a @solidtv/renderer 2.0 node would take it as a field of its own.
