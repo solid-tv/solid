@@ -108,17 +108,15 @@ function createVirtual<T>(
       const prevSelectedChild = viewRef.children[selected];
 
       if (prevSelectedChild instanceof lng.ElementNode) {
-        const itemSize = prevSelectedChild[dimension] || 0;
-        // B14: the focus state's styles are on the node under `$focus`;
-        // `style.focus` was never set, so the scale was missed whenever the
-        // size was measured before the child had focus.
-        const focusStyle = prevSelectedChild.$focus as
-          | lng.NodeStyles
-          | undefined;
-        const scale = focusStyle?.scale ?? prevSelectedChild.scale ?? 1;
-        const scaledSize = itemSize * (props.factorScale ? scale : 1) + gap;
-        cachedScaledSize = scaledSize;
-        return scaledSize;
+        // B14: a shift moves the row by one slot, the item's unscaled size
+        // plus the gap: the distance flex moves the items when the window
+        // shifts (flex has no scale term). Shifting by a scaled size
+        // (`factorScale`, which read the scale from `style.focus` or the
+        // child's current `scale`) moved the focused item (scale - 1) * size
+        // further on every shift. `factorScale` no longer has an effect.
+        const slotSize = (prevSelectedChild[dimension] || 0) + gap;
+        cachedScaledSize = slotSize;
+        return slotSize;
       }
     }
     return 0;
