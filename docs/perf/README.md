@@ -34,7 +34,9 @@ node bench/run.mjs --summarize docs/perf/results/2026-10-03   # rebuild summary.
 
 Each run writes `<out>/<scenario>.<arm>.<mode>.<run>.json` (every op's raw
 record plus the run's statistics and environment), and the runner then
-regenerates `<out>/summary.md` from **every** result file in `<out>`. Runs
+regenerates `<out>/summary.md` from **every** result file in `<out>`. The raw
+JSON is large (about 11 MB per full series) and gitignored; `summary.md` and
+any digest beside it are committed. Runs
 whose page threw are kept as JSON (`errors`) and left out of the summary.
 
 Run the measured series on a quiet machine: the summary records the
@@ -121,9 +123,22 @@ about one suspension longer, depending on where it fell. Two consequences:
 
 So every time in the summary is a per-run **mean over ops** (means also add
 up: `total` = handler + tail + frame). The JSON keeps median, p95, min and
-max per field. Use `--throttle 1` for an unthrottled run when you need
-precise sub-millisecond medians (for example to profile a single function);
-report throttled means as the result.
+max per field. Report throttled means as the result.
+
+**Do not use `--throttle 1` for comparisons on this Mac.** Unthrottled, the
+page's main thread is idle most of the time, and macOS runs it on an
+efficiency core or at a low clock: on 2026-10-03 every op read about 5x
+_slower_ at 1x than the median of the same op at 6x (a Row press's handler:
+0.080 ms median at 1x against 0.015 ms at 6x), and the factor moved with the
+machine's load. At 6x the throttler keeps a core busy, so the slices the page
+runs in are at full speed. Consequences:
+
+- the 6x **mean** is the TV proxy (6 × full-speed CPU, tails included: GC
+  pauses, deoptimisations);
+- the 6x per-op **median**, pooled over runs, approximates the full-speed CPU
+  of a typical op shorter than about 0.17 ms (at the clock's 5 µs
+  resolution);
+- the 1x series of 2026-10-03 was discarded for this reason.
 
 ## The scenario contract
 

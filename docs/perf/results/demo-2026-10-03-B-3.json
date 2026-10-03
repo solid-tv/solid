@@ -1,0 +1,164 @@
+{
+  "schema": "solid-demo-benchmark/1",
+  "arm": "B",
+  "seq": 8,
+  "date": "2026-10-03T20:37:13.826Z",
+  "url": "http://127.0.0.1:50947/?displaySize=20&posterScale=0.5&arm=B#/benchmark",
+  "storedUrl": "/?displaySize=20&posterScale=0.5&arm=B",
+  "throttle": 6,
+  "tmdb": "fixtures",
+  "build": {
+    "solidJs": "/Users/chris.lorenzo/Code/solid-demo-app-1.7/node_modules/.pnpm/solid-js@1.9.9/node_modules/solid-js",
+    "solid": "/Users/chris.lorenzo/Code/solid-1.7/bench/.arms/solid-b",
+    "renderer": "/Users/chris.lorenzo/Code/solid-1.7/bench/.arms/renderer-b",
+    "entryChunk": "index-BLEqK7yd.js",
+    "solidVersion": "1.6.4",
+    "rendererVersion": "2.0.0-alpha.0",
+    "solidRev": "f1c8ab0",
+    "rendererRev": "faf4b9f",
+    "demoRev": "c202f2db"
+  },
+  "env": {
+    "chromium": "141.0.7390.37",
+    "gl": "ANGLE (Apple, ANGLE Metal Renderer: Apple M4 Pro, Unspecified Version)",
+    "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/141.0.0.0 Safari/537.36",
+    "crossOriginIsolated": true,
+    "innerWidth": 1920,
+    "innerHeight": 1080,
+    "devicePixelRatio": 1,
+    "host": "Apple M4 Pro x14, darwin 25.6.0",
+    "loadavgStart": [
+      2.12548828125,
+      2.548828125,
+      2.34912109375
+    ],
+    "loadavgEnd": [
+      2.1796875,
+      2.52978515625,
+      2.345703125
+    ],
+    "throttleCheck": {
+      "unthrottledMs": 13.98,
+      "throttledMs": 86.51,
+      "postRunThrottledMs": 83.75,
+      "ratio": 6.19
+    }
+  },
+  "wallMs": 19806,
+  "consoleErrors": [],
+  "tmdbUnknownPaths": [],
+  "results": {
+    "benchmark": {
+      "bundleType": "MODERN (module)",
+      "initialRenderTimeMs": 568.81,
+      "totalCycles": 2,
+      "navDelayMs": 500
+    },
+    "frameRateAndSmoothness": {
+      "avgAnimatedFps": 117.97,
+      "animP95Ms": 10,
+      "animP99Ms": 16,
+      "animMaxFrameTimeMs": 17.97,
+      "totalAnimatedFrames": 1078,
+      "totalAnimatedMs": 9138.09,
+      "overallRenderedFps": 117.95,
+      "minFps": 106,
+      "maxFps": 123,
+      "allP95Ms": 10,
+      "allP99Ms": 16,
+      "allMaxFrameTimeMs": 17.97,
+      "totalRenderedFrames": 1115,
+      "totalRenderedMs": 9173.55,
+      "totalIdleTicks": 0
+    },
+    "frameWorkSplit": {
+      "totalUpdateMs": 50.94,
+      "maxUpdateMs": 2.17,
+      "totalRenderMs": 33.43,
+      "maxRenderMs": 1.59,
+      "totalUploadMs": 13.67,
+      "maxUploadMs": 4.2
+    },
+    "inputDispatch": {
+      "keyPresses": 32,
+      "totalMs": 29.65,
+      "maxMs": 4.06,
+      "meanMs": 0.93,
+      "handlerTotalMs": 15.07,
+      "handlerMaxMs": 2.23,
+      "worstPresses": [
+        {
+          "press": 1,
+          "cycle": 1,
+          "direction": "down",
+          "index": 1,
+          "ms": 4.06,
+          "handlerMs": 2.23
+        },
+        {
+          "press": 3,
+          "cycle": 1,
+          "direction": "down",
+          "index": 3,
+          "ms": 1.51,
+          "handlerMs": 0.13
+        },
+        {
+          "press": 10,
+          "cycle": 1,
+          "direction": "up",
+          "index": 2,
+          "ms": 1.43,
+          "handlerMs": 0.92
+        },
+        {
+          "press": 12,
+          "cycle": 1,
+          "direction": "up",
+          "index": 4,
+          "ms": 1.21,
+          "handlerMs": 0.08
+        },
+        {
+          "press": 8,
+          "cycle": 1,
+          "direction": "down",
+          "index": 8,
+          "ms": 1.2,
+          "handlerMs": 0.11
+        }
+      ]
+    },
+    "assetsAnimationsGeometry": {
+      "drawCalls": 73,
+      "quads": 70,
+      "uploadedTextures": 67,
+      "uploadFrames": 88,
+      "meanUploadCostMs": 0.2,
+      "maxUploadQueueSize": 36,
+      "avgActiveAnimations": 5.14,
+      "maxActiveAnimations": 6
+    },
+    "sceneConfig": {
+      "displaySize": 20,
+      "showText": true,
+      "posterScale": 0.5
+    },
+    "glCallsPerInterval": null,
+    "rendererCapabilities": {
+      "renderMode": "webgl",
+      "webGlVersion": 1,
+      "vertexArrayObject": true,
+      "maxTextureSize": 16384,
+      "maxTextureUnits": 16,
+      "pixelRatio": {
+        "physical": 1,
+        "logical": 1,
+        "windowDpr": 1
+      },
+      "textureProcessingTimeLimitMs": 10,
+      "imageWorkers": 1,
+      "deviceCores": "14 cores"
+    }
+  }
+}
