@@ -1,5 +1,6 @@
 import type { Scenario } from '../../scenario.js';
 import navDrawerToggle from './navDrawer.js';
+import { pageScenarios } from './page.js';
 import portalFocusText from './portal.js';
 import { posterScenarios } from './poster.js';
 import { rowsScenarios } from './rows.js';
@@ -14,4 +15,5 @@ export const navScenarios: Scenario[] = [
   navDrawerToggle,
   portalFocusText,
   ...posterScenarios,
+  ...pageScenarios,
 ];

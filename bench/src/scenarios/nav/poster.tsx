@@ -11,7 +11,7 @@ import {
   type NavScenario,
 } from './shared.js';
 
-const posterStyle = {
+export const posterStyle = {
   width: 185,
   height: 278,
   scale: 1,
@@ -28,7 +28,7 @@ const posterStyle = {
 } satisfies NodeStyles;
 
 // components/index.tsx posterTitleStyles, in Roboto.
-const posterTitle = {
+export const posterTitle = {
   fontSize: 22,
   lineHeight: 22,
   height: 22,
