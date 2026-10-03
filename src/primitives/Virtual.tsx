@@ -357,13 +357,27 @@ function createVirtual<T>(
         // does not scroll. VirtualRow does not implement "center": it
         // behaves as "none".
         start = prev.start;
-        if (c + 1 >= start + length) {
-          start = c + 2 - length;
-        } else if (c - 1 < start) {
-          start = c - 1;
+        if (effectiveWrap()) {
+          // A modular window, as in the other wrap modes: keep the cursor in
+          // slots 1 .. length - 2, so an item is mounted on each side of it
+          // across the end of the data. Outside the window (a jump), the
+          // cursor goes to slot 1.
+          const slot = utils.mod(c - start, total);
+          if (slot < 1 || slot >= length) {
+            start = utils.mod(c - 1, total);
+          } else if (slot > length - 2) {
+            start = utils.mod(c + 2 - length, total);
+          }
+          selected = utils.mod(c - start, total);
+        } else {
+          if (c + 1 >= start + length) {
+            start = c + 2 - length;
+          } else if (c - 1 < start) {
+            start = c - 1;
+          }
+          start = utils.clamp(start, 0, Math.max(0, total - length));
+          selected = c - start;
         }
-        start = utils.clamp(start, 0, Math.max(0, total - length));
-        selected = c - start;
         shiftBy = 0;
         break;
     }
