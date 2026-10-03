@@ -52,7 +52,14 @@ export function VirtualGrid<T>(props: VirtualGridProps<T>): s.JSX.Element {
     return Math.min(items().length, rawEnd);
   });
 
-  const [slice, setSlice] = s.createSignal(items().slice(start(), end()));
+  const [slice, setSliceSignal] = s.createSignal(items().slice(start(), end()));
+  // Set when the window's items change, cleared by the grid's next flex pass
+  // (onLayout): a window shift lays the grid out only if nothing else has.
+  let layoutPending = false;
+  function setSlice(window: T[]) {
+    layoutPending = true;
+    setSliceSignal(window);
+  }
 
   let viewRef!: lngp.NavigableElement;
 
@@ -120,13 +127,31 @@ export function VirtualGrid<T>(props: VirtualGridProps<T>): s.JSX.Element {
       props.onEndReached?.();
     }
 
-    queueMicrotask(() => {
-      const prevRowY = this.y + active.y;
-      this.updateLayout();
-      this.lng.y = prevRowY - active.y;
-      columnScroll(idx, elm, active, lastIdx);
-    });
+    // `elm` is the grid (`this`): navigation calls it on itself.
+    shiftView = elm;
+    shiftActive = active;
+    shiftIdx = idx;
+    shiftLastIdx = lastIdx;
+    queueMicrotask(applyShift);
   };
+
+  // The scroll after a row change, run in a microtask once the new window is
+  // mounted. One function for every press (no closure per press): the press
+  // stores what it needs here.
+  let shiftView!: lngp.NavigableElement;
+  let shiftActive!: lng.ElementNode;
+  let shiftIdx = 0;
+  let shiftLastIdx: number | undefined;
+  function applyShift() {
+    const view = shiftView;
+    const active = shiftActive;
+    const prevRowY = view.y + active.y;
+    // One flex pass per window shift: lay out here only if the post-mutation
+    // layout has not already run since the window changed.
+    if (layoutPending) view.updateLayout();
+    view.lng.y = prevRowY - active.y;
+    columnScroll(shiftIdx, view, active, shiftLastIdx);
+  }
 
   const chainedOnSelectedChanged = lngp.chainFunctions(props.onSelectedChanged, onSelectedChanged)!;
 
@@ -161,7 +186,7 @@ export function VirtualGrid<T>(props: VirtualGridProps<T>): s.JSX.Element {
       setSlice(items().slice(start(), end()));
 
       queueMicrotask(() => {
-        viewRef.updateLayout();
+        if (layoutPending) viewRef.updateLayout();
         active = viewRef.children.find(x => x.item === item);
         if (active instanceof lng.ElementNode) {
           viewRef.selected = viewRef.children.indexOf(active);
@@ -207,6 +232,13 @@ export function VirtualGrid<T>(props: VirtualGridProps<T>): s.JSX.Element {
   );
 
 
+  // Clears layoutPending: the grid's flex pass has run since the window
+  // changed. The app's onLayout still runs, read when called.
+  function onLayout(this: lng.ElementNode, target: lng.ElementNode) {
+    layoutPending = false;
+    return props.onLayout?.call(this, target);
+  }
+
   // B15: `selected` on the node is a child index into the window, set once
   // here and then by navigation and the selected effect. Passing the data
   // index (`props.selected`) made the first forwardFocus pick the wrong child,
@@ -215,13 +247,13 @@ export function VirtualGrid<T>(props: VirtualGridProps<T>): s.JSX.Element {
     Math.max(0, (props.selected || 0) - start()),
   );
 
-  return (
+  const view = (
     <view
       {...props}
       scroll={props.scroll || 'always'}
       ref={lngp.chainRefs(el => { viewRef = el as lngp.NavigableElement; }, props.ref)}
       selected={/* @once */ initialSelected}
-      cursor={cursor()}
+      onLayout={/* @once */ onLayout}
       onLeft={/* @once */ lngp.chainFunctions(props.onLeft, lngp.navigableHandleNavigation)}
       onRight={/* @once */ lngp.chainFunctions(props.onRight, lngp.navigableHandleNavigation)}
       onUp={/* @once */ lngp.chainFunctions(props.onUp, onUp)}
@@ -235,4 +267,12 @@ export function VirtualGrid<T>(props: VirtualGridProps<T>): s.JSX.Element {
       <List each={slice()}>{props.children}</List>
     </view>
   );
+
+  // `cursor` has an effect of its own: in the spread above, a cursor change
+  // (every press) re-ran every prop of the spread.
+  s.createRenderEffect(() => {
+    viewRef.cursor = cursor();
+  });
+
+  return view;
 }
