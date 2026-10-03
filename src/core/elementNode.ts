@@ -25,7 +25,8 @@ const calculateFlex = import.meta.env?.VITE_USE_NEW_FLEX
 import {
   log,
   isArray,
-  keyExists,
+  isObject,
+  isString,
   isINode,
   isElementNode,
   isElementText,
@@ -33,6 +34,7 @@ import {
   isFunction,
   spliceItem,
 } from './utils.js';
+import { compileBlock, shaderParse, type BlockPlan } from './stylePlan.js';
 import { isDev, SHADERS_ENABLED } from './env.js';
 import { Config, isDomRendererActive } from './config.js';
 import type {
@@ -178,30 +180,224 @@ const parseAndAssignShaderProps = (
   props: Record<string, unknown> = {},
 ) => {
   if (!obj) return;
-
-  // Handle individual border sides: transform width/w to bottom/left/right/top
-  const borderSideMap: Record<string, string> = {
-    borderBottom: 'bottom',
-    borderLeft: 'left',
-    borderRight: 'right',
-    borderTop: 'top',
-  };
-
-  const side = borderSideMap[prefix];
-  const actualPrefix = side ? 'border' : prefix;
-
-  props[actualPrefix] = obj;
-  Object.entries(obj).forEach(([key, value]) => {
-    let transformedKey = key === 'width' ? 'w' : key;
-
-    // If border side and key is width/w, transform to side (bottom/left/right/top)
-    if (side && transformedKey === 'w') {
-      transformedKey = side;
-    }
-
-    props[`${actualPrefix}-${transformedKey}`] = value;
-  });
+  // Parsed once per object (stylePlan.ts): `border` and `border-w`, ...
+  const parse = shaderParse(prefix, obj);
+  const keys = parse.keys;
+  const values = parse.values;
+  for (let i = 0; i < keys.length; i++) {
+    props[keys[i]!] = values[i];
+  }
 };
+
+const copyOf = (value: unknown): unknown =>
+  isArray(value) ? value.slice() : value;
+
+/**
+ * The value a shader prop has in a shader created without it, to write for
+ * a sub-prop the new border or shadow object no longer names (B18). A
+ * renderer v2 shader's type declares a default per prop; a prop that
+ * resolves its value picks its default from `undefined` (a fresh copy). The
+ * DOM renderer reads an absent sub-prop as its default: `undefined`.
+ */
+function shaderPropDefault(shader: IRendererShader, name: string): unknown {
+  const type = shader.shaderType as unknown;
+  const defs = isObject(type) ? type.props : undefined;
+  if (!isObject(defs)) {
+    return undefined;
+  }
+  const def = defs[name];
+  if (isObject(def) && def.default !== undefined) {
+    return def.resolve !== undefined ? undefined : copyOf(def.default);
+  }
+  return copyOf(def);
+}
+
+/**
+ * Write a `border`/`borderTop`/.../`shadow` object (parsed once per object)
+ * or a radius into a shader's props, or into a props bag for createShader.
+ * The sub-props `prev` named and `value` does not are reset first (B18).
+ * With `diff`, a sub-prop equal to `prev`'s is not written: a renderer v2
+ * facade write repacks even when the value is unchanged. Returns whether
+ * anything was written.
+ */
+function writeShaderValue(
+  target: Record<string, unknown>,
+  key: string,
+  value: unknown,
+  prev: unknown,
+  shader: IRendererShader | null,
+  diff: boolean,
+): boolean {
+  if (key === 'rounded' || typeof value === 'number') {
+    if (diff && value === prev) {
+      return false;
+    }
+    target.radius = value;
+    return true;
+  }
+  const next = isObject(value) ? shaderParse(key, value) : null;
+  const old = isObject(prev) ? shaderParse(key, prev) : null;
+  let wrote = false;
+  if (old !== null && old !== next) {
+    const oldKeys = old.keys;
+    for (let i = 0; i < oldKeys.length; i++) {
+      const name = oldKeys[i]!;
+      if (next === null || next.index[name] === undefined) {
+        target[name] =
+          shader !== null ? shaderPropDefault(shader, name) : undefined;
+        wrote = true;
+      }
+    }
+  }
+  if (next === null) {
+    return wrote;
+  }
+  // After a reset (it may rewrite a vec4 that a written sub-prop is one
+  // element of), or with nothing to compare with, write every sub-prop.
+  const all = !diff || wrote || old === null || !next.cached;
+  const keys = next.keys;
+  const values = next.values;
+  for (let i = 0; i < keys.length; i++) {
+    const name = keys[i]!;
+    const v = values[i];
+    if (!all) {
+      const at = old!.index[name];
+      if (at !== undefined && old!.values[at] === v) {
+        continue;
+      }
+    }
+    target[name] = v;
+    wrote = true;
+  }
+  return wrote;
+}
+
+/**
+ * Whether `next` would leave a node's states as they are, by the rules of
+ * `States.merge`: an array or a string replaces the list, an object adds
+ * its truthy keys (`has`) and removes its falsy ones.
+ */
+function sameStates(current: States, next: NodeStates): boolean {
+  const len = current.length;
+  if (isArray(next)) {
+    if (next.length !== len) {
+      return false;
+    }
+    for (let i = 0; i < len; i++) {
+      if (next[i] !== current[i]) {
+        return false;
+      }
+    }
+    return true;
+  }
+  if (isString(next)) {
+    return len === 1 && current[0] === next;
+  }
+  for (const key in next) {
+    const state = key as DollarString;
+    if (next[state]) {
+      if (!current.has(state)) {
+        return false;
+      }
+    } else {
+      for (let i = 0; i < len; i++) {
+        if (current[i] === state) {
+          return false;
+        }
+      }
+    }
+  }
+  return true;
+}
+
+/** Marks a key a state change tracks but has not written yet. */
+const UNWRITTEN = {};
+
+/**
+ * Append the keys of the `$state` block `block` that `keys` does not hold
+ * yet (they are written for the first time). Returns the new count.
+ */
+function trackKeys(
+  block: unknown,
+  keys: string[],
+  count: number,
+  applied: Record<string, unknown>,
+): number {
+  if (!isObject(block)) {
+    return count;
+  }
+  const blockKeys = compileBlock(block).keys;
+  for (let j = 0; j < blockKeys.length; j++) {
+    const key = blockKeys[j]!;
+    let k = 0;
+    while (k < count && keys[k] !== key) {
+      k++;
+    }
+    if (k === count) {
+      if (count < keys.length) {
+        keys[count] = key;
+      } else {
+        keys.push(key);
+      }
+      count++;
+      applied[key] = UNWRITTEN;
+    }
+  }
+  return count;
+}
+
+/** The base value undo restores: theme[key], else style[key] (pinned). */
+function styleFallback(node: ElementNode, key: string): unknown {
+  const theme = node._theme as Record<string, unknown> | undefined;
+  let value = theme !== undefined ? theme[key] : undefined;
+  if (value === undefined) {
+    const style = node._style as Record<string, unknown> | undefined;
+    if (style !== undefined) {
+      value = style[key];
+    }
+  }
+  if (isDev && value === undefined) {
+    console.warn('fallback style key not found: ', key);
+  }
+  return value;
+}
+
+/**
+ * The value `key` takes with `states` on: from the block of the state of
+ * highest precedence that has it (the later in `order`, then the later
+ * added; `order` undefined: the later added), else the base value.
+ */
+function resolveStateValue(
+  node: ElementNode,
+  key: string,
+  states: States,
+  order: DollarString[] | undefined,
+): unknown {
+  let best = -2;
+  let plan: BlockPlan | undefined;
+  let at = 0;
+  for (let i = 0; i < states.length; i++) {
+    const state = states[i]!;
+    const block = node[state];
+    if (isObject(block)) {
+      const candidate = compileBlock(block);
+      const pos = candidate.index[key];
+      if (pos !== undefined) {
+        const rank = order === undefined ? -1 : order.indexOf(state);
+        if (rank >= best) {
+          best = rank;
+          plan = candidate;
+          at = pos;
+        }
+      }
+    }
+  }
+  if (plan === undefined) {
+    return styleFallback(node, key);
+  }
+  // A getter is read now, each time the state is applied (pinned).
+  return plan.getters[at] === true ? plan.block[key] : plan.values[at];
+}
 
 export function convertToShader(
   _node: ElementNode,
@@ -334,7 +530,12 @@ export interface ElementNode extends RendererNode, FocusNode {
   _theme?: Styles;
   _lastAnyKeyPressTime?: number;
   _type: 'element' | 'textNode';
+  /** @internal The keys state changes wrote, in first-write order: undo walks them. Reused, never shrunk. */
   _undoStyles?: string[];
+  /** @internal How many entries of `_undoStyles` are live. */
+  _undoCount: number;
+  /** @internal Per key in `_undoStyles`, the value the last state change wrote. */
+  _applied?: Record<string, unknown>;
   _display?: 'flex' | 'block';
   _onLayout?: (this: ElementNode, target: ElementNode) => void;
   _requiresLayout: boolean;
@@ -819,6 +1020,8 @@ export class ElementNode {
     this._theme = undefined;
     this._lastAnyKeyPressTime = undefined;
     this._undoStyles = undefined;
+    this._undoCount = 0;
+    this._applied = undefined;
     this._display = undefined;
     this._onLayout = undefined;
     this._requiresLayout = false;
@@ -1267,9 +1470,20 @@ export class ElementNode {
   }
 
   set states(states: NodeStates) {
-    this._states = this._states
-      ? this._states.merge(states)
-      : new States(this._stateChanged.bind(this), states);
+    const current = this._states;
+    if (current === undefined) {
+      const created = new States(this._stateChanged.bind(this), states);
+      this._states = created;
+      if (this.rendered && created.length > 0) {
+        this._stateChanged();
+      }
+      return;
+    }
+    // An unchanged list is a no-op (design 3.3.3): nothing to re-apply.
+    if (sameStates(current, states)) {
+      return;
+    }
+    current.merge(states);
     if (this.rendered) {
       this._stateChanged();
     }
@@ -1402,14 +1616,24 @@ export class ElementNode {
     }
   }
 
+  /**
+   * Apply the `$state` blocks of the active states (design 3.3). The keys
+   * any state wrote since the states were last empty are tracked in
+   * `_undoStyles`, in first-write order; each takes its value from the
+   * active block of highest precedence, else the base value (`theme`, then
+   * `style`, then undefined: pinned). After render a key is written only
+   * when that value differs from the one written last (`_applied`); before
+   * render every key is written, into the props bag, as before 1.7.
+   */
   _stateChanged() {
     if (isDev) log('State Changed: ', this, this.states);
+    const states = this.states;
 
     if (isDev) {
       const div = (this.lng as IRendererNode)?.div;
       if (div) {
-        if (this.states.length > 0) {
-          div.dataset.states = this.states.join(' ');
+        if (states.length > 0) {
+          div.dataset.states = states.join(' ');
         } else {
           delete div.dataset.states;
         }
@@ -1417,89 +1641,109 @@ export class ElementNode {
     }
 
     if (this.forwardStates) {
-      // apply states to children first
-      const states = this.states.slice() as States;
-      this.children.forEach((c) => {
-        c.states = states;
-      });
+      // Children first. They take this list: their setter copies it
+      // (forwardStates overwrites their own states, pinned) and does nothing
+      // when it is unchanged.
+      const children = this.children;
+      for (let i = 0; i < children.length; i++) {
+        children[i]!.states = states;
+      }
     }
 
-    const states = this.states;
-
-    // An empty _undoStyles (left behind once a state style has been undone)
-    // must not force the resolution branch: with nothing to undo and no style
-    // matching any active state, the branch provably assigns nothing, and it
-    // runs on every path element of every focus change.
-    if (
-      (this._undoStyles !== undefined && this._undoStyles.length > 0) ||
-      keyExists(this, states)
-    ) {
-      let stylesToUndo: { [key: string]: any } | undefined;
-      if (this._undoStyles && this._undoStyles.length) {
-        stylesToUndo = {};
-        this._undoStyles.forEach((styleKey) => {
-          let fallbackValue = this.theme[styleKey];
-
-          if (fallbackValue === undefined) {
-            fallbackValue = this.style[styleKey];
-          }
-
-          if (isDev) {
-            if (fallbackValue === undefined) {
-              console.warn('fallback style key not found: ', styleKey);
-            }
-          }
-          stylesToUndo![styleKey] = fallbackValue;
-        });
+    const n = states.length;
+    let count = this._undoCount;
+    if (count === 0) {
+      // Nothing to undo: done unless an active state has a block. This runs
+      // on every path element of every focus change.
+      let i = 0;
+      while (i < n && !isObject(this[states[i]!])) {
+        i++;
       }
-
-      const numStates = states.length;
-      if (numStates === 0) {
-        Object.assign(this, stylesToUndo);
-        this._undoStyles = [];
+      if (i === n) {
         return;
       }
+    }
 
-      let newStyles: Styles;
-      if (numStates === 1) {
-        newStyles = this[states[0] as keyof Styles] as Styles;
-        newStyles = stylesToUndo
-          ? { ...stylesToUndo, ...newStyles }
-          : newStyles;
-      } else {
-        let sortedStates = states as DollarString[];
-        const stateOrder = this.stateOrder || Config.stateOrder;
-        if (stateOrder && stateOrder.length > 0) {
-          sortedStates = states.slice().sort((a, b) => {
-            const aIdx = stateOrder.indexOf(a);
-            const bIdx = stateOrder.indexOf(b);
+    let keys = this._undoStyles;
+    if (keys === undefined) {
+      keys = this._undoStyles = [];
+    }
+    let applied = this._applied;
+    if (applied === undefined) {
+      applied = this._applied = Object.create(null) as Record<string, unknown>;
+    }
+    const diff = this.rendered;
 
-            // If a state is in the stateOrder, it should have higher specificity
-            // than states not in the stateOrder.
-            if (aIdx !== -1 && bIdx === -1) return 1;
-            if (aIdx === -1 && bIdx !== -1) return -1;
-
-            return aIdx - bIdx;
-          });
+    if (n === 0) {
+      // Undo every tracked key, in its order (`transition` too: pinned).
+      for (let i = 0; i < count; i++) {
+        const key = keys[i]!;
+        const value = styleFallback(this, key);
+        if (!diff || value !== applied[key]) {
+          applied[key] = value;
+          this[key] = value;
         }
-
-        newStyles = sortedStates.reduce((acc, state) => {
-          const styles = this[state];
-          return styles ? { ...acc, ...styles } : acc;
-        }, stylesToUndo || {});
       }
+      this._undoCount = 0;
+      return;
+    }
 
-      if (newStyles) {
-        this._undoStyles = Object.keys(newStyles);
-        // Apply transition first
-        if (newStyles.transition !== undefined) {
-          this.transition = newStyles.transition;
+    // Track the active blocks' keys, block by block in precedence order
+    // (lowest first), after the tracked ones: the key order of the merged
+    // object before 1.7, which decides the write order.
+    const stateOrder = this.stateOrder || Config.stateOrder;
+    const order =
+      n > 1 && stateOrder !== undefined && stateOrder.length > 0
+        ? stateOrder
+        : undefined;
+    if (order === undefined) {
+      for (let i = 0; i < n; i++) {
+        count = trackKeys(this[states[i]!], keys, count, applied);
+      }
+    } else {
+      // States not in `order` first, in the order added, then by `order`.
+      let lastRank = -2;
+      let lastPos = -1;
+      for (let done = 0; done < n; done++) {
+        let pick = 0;
+        let pickRank = 0;
+        let found = false;
+        for (let i = 0; i < n; i++) {
+          const rank = order.indexOf(states[i]!);
+          if (
+            (rank > lastRank || (rank === lastRank && i > lastPos)) &&
+            (!found || rank < pickRank)
+          ) {
+            pick = i;
+            pickRank = rank;
+            found = true;
+          }
         }
+        count = trackKeys(this[states[pick]!], keys, count, applied);
+        lastRank = pickRank;
+        lastPos = pick;
+      }
+    }
+    this._undoCount = count;
 
-        // Apply the styles
-        Object.assign(this, newStyles);
-      } else {
-        this._undoStyles = [];
+    // `transition` first, so the other keys animate with it (pinned); one
+    // that resolves to undefined is written in its place.
+    for (let i = 0; i < count; i++) {
+      if (keys[i] === 'transition') {
+        const value = resolveStateValue(this, 'transition', states, order);
+        if (value !== undefined && (!diff || value !== applied.transition)) {
+          applied.transition = value;
+          this.transition = value as ElementNode['transition'];
+        }
+        break;
+      }
+    }
+    for (let i = 0; i < count; i++) {
+      const key = keys[i]!;
+      const value = resolveStateValue(this, key, states, order);
+      if (!diff || value !== applied[key]) {
+        applied[key] = value;
+        this[key] = value;
       }
     }
   }
@@ -1827,42 +2071,60 @@ export function shaderAccessor<T extends Record<string, any> | number>(
     | 'borderRight'
     | 'borderTop',
 ) {
+  const transitionKey = key === 'rounded' ? 'borderRadius' : key;
   return {
     set(this: ElementNode, value: T) {
-      let target = this.lng.shader || {};
-      this._effects = this._effects || {};
-      this._effects[key] = value;
+      let effects = this._effects;
+      if (effects === undefined) {
+        effects = this._effects = {};
+      }
+      const prev: unknown = effects[key];
+      effects[key] = value;
 
-      let animationSettings: AnimationSettings | undefined;
-
-      if (this.lng.shader?.props) {
-        target = this.lng.shader.props;
-        const transitionKey = key === 'rounded' ? 'borderRadius' : key;
-        if (
-          this.transition &&
-          (this.transition === true || this.transition[transitionKey])
-        ) {
-          target = {};
-          animationSettings =
-            this.transition === true || this.transition[transitionKey] === true
+      const shader = this.lng.shader as IRendererShader | null | undefined;
+      const props = shader != null ? shader.props : undefined;
+      if (props != null) {
+        const transition = this.transition;
+        if (transition && (transition === true || transition[transitionKey])) {
+          // Animated: the full new props, in a target of their own.
+          const target: Record<string, unknown> = {};
+          writeShaderValue(target, key, value, prev, shader!, false);
+          this._writeShaderTarget(target);
+          const animationSettings =
+            transition === true || transition[transitionKey] === true
               ? undefined
-              : (this.transition[transitionKey] as
-                  | undefined
-                  | AnimationSettings);
+              : (transition[transitionKey] as undefined | AnimationSettings);
+          if (animationSettings) {
+            this.animate({ shaderProps: target }, animationSettings).start();
+          }
+          return;
         }
+        // Into the shader's props: only the sub-props that changed.
+        if (
+          writeShaderValue(
+            props as Record<string, unknown>,
+            key,
+            value,
+            prev,
+            shader!,
+            true,
+          )
+        ) {
+          this._writeShaderTarget(props);
+        }
+        return;
       }
 
-      if (key === 'rounded' || typeof value === 'number') {
-        target.radius = value;
-      } else {
-        parseAndAssignShaderProps(key, value, target);
-      }
-
+      // No shader yet: before render, the props bag createShader reads at
+      // render; after render, the props of a new shader. (A rendered DOM
+      // node without one holds the renderer's shared default: never write
+      // into it.)
+      const target =
+        shader != null && !this.rendered
+          ? (shader as unknown as Record<string, unknown>)
+          : {};
+      writeShaderValue(target, key, value, prev, null, false);
       this._writeShaderTarget(target);
-
-      if (animationSettings) {
-        this.animate({ shaderProps: target }, animationSettings).start();
-      }
     },
     get(this: ElementNode) {
       return this._effects?.[key];
