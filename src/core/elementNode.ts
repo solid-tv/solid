@@ -338,6 +338,8 @@ export interface ElementNode extends RendererNode, FocusNode {
   _display?: 'flex' | 'block';
   _onLayout?: (this: ElementNode, target: ElementNode) => void;
   _requiresLayout: boolean;
+  /** @internal the focus manager's generation stamp for the focus-path diff */
+  _focusGen: number;
   autosize?: boolean;
   /**
    * Optional component name for inspector / dev tooling — emitted by the
@@ -822,6 +824,7 @@ export class ElementNode {
     this._display = undefined;
     this._onLayout = undefined;
     this._requiresLayout = false;
+    this._focusGen = 0;
   }
 
   get effects(): StyleEffects | undefined {
