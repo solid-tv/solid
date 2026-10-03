@@ -752,6 +752,37 @@ v.describe('VirtualRow: work per press (1.7)', () => {
     return counter;
   };
 
+  v.it(
+    'a press re-runs only the props that depend on the cursor: an unrelated prop getter is not read again (1.7)',
+    async () => {
+      let row!: lng.ElementNode;
+      let reads = 0;
+      const probe = () => {
+        reads++;
+        return 1;
+      };
+      dispose = await mount(() => (
+        <view width={1920} height={1080}>
+          <VirtualRow
+            ref={row}
+            autofocus
+            x={50}
+            each={twelve}
+            displaySize={4}
+            probe={probe()}
+          >
+            {(item) => <Item item={item()} />}
+          </VirtualRow>
+        </view>
+      ));
+      const before = reads;
+      await press('ArrowRight', 'ArrowRight', 'ArrowRight', 'ArrowLeft');
+      v.expect(row.cursor).toBe(2);
+      // It was read again on every press: the cursor was in the spread.
+      v.expect(reads).toBe(before);
+    },
+  );
+
   // Eight Right presses then four Left presses.
   const expected = {
     auto: [0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],

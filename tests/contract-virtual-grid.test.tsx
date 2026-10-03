@@ -247,6 +247,40 @@ v.describe('VirtualGrid', () => {
     },
   );
 
+  v.it(
+    'a press re-runs only the props that depend on the cursor: an unrelated prop getter is not read again (1.7)',
+    async () => {
+      let grid!: lng.ElementNode;
+      let reads = 0;
+      const probe = () => {
+        reads++;
+        return 1;
+      };
+      dispose = await mount(() => (
+        <view width={1920} height={1080}>
+          <VirtualGrid
+            ref={grid}
+            autofocus
+            y={40}
+            width={700}
+            columns={3}
+            rows={2}
+            buffer={1}
+            each={range(20)}
+            probe={probe()}
+          >
+            {(item) => <Cell item={item()} />}
+          </VirtualGrid>
+        </view>
+      ));
+      const before = reads;
+      await press('ArrowRight', 'ArrowDown', 'ArrowDown', 'ArrowUp');
+      v.expect(grid.cursor).toBe(4);
+      // It was read again on every press: the cursor was in the spread.
+      v.expect(reads).toBe(before);
+    },
+  );
+
   v.it('defaults: rows 1, buffer 2, scroll "always"', async () => {
     let grid!: lng.ElementNode;
     dispose = await mount(() => (
