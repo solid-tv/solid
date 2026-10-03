@@ -1,4 +1,10 @@
-import { createSignal, getOwner, onCleanup, runWithOwner } from 'solid-js';
+import {
+  batch,
+  createSignal,
+  getOwner,
+  onCleanup,
+  runWithOwner,
+} from 'solid-js';
 import { Config, isDev } from './config.js';
 import { IRendererNode } from './dom-renderer/domRendererTypes.js';
 export type * from './focusKeyTypes.js';
@@ -9,8 +15,6 @@ import {
   activeElement,
   setActiveElement as setActiveElementSignal,
 } from './activeElement.js';
-
-let _signalWrapper: (cb: () => void) => void = (cb) => cb();
 
 type KeyMapEntries = Record<KeyNameOrKeyCode, string>;
 
@@ -268,6 +272,23 @@ export const printFocusHistory = (count: number): void => {
 export const setActiveElementCore = (elm: ElementNode) => {
   const prev = activeElement();
   if (elm === prev) return;
+  _focusTarget = elm;
+  _focusPrev = prev;
+  // The whole focus phase runs in one batch (5.1): the callbacks keep their
+  // order, and the effects their signal writes trigger, like those of
+  // focusPath and the active element, run once, after the last of them.
+  batch(applyFocus);
+};
+
+// The focus change setActiveElementCore hands to applyFocus, so the batch
+// takes no closure. applyFocus reads both on entry.
+let _focusTarget: ElementNode | undefined;
+let _focusPrev: ElementNode | undefined;
+
+const applyFocus = (): void => {
+  const elm = _focusTarget!;
+  const prev = _focusPrev;
+  _focusTarget = _focusPrev = undefined;
   updateFocusPath(elm, prev);
   recordFocusHistory(elm, prev);
   // Reset key attribution so programmatic focus changes show '—' for key fields
@@ -280,21 +301,45 @@ export const setActiveElementCore = (elm: ElementNode) => {
 
 export const [focusPath, setFocusPath] = createSignal<ElementNode[]>([]);
 
+// Each focus change takes a new generation and stamps it on every node of the
+// new path; a node of the previous path without that stamp lost focus. O(depth),
+// no membership scan.
+let focusGen = 0;
+// The new path is built here, leaf first, then published as a copy: the
+// signal's value must be a fresh array per change, since readers keep it.
+const pathBuffer: ElementNode[] = [];
+// True while updateFocusPath runs. A focus callback that calls
+// setActiveElementCore re-enters it: the inner change builds its own array,
+// and the outer one, whose stamps it overwrote, falls back to a scan.
+let updatingPath = false;
+
 const updateFocusPath = (
   currentFocusedElm: ElementNode,
   prevFocusedElm: ElementNode | undefined,
 ) => {
+  const nested = updatingPath;
+  updatingPath = true;
+  try {
+    buildFocusPath(currentFocusedElm, prevFocusedElm, nested ? [] : pathBuffer);
+  } finally {
+    updatingPath = nested;
+  }
+};
+
+const buildFocusPath = (
+  currentFocusedElm: ElementNode,
+  prevFocusedElm: ElementNode | undefined,
+  fp: ElementNode[],
+) => {
+  const focusKey = Config.focusStateKey;
+  const gen = ++focusGen;
+  let length = 0;
   let current: ElementNode | undefined = currentFocusedElm;
-  // fp escapes through the focusPath signal, so it must be a fresh array; the
-  // membership test below runs on paths of a handful of elements every single
-  // keypress, where a linear scan beats allocating and hashing a Set.
-  const fp: ElementNode[] = [];
   while (current) {
-    if (
-      !current.states.has(Config.focusStateKey) ||
-      current === currentFocusedElm
-    ) {
-      current.states.add(Config.focusStateKey);
+    current._focusGen = gen;
+    const states = current.states;
+    if (!states.has(focusKey) || current === currentFocusedElm) {
+      states.add(focusKey);
       current.onFocus?.call(
         current,
         currentFocusedElm,
@@ -309,15 +354,17 @@ const updateFocusPath = (
         current,
       );
     }
-    fp.push(current);
+    fp[length++] = current;
     current = current.parent;
   }
+  fp.length = length;
 
   const prevFp = focusPath();
   for (let i = 0; i < prevFp.length; i++) {
     const elm = prevFp[i]!;
-    if (fp.indexOf(elm) === -1) {
-      elm.states.remove(Config.focusStateKey);
+    // focusGen moves on only when a callback changed focus re-entrantly.
+    if (focusGen === gen ? elm._focusGen !== gen : fp.indexOf(elm) === -1) {
+      elm.states.remove(focusKey);
       elm.onBlur?.call(elm, currentFocusedElm, prevFocusedElm!, elm);
       elm.onFocusChanged?.call(
         elm,
@@ -329,11 +376,12 @@ const updateFocusPath = (
     }
   }
 
+  const newFp = fp.slice();
   if (Config.focusDebug) {
-    addFocusDebug(prevFp, fp);
+    addFocusDebug(prevFp, newFp);
   }
 
-  _signalWrapper(() => setFocusPath(fp));
+  setFocusPath(newFp);
 };
 
 let lastGlobalKeyPressTime = 0;
@@ -687,6 +735,14 @@ export interface KeyEventTarget {
   ): void;
 }
 
+// The element Config.setActiveElement (as useFocusManager sets it) hands to
+// publishActiveElement, so a focus change allocates no closure.
+let _activeToPublish: ElementNode | undefined;
+
+const publishActiveElement = (): void => {
+  setActiveElementSignal(_activeToPublish);
+};
+
 // The event being dispatched, handed to dispatchKeyDown/dispatchKeyUp so a key
 // event allocates no closure. Each reads it on entry, so a handler that raises
 // another key event cannot disturb the one in progress.
@@ -733,15 +789,14 @@ export const useFocusManager = (
   // can run inside it — needed for programmatic .setFocus(), post-mutation
   // focus, and any effect subscribers that rely on onCleanup.
   const owner = getOwner();
-  const ownerContext = (cb: () => void) => {
-    runWithOwner(owner, cb);
-  };
-  _signalWrapper = ownerContext;
   // Drive the active-element signal inside this owner so its effect subscribers
   // have a parent for cleanup. Consumers replacing the focus manager can wire
   // Config.setActiveElement themselves instead of calling useFocusManager.
-  Config.setActiveElement = (elm) =>
-    ownerContext(() => setActiveElementSignal(elm));
+  Config.setActiveElement = (elm) => {
+    _activeToPublish = elm;
+    runWithOwner(owner, publishActiveElement);
+    _activeToPublish = undefined;
+  };
 
   // Key handlers run inside the owner too: runWithOwner batches their signal
   // writes, so effects run once, after the handler.
