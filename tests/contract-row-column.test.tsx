@@ -934,6 +934,25 @@ v.describe('Row and Column: transitions and throttleInput', () => {
   );
 
   v.it(
+    'Rows without a `transition` do not share a merged transition object (1.7)',
+    async () => {
+      let r0!: lng.ElementNode;
+      let r1!: lng.ElementNode;
+      dispose = await mount(() => (
+        <view width={1920} height={1080}>
+          <Column autofocus scroll="none">
+            <Row ref={r0}>{items(3)}</Row>
+            <Row ref={r1}>{items(3)}</Row>
+          </Column>
+        </view>
+      ));
+      await press('ArrowRight', 'ArrowDown', 'ArrowRight');
+      v.expect(r0.transition).toEqual(r1.transition);
+      v.expect(r0.transition).not.toBe(r1.transition);
+    },
+  );
+
+  v.it(
     'throttleInput on a Row: the same key within the window is dropped; another key is not',
     async () => {
       let now = 1000;
