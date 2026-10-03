@@ -417,10 +417,10 @@ v.describe('VirtualGrid', () => {
       setSel(10);
       await flush();
       v.expect(state()).toEqual(['g10', 4, 10, -60, '6-17', 0]);
-      // B15 (1.7): lastIdx is the previous child index (g0 was child 0). It
-      // was the new data index (10): the `selected` prop wrote it to the node
-      // before updateSelected read it, the cause of the B15 test below where
-      // the grid stays scrolled.
+      // B15 (1.7): lastIdx is the previous child index, in the previous
+      // window (g0 was child 0 of 0-8). It was the new data index (10): the
+      // `selected` prop wrote it to the node before updateSelected read it,
+      // the cause of the B15 test below where the grid stays scrolled.
       v.expect(calls).toEqual([[4, 'g10', 0]]);
       calls.length = 0;
 
@@ -437,8 +437,9 @@ v.describe('VirtualGrid', () => {
       setItems(range(30));
       await flush();
       v.expect(state()).toEqual(['g25', 4, 25, -60, '21-29', 1]);
-      // B15 (1.7): lastIdx is the previous child index (g10 was child 4),
-      // not the data index (25) the `selected` prop wrote to the node.
+      // B15 (1.7): lastIdx is the previous child index, in the previous
+      // window (g10 was child 4 of 6-17), not the data index (25) the
+      // `selected` prop wrote to the node.
       v.expect(calls).toEqual([
         [4, 'g25', 4],
         [4, 'g25', 4],
@@ -475,7 +476,47 @@ v.describe('VirtualGrid', () => {
           </VirtualGrid>
         </view>
       ));
-      v.expect([focusedId(), grid.cursor]).toEqual(['g10', 10]);
+      // y: g10's row (row 1 of the window 6-17, 100 high) at the grid's
+      // start, the same y as reaching g10 by Down then Up.
+      v.expect([focusedId(), grid.cursor, grid.selected, grid.y]).toEqual([
+        'g10',
+        10,
+        4,
+        -60,
+      ]);
+      await press('ArrowDown', 'ArrowUp');
+      v.expect([focusedId(), grid.cursor, grid.y]).toEqual(['g10', 10, -60]);
+    },
+  );
+
+  v.it(
+    'B15: an initial selected without autofocus: focusing the grid later focuses that item, scrolled to its row',
+    async () => {
+      let grid!: lng.ElementNode;
+      dispose = await mount(() => (
+        <view width={1920} height={1080}>
+          <VirtualGrid
+            ref={grid}
+            y={40}
+            width={700}
+            columns={3}
+            rows={2}
+            buffer={1}
+            each={range(20)}
+            selected={10}
+          >
+            {(item) => <Cell item={item()} />}
+          </VirtualGrid>
+        </view>
+      ));
+      grid.setFocus();
+      await flush();
+      v.expect([focusedId(), grid.cursor, grid.selected, grid.y]).toEqual([
+        'g10',
+        10,
+        4,
+        -60,
+      ]);
     },
   );
 
