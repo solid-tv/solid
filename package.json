@@ -80,6 +80,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.39.4",
+    "@lightningtv/vite-hex-transform": "^1.1.0",
     "@solid-devtools/debugger": "^0.28.1",
     "@solidjs/testing-library": "^0.8.10",
     "@solidtv/renderer": "link:../renderer-v2-solid",
@@ -95,6 +96,7 @@
     "lint-staged": "^17.0.4",
     "prettier": "^3.8.3",
     "release-it": "^20.0.1",
+    "terser": "^5.51.2",
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.59.2",
     "vite": "^8.0.13",

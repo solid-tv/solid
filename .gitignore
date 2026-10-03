@@ -9,3 +9,8 @@ releases
 .claude
 # This project uses `pnpm` for package management
 package-lock.json
+
+# benchmark arms and outputs
+bench/.arms
+bench/dist
+bench/.results-tmp
