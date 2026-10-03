@@ -273,6 +273,39 @@ function writeShaderValue(
 }
 
 /**
+ * Update the props of a gradient shader the node made, as createShader
+ * would have built them from `value`: a declared prop `value` does not name
+ * takes its default. The DOM renderer keeps the given object as the props.
+ */
+function setShaderProps(
+  shader: IRendererShader,
+  value: Record<string, unknown>,
+): void {
+  const type = shader.shaderType as unknown;
+  const defs = isObject(type) ? type.props : undefined;
+  if (!isObject(defs)) {
+    shader.props = value as IRendererShaderProps;
+    return;
+  }
+  const props = shader.props as Record<string, unknown>;
+  for (const name in defs) {
+    const def = defs[name];
+    const given = value[name];
+    if (given !== undefined) {
+      // createShader copies an array, unless the prop resolves (copies) it.
+      props[name] =
+        isObject(def) && def.resolve !== undefined ? given : copyOf(given);
+    } else if (!isObject(def) || def.set === undefined) {
+      // An alias (`set`) only writes when given, as in createShader.
+      props[name] = shaderPropDefault(shader, name);
+    }
+  }
+}
+
+/** The gradient shaders the raw accessors made, by accessor key. */
+const gradientShaders = new WeakMap<object, string>();
+
+/**
  * Whether `next` would leave a node's states as they are, by the rules of
  * `States.merge`: an array or a string replaces the list, an object adds
  * its truthy keys (`has`) and removes its falsy ones.
@@ -2052,7 +2085,25 @@ Object.defineProperty(ElementNode.prototype, 'fontStretch', {
 export function createRawShaderAccessor<T>(key: keyof StyleEffects) {
   return {
     set(this: ElementNode, value: T) {
+      const shader = this.lng.shader as IRendererShader | null | undefined;
+      if (
+        shader != null &&
+        isObject(value) &&
+        gradientShaders.get(shader) === key
+      ) {
+        // The gradient shader this accessor made: update it, not a new one.
+        setShaderProps(shader, value);
+        if (this.rendered && isDomRendererActive()) {
+          // The DOM renderer restyles when its shader is assigned.
+          (this.lng as IRendererNode).shader = shader;
+        }
+        return;
+      }
       this.shader = [key, value as unknown as IRendererShaderProps];
+      const created = this.lng.shader as object | null | undefined;
+      if (created != null) {
+        gradientShaders.set(created, key);
+      }
     },
 
     get(this: ElementNode) {

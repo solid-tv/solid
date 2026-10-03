@@ -251,4 +251,17 @@ v.describe('shader-prop writes', () => {
     v.expect(shaderProps(node)).toEqual({ radius: 8 });
     dispose();
   });
+
+  v.it(
+    'a gradient set again updates the shader it made instead of a new one',
+    () => {
+      const { node, dispose } = mount({ width: 100, height: 100 });
+      node.linearGradient = { colors: [RED, BLUE], angle: 1 };
+      const shader = node.lng.shader;
+      node.linearGradient = { colors: [GREEN, BLUE] };
+      v.expect(node.lng.shader).toBe(shader);
+      v.expect(shaderProps(node)).toEqual({ colors: [GREEN, BLUE] });
+      dispose();
+    },
+  );
 });

@@ -8,15 +8,22 @@
  */
 import * as v from 'vitest';
 import type { ElementNode, NodeStyles } from '@solidtv/solid';
-import { Rounded, RoundedWithBorder } from '@solidtv/renderer/webgl/shaders';
+import {
+  LinearGradient,
+  Rounded,
+  RoundedWithBorder,
+} from '@solidtv/renderer/webgl/shaders';
 import { render, renderer, settle } from './setup.js';
 
-// The names Solid's convertToShader creates, as an app registers them
-// (bench/src/arm-v2.ts).
+// The names Solid's convertToShader and gradient accessors create, as an app
+// registers them (bench/src/arm-v2.ts).
 renderer.registerShaderType('rounded', Rounded);
 renderer.registerShaderType('roundedWithBorder', RoundedWithBorder);
+renderer.registerShaderType('linearGradient', LinearGradient);
 
 const BLUE = 0x0000ffff;
+const RED = 0xff0000ff;
+const GREEN = 0x00ff00ff;
 
 type Shader = {
   shaderType: { props: Record<string, unknown> };
@@ -59,6 +66,33 @@ v.test(
     focused.states.remove('$focus');
     v.expect(declaredProps(focused)).toEqual(declaredProps(never));
     v.expect(shaderOf(focused).props['border-gap']).toBe(0);
+    dispose();
+  },
+);
+
+v.test(
+  'a gradient set again updates its shader to what a new one would hold',
+  async () => {
+    let node!: ElementNode;
+    let fresh!: ElementNode;
+    const dispose = render(() => (
+      <view>
+        <view ref={node} width={100} height={100} />
+        <view ref={fresh} x={200} width={100} height={100} />
+      </view>
+    ));
+    await settle();
+    node.linearGradient = {
+      colors: [RED, BLUE, GREEN],
+      angle: 1,
+      stops: [0, 0.2, 1],
+    };
+    const shader = shaderOf(node);
+    node.linearGradient = { colors: [GREEN, BLUE] } as never;
+    fresh.linearGradient = { colors: [GREEN, BLUE] } as never;
+    v.expect(shaderOf(node)).toBe(shader);
+    v.expect(declaredProps(node)).toEqual(declaredProps(fresh));
+    await settle();
     dispose();
   },
 );
