@@ -59,8 +59,11 @@ export function VirtualGrid<T>(props: VirtualGridProps<T>): s.JSX.Element {
   function onVerticalNav(dir: -1 | 1): lngp.KeyHandler {
     return function () {
       const perRow = itemsPerRow();
+      const count = items().length;
       const currentRowIndex = Math.floor(cursor() / perRow);
-      const maxRows = Math.floor(items().length / perRow);
+      // B15: the last row's index. floor(length / perRow) was one row late
+      // when the length is a multiple of perRow.
+      const maxRows = Math.floor((count - 1) / perRow);
 
       if (
         currentRowIndex === 0 && dir === -1
@@ -69,19 +72,21 @@ export function VirtualGrid<T>(props: VirtualGridProps<T>): s.JSX.Element {
 
       const selected = this.selected || 0;
       const offset = dir * perRow;
-      const newIndex = utils.clamp(selected + offset, 0, items().length - 1);
-      const lastIdx = selected;
-      this.selected = newIndex;
-      const active = this.children[this.selected];
+      const newIndex = utils.clamp(selected + offset, 0, count - 1);
+      const active = this.children[newIndex];
 
+      // B15: `selected` changes only when there is a child to move to. It was
+      // written first, so a Down with nothing below left it past the mounted
+      // children and the next Up was lost.
       if (active instanceof lng.ElementNode) {
+        this.selected = newIndex;
         active.setFocus();
         chainedOnSelectedChanged.call(
           this as lngp.NavigableElement,
-          this.selected,
+          newIndex,
           this as lngp.NavigableElement,
           active,
-          lastIdx
+          selected
         );
         return true;
       }
@@ -202,12 +207,20 @@ export function VirtualGrid<T>(props: VirtualGridProps<T>): s.JSX.Element {
   );
 
 
+  // B15: `selected` on the node is a child index into the window, set once
+  // here and then by navigation and the selected effect. Passing the data
+  // index (`props.selected`) made the first forwardFocus pick the wrong child,
+  // and its reactive rewrite hid the previous child index from updateSelected.
+  const initialSelected = s.untrack(() =>
+    Math.max(0, (props.selected || 0) - start()),
+  );
+
   return (
     <view
       {...props}
       scroll={props.scroll || 'always'}
       ref={lngp.chainRefs(el => { viewRef = el as lngp.NavigableElement; }, props.ref)}
-      selected={props.selected || 0}
+      selected={/* @once */ initialSelected}
       cursor={cursor()}
       onLeft={/* @once */ lngp.chainFunctions(props.onLeft, lngp.navigableHandleNavigation)}
       onRight={/* @once */ lngp.chainFunctions(props.onRight, lngp.navigableHandleNavigation)}
