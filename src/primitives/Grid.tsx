@@ -1,6 +1,6 @@
 import { createSignal, createMemo, createEffect, JSX, untrack, Index } from "solid-js";
 import { type NodeProps, ElementNode, NewOmit, hasFocus } from "@solidtv/solid";
-import { chainFunctions, chainRefs } from "./utils/chainFunctions.js";
+import { chainRefs } from "./utils/chainFunctions.js";
 
 export interface GridItemProps<T> {
   item:   T
@@ -118,6 +118,24 @@ export function Grid<T>(props: GridProps<T>): JSX.Element {
     props.scroll === "none" ? props.y ?? 0 : -Math.floor(focusedIndex() / columns()) * totalHeight() + (props.y || 0)
   );
 
+  // Created once. The spread below re-runs on every vertical move (for `y`),
+  // and handlers built inline in it were new functions each time. Each runs
+  // the app's handler of the same name first (read when called, so a reactive
+  // one still applies) and stops if it returns true.
+  type HandlerName = "onUp" | "onDown" | "onLeft" | "onRight" | "onFocus";
+  function chainProp(name: HandlerName, own: () => boolean) {
+    return function (this: ElementNode, a: unknown, b: unknown, c: unknown, d?: unknown) {
+      const user = props[name] as ((...args: unknown[]) => unknown) | undefined;
+      if (typeof user === "function" && user.call(this, a, b, c, d) === true) return true;
+      return own();
+    };
+  }
+  const onUp = chainProp("onUp", () => moveFocus(-columns()));
+  const onDown = chainProp("onDown", () => moveFocus(columns()));
+  const onLeft = chainProp("onLeft", () => handleHorizontalFocus(-1));
+  const onRight = chainProp("onRight", () => handleHorizontalFocus(1));
+  const onFocus = chainProp("onFocus", () => handleHorizontalFocus(0));
+
   let gridRef!: ElementNode;
   return (
     <view
@@ -126,11 +144,11 @@ export function Grid<T>(props: GridProps<T>): JSX.Element {
       transition={/* @once */ { y: true }}
       height={totalHeight() * rows()}
       scrollToIndex={/* @once */ scrollToIndex}
-      onUp={chainFunctions(props.onUp, () => moveFocus(-columns()))}
-      onDown={chainFunctions(props.onDown, () => moveFocus(columns()))}
-      onLeft={chainFunctions(props.onLeft, () => handleHorizontalFocus(-1))}
-      onRight={chainFunctions(props.onRight, () => handleHorizontalFocus(1))}
-      onFocus={chainFunctions(props.onFocus, () => handleHorizontalFocus(0))}
+      onUp={/* @once */ onUp}
+      onDown={/* @once */ onDown}
+      onLeft={/* @once */ onLeft}
+      onRight={/* @once */ onRight}
+      onFocus={/* @once */ onFocus}
       y={scrollY()}
     >
       <Index each={props.items}>

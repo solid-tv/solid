@@ -240,6 +240,56 @@ v.describe('Grid', () => {
     },
   );
 
+  v.it(
+    'the key and focus handlers are created once, not again on every vertical move (1.7); a reactive user handler still runs first',
+    async () => {
+      let grid!: lng.ElementNode;
+      const calls: string[] = [];
+      const [onDown, setOnDown] = s.createSignal<() => boolean>(() => {
+        calls.push('first');
+        return false;
+      });
+      dispose = await mount(() => (
+        <view width={1920} height={1080}>
+          <Grid
+            ref={grid}
+            autofocus
+            items={tenItems}
+            columns={3}
+            itemWidth={100}
+            itemHeight={50}
+            onDown={onDown()}
+          >
+            {Cell}
+          </Grid>
+        </view>
+      ));
+      const names = ['onUp', 'onDown', 'onLeft', 'onRight', 'onFocus'];
+      const handlers = names.map((n) => grid[n]);
+      await press('ArrowDown', 'ArrowDown', 'ArrowUp');
+      v.expect(names.map((n, i) => grid[n] === handlers[i])).toEqual([
+        true,
+        true,
+        true,
+        true,
+        true,
+      ]);
+      v.expect([focusedId(), grid.y]).toEqual(['g3', -50]);
+      v.expect(calls).toEqual(['first', 'first']);
+
+      // A new user handler replaces the old one; returning true stops the
+      // Grid's own move.
+      setOnDown(() => () => {
+        calls.push('second');
+        return true;
+      });
+      await flush();
+      await press('ArrowDown');
+      v.expect(calls).toEqual(['first', 'first', 'second']);
+      v.expect(focusedId()).toBe('g3');
+    },
+  );
+
   v.it('scroll="none": y does not follow the focused row', async () => {
     let grid!: lng.ElementNode;
     dispose = await mount(() => (
