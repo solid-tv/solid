@@ -200,6 +200,53 @@ v.describe('VirtualGrid', () => {
     },
   );
 
+  v.it(
+    'a row change lays the grid out once, a move within a row not at all (1.7)',
+    async () => {
+      let grid!: lng.ElementNode;
+      dispose = await mount(() => (
+        <view width={1920} height={1080}>
+          <VirtualGrid
+            ref={grid}
+            autofocus
+            y={40}
+            width={700}
+            columns={3}
+            rows={2}
+            buffer={1}
+            each={range(20)}
+          >
+            {(item) => <Cell item={item()} />}
+          </VirtualGrid>
+        </view>
+      ));
+      // The grid's flex passes: updateLayout calls, from the post-mutation
+      // layout phase and from VirtualGrid itself.
+      let n = 0;
+      const updateLayout = grid.updateLayout;
+      grid.updateLayout = function (this: lng.ElementNode) {
+        n++;
+        return updateLayout.call(this);
+      };
+      const passes: number[] = [];
+      for (const key of [
+        'ArrowRight',
+        'ArrowDown',
+        'ArrowDown',
+        'ArrowDown',
+        'ArrowLeft',
+        'ArrowUp',
+        'ArrowUp',
+      ]) {
+        n = 0;
+        await press(key);
+        passes.push(n);
+      }
+      // It was two per row change and none within a row.
+      v.expect(passes).toEqual([0, 1, 1, 1, 0, 1, 1]);
+    },
+  );
+
   v.it('defaults: rows 1, buffer 2, scroll "always"', async () => {
     let grid!: lng.ElementNode;
     dispose = await mount(() => (
