@@ -23,9 +23,6 @@ importers:
       '@solidjs/router':
         specifier: ^0.16.1
         version: 0.16.1(solid-js@1.9.3)
-      '@solidtv/renderer':
-        specifier: ^1.9.0
-        version: 1.9.0
       solid-js:
         specifier: '*'
         version: 1.9.3
@@ -39,6 +36,9 @@ importers:
       '@solidjs/testing-library':
         specifier: ^0.8.10
         version: 0.8.10(@solidjs/router@0.16.1(solid-js@1.9.3))(solid-js@1.9.3)
+      '@solidtv/renderer':
+        specifier: link:../renderer-v2-solid
+        version: link:../renderer-v2-solid
       '@typescript-eslint/eslint-plugin':
         specifier: ^8.59.2
         version: 8.59.2(@typescript-eslint/parser@8.59.2(eslint@9.39.4(jiti@2.7.0))(typescript@6.0.3))(eslint@9.39.4(jiti@2.7.0))(typescript@6.0.3)
@@ -868,10 +868,6 @@ packages:
     peerDependenciesMeta:
       '@solidjs/router':
         optional: true
-
-  '@solidtv/renderer@1.9.0':
-    resolution: {integrity: sha512-61MLroT4fPGpslSIiBpQHAmx017iyMfZhVRc0OQalsBGyGng6lH0SkWwkIX4W9l5umqVH30pzIcjpn5+2OQZzg==}
-    engines: {node: '>= 18.0.0', npm: '>= 10.0.0', pnpm: '>= 10.17.0'}
 
   '@standard-schema/spec@1.1.0':
     resolution: {integrity: sha512-l2aFy5jALhniG5HgqrD6jXLi/rUWrKvqN/qJx6yoJsgKhblVd+iqqU4RCXavm/jPityDo5TCvKMnpjKnOriy0w==}
@@ -3196,8 +3192,6 @@ snapshots:
       solid-js: 1.9.3
     optionalDependencies:
       '@solidjs/router': 0.16.1(solid-js@1.9.3)
-
-  '@solidtv/renderer@1.9.0': {}
 
   '@standard-schema/spec@1.1.0': {}
 
