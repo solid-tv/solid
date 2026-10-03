@@ -1,0 +1,616 @@
+// Phase 1 contract tests: VirtualRow and VirtualColumn (window of mounted
+// items, window shift per press, selected -> data index mapping, final x/y,
+// scroll modes, wrap, displaySize, bufferSize, selected, onSelectedChanged,
+// onEndReached).
+//
+// Pins today's behaviour (arm B) through the public surface: keys go through
+// the focus manager's real keydown listener; assertions read the focused
+// element, `selected`, `cursor` (documented as the data index), the data
+// items of the mounted children, callback arguments and final x/y.
+// Animations are off so positions are final.
+import * as v from 'vitest';
+import * as s from 'solid-js';
+import * as lng from '@solidtv/solid';
+import {
+  VirtualRow,
+  VirtualColumn,
+  useFocusManager,
+  type KeyEventTarget,
+} from '@solidtv/solid/primitives';
+import { renderer } from './setup.js';
+
+// Real KeyboardEvents on the target the focus manager listens to. A private
+// target (instead of `document`) keeps listeners other files leave on
+// `document` (vitest isolate: false) from handling a press twice.
+const keys = new EventTarget();
+const flush = () => new Promise<void>((r) => setTimeout(r, 0));
+
+async function press(...names: string[]) {
+  for (const key of names) {
+    keys.dispatchEvent(new KeyboardEvent('keydown', { key }));
+    // Focus and the window shift settle in microtasks.
+    await flush();
+  }
+}
+
+async function mount(ui: () => s.JSX.Element) {
+  const dispose = renderer.render(() => {
+    useFocusManager(undefined, keys as unknown as KeyEventTarget);
+    return ui();
+  }) as unknown as () => void;
+  await flush();
+  return dispose;
+}
+
+const focusedId = () => lng.activeElement()?.id;
+
+/** Data items of the mounted children, in order. */
+const mounted = (el: lng.ElementNode) =>
+  el.children.map((c) => (c as lng.ElementNode).item as number).join(',');
+
+type Step = [
+  focused: string | undefined,
+  selected: number | undefined,
+  cursor: number,
+  pos: number,
+  mounted: string,
+];
+
+const rowStep = (row: lng.ElementNode): Step => [
+  focusedId(),
+  row.selected,
+  row.cursor as number,
+  row.x,
+  mounted(row),
+];
+
+// Each child carries its data item as `item`, as the docs' Thumbnail does;
+// VirtualRow finds the selected child by it.
+const Item = (props: { item: number }) => (
+  <view id={`v${props.item}`} item={props.item} width={200} height={100} />
+);
+
+const twelve = Array.from({ length: 12 }, (_, i) => i);
+
+let dispose: (() => void) | undefined;
+const animationsEnabled = lng.Config.animationsEnabled;
+
+v.beforeAll(() => {
+  lng.Config.animationsEnabled = false;
+});
+v.afterAll(() => {
+  lng.Config.animationsEnabled = animationsEnabled;
+});
+v.afterEach(() => {
+  dispose?.();
+  dispose = undefined;
+});
+
+v.describe('VirtualRow: window and scroll modes', () => {
+  v.it(
+    'mounts displaySize + bufferSize (default 2) items, laid out by flex with gap 30',
+    async () => {
+      let row!: lng.ElementNode;
+      dispose = await mount(() => (
+        <view width={1920} height={1080}>
+          <VirtualRow ref={row} autofocus x={50} each={twelve} displaySize={4}>
+            {(item) => <Item item={item()} />}
+          </VirtualRow>
+        </view>
+      ));
+      v.expect(rowStep(row)).toEqual(['v0', 0, 0, 50, '0,1,2,3,4,5']);
+      v.expect(row.children.map((c) => c.x)).toEqual([
+        0, 230, 460, 690, 920, 1150,
+      ]);
+    },
+  );
+
+  // 12 items, displaySize 4, x=50, 200-wide children + gap 30. Thirteen Right
+  // presses then four Left presses; after each press:
+  // [focused, selected, cursor, x, data items mounted].
+  const cases: Record<string, { initial: Step; right: Step[]; left: Step[] }> =
+    {
+      auto: {
+        initial: ['v0', 0, 0, 50, '0,1,2,3,4,5'],
+        right: [
+          ['v1', 1, 1, -180, '0,1,2,3,4,5'],
+          ['v2', 1, 2, -180, '1,2,3,4,5,6'],
+          ['v3', 1, 3, -180, '2,3,4,5,6,7'],
+          ['v4', 1, 4, -180, '3,4,5,6,7,8'],
+          ['v5', 1, 5, -180, '4,5,6,7,8,9'],
+          ['v6', 1, 6, -180, '5,6,7,8,9,10'],
+          ['v7', 1, 7, -180, '6,7,8,9,10,11'],
+          // The window runs off the end of the data and shrinks.
+          ['v8', 1, 8, -180, '7,8,9,10,11'],
+          ['v9', 1, 9, -180, '8,9,10,11'],
+          ['v10', 2, 10, -180, '8,9,10,11'],
+          ['v11', 3, 11, -180, '8,9,10,11'],
+          ['v11', 3, 11, -180, '8,9,10,11'],
+          ['v11', 3, 11, -180, '8,9,10,11'],
+        ],
+        left: [
+          ['v10', 3, 10, -180, '7,8,9,10,11'],
+          ['v9', 3, 9, -180, '6,7,8,9,10,11'],
+          ['v8', 3, 8, -180, '5,6,7,8,9,10'],
+          ['v7', 3, 7, -180, '4,5,6,7,8,9'],
+        ],
+      },
+      'auto + wrap': {
+        // Wrap keeps one item before the selection: the window starts at the
+        // last item and x is shifted left by one slot.
+        initial: ['v0', 1, 0, -180, '11,0,1,2,3,4'],
+        right: [
+          ['v1', 1, 1, -180, '0,1,2,3,4,5'],
+          ['v2', 1, 2, -180, '1,2,3,4,5,6'],
+          ['v3', 1, 3, -180, '2,3,4,5,6,7'],
+          ['v4', 1, 4, -180, '3,4,5,6,7,8'],
+          ['v5', 1, 5, -180, '4,5,6,7,8,9'],
+          ['v6', 1, 6, -180, '5,6,7,8,9,10'],
+          ['v7', 1, 7, -180, '6,7,8,9,10,11'],
+          ['v8', 1, 8, -180, '7,8,9,10,11,0'],
+          ['v9', 1, 9, -180, '8,9,10,11,0,1'],
+          ['v10', 1, 10, -180, '9,10,11,0,1,2'],
+          ['v11', 1, 11, -180, '10,11,0,1,2,3'],
+          ['v0', 1, 0, -180, '11,0,1,2,3,4'],
+          ['v1', 1, 1, -180, '0,1,2,3,4,5'],
+        ],
+        left: [
+          ['v0', 1, 0, -180, '11,0,1,2,3,4'],
+          ['v11', 1, 11, -180, '10,11,0,1,2,3'],
+          ['v10', 1, 10, -180, '9,10,11,0,1,2'],
+          ['v9', 1, 9, -180, '8,9,10,11,0,1'],
+        ],
+      },
+      edge: {
+        initial: ['v0', 0, 0, 50, '0,1,2,3,4,5'],
+        right: [
+          ['v1', 1, 1, 50, '0,1,2,3,4,5'],
+          ['v2', 2, 2, 50, '0,1,2,3,4,5'],
+          ['v3', 3, 3, 50, '0,1,2,3,4,5'],
+          ['v4', 4, 4, -180, '0,1,2,3,4,5'],
+          ['v5', 4, 5, -180, '1,2,3,4,5,6'],
+          ['v6', 4, 6, -180, '2,3,4,5,6,7'],
+          ['v7', 4, 7, -180, '3,4,5,6,7,8'],
+          ['v8', 4, 8, -180, '4,5,6,7,8,9'],
+          ['v9', 4, 9, -180, '5,6,7,8,9,10'],
+          ['v10', 4, 10, -180, '6,7,8,9,10,11'],
+          ['v11', 4, 11, -180, '7,8,9,10,11'],
+          ['v11', 4, 11, -180, '7,8,9,10,11'],
+          ['v11', 4, 11, -180, '7,8,9,10,11'],
+        ],
+        left: [
+          ['v10', 3, 10, -180, '7,8,9,10,11'],
+          ['v9', 2, 9, -180, '7,8,9,10,11'],
+          ['v8', 1, 8, -180, '7,8,9,10,11'],
+          ['v7', 1, 7, -180, '6,7,8,9,10,11'],
+        ],
+      },
+      'edge + wrap': {
+        initial: ['v0', 1, 0, -180, '11,0,1,2,3,4'],
+        right: [
+          ['v1', 2, 1, -180, '11,0,1,2,3,4'],
+          ['v2', 3, 2, -180, '11,0,1,2,3,4'],
+          ['v3', 4, 3, -180, '11,0,1,2,3,4'],
+          ['v4', 4, 4, -180, '0,1,2,3,4,5'],
+          ['v5', 4, 5, -180, '1,2,3,4,5,6'],
+          ['v6', 4, 6, -180, '2,3,4,5,6,7'],
+          ['v7', 4, 7, -180, '3,4,5,6,7,8'],
+          ['v8', 4, 8, -180, '4,5,6,7,8,9'],
+          ['v9', 4, 9, -180, '5,6,7,8,9,10'],
+          ['v10', 4, 10, -180, '6,7,8,9,10,11'],
+          ['v11', 4, 11, -180, '7,8,9,10,11,0'],
+          ['v0', 4, 0, -180, '8,9,10,11,0,1'],
+          ['v1', 4, 1, -180, '9,10,11,0,1,2'],
+        ],
+        left: [
+          ['v0', 3, 0, -180, '9,10,11,0,1,2'],
+          ['v11', 2, 11, -180, '9,10,11,0,1,2'],
+          ['v10', 1, 10, -180, '9,10,11,0,1,2'],
+          ['v9', 1, 9, -180, '8,9,10,11,0,1'],
+        ],
+      },
+      always: {
+        initial: ['v0', 0, 0, 50, '0,1,2,3,4,5'],
+        right: [
+          ['v1', 1, 1, -180, '0,1,2,3,4,5'],
+          ['v2', 2, 2, -410, '0,1,2,3,4,5'],
+          ['v3', 2, 3, -410, '1,2,3,4,5,6'],
+          ['v4', 2, 4, -410, '2,3,4,5,6,7'],
+          ['v5', 2, 5, -410, '3,4,5,6,7,8'],
+          ['v6', 2, 6, -410, '4,5,6,7,8,9'],
+          ['v7', 2, 7, -410, '5,6,7,8,9,10'],
+          ['v8', 2, 8, -410, '6,7,8,9,10,11'],
+          ['v9', 3, 9, -640, '6,7,8,9,10,11'],
+          ['v10', 4, 10, -870, '6,7,8,9,10,11'],
+          ['v11', 5, 11, -1100, '6,7,8,9,10,11'],
+          ['v11', 5, 11, -1100, '6,7,8,9,10,11'],
+          ['v11', 5, 11, -1100, '6,7,8,9,10,11'],
+        ],
+        left: [
+          ['v10', 4, 10, -870, '6,7,8,9,10,11'],
+          ['v9', 3, 9, -640, '6,7,8,9,10,11'],
+          ['v8', 2, 8, -410, '6,7,8,9,10,11'],
+          ['v7', 2, 7, -410, '5,6,7,8,9,10'],
+        ],
+      },
+    };
+  // 'always + wrap' produces exactly the 'auto + wrap' sequence today.
+  cases['always + wrap'] = cases['auto + wrap']!;
+
+  for (const [name, expected] of Object.entries(cases)) {
+    v.it(
+      `scroll="${name}": mounted items, selected, cursor and x after each press`,
+      async () => {
+        const [mode, wrap] = name.split(' + ') as [
+          'auto' | 'edge' | 'always',
+          string | undefined,
+        ];
+        let row!: lng.ElementNode;
+        dispose = await mount(() => (
+          <view width={1920} height={1080}>
+            <VirtualRow
+              ref={row}
+              autofocus
+              x={50}
+              each={twelve}
+              displaySize={4}
+              scroll={mode}
+              wrap={wrap === 'wrap'}
+            >
+              {(item) => <Item item={item()} />}
+            </VirtualRow>
+          </view>
+        ));
+        v.expect(rowStep(row)).toEqual(expected.initial);
+        const right: Step[] = [];
+        for (let i = 0; i < 13; i++) {
+          await press('ArrowRight');
+          right.push(rowStep(row));
+        }
+        v.expect(right).toEqual(expected.right);
+        const left: Step[] = [];
+        for (let i = 0; i < 4; i++) {
+          await press('ArrowLeft');
+          left.push(rowStep(row));
+        }
+        v.expect(left).toEqual(expected.left);
+      },
+    );
+  }
+
+  // Today scroll="none" (and "center", which VirtualRow does not implement
+  // and treats like "none") never moves the window: only items 0-5 are ever
+  // mounted, Right stops at v5 and the press bubbles; cursor never passes 5.
+  // Row and Column with scroll="none" keep every child reachable.
+  v.it.skip(
+    'BUG: scroll="none"/"center" on VirtualRow cannot reach items past displaySize + bufferSize (Virtual.tsx:329-334)',
+    async () => {
+      for (const mode of ['none', 'center'] as const) {
+        let row!: lng.ElementNode;
+        dispose = await mount(() => (
+          <view width={1920} height={1080}>
+            <VirtualRow
+              ref={row}
+              autofocus
+              x={50}
+              each={twelve}
+              displaySize={4}
+              scroll={mode}
+            >
+              {(item) => <Item item={item()} />}
+            </VirtualRow>
+          </view>
+        ));
+        await press(...Array.from({ length: 11 }, () => 'ArrowRight'));
+        v.expect([focusedId(), row.cursor]).toEqual(['v11', 11]);
+        dispose();
+        dispose = undefined;
+      }
+    },
+  );
+
+  v.it(
+    'displaySize >= item count: everything is mounted, nothing shifts, wrap wraps the children',
+    async () => {
+      let row!: lng.ElementNode;
+      dispose = await mount(() => (
+        <view width={1920} height={1080}>
+          <VirtualRow
+            ref={row}
+            autofocus
+            x={50}
+            each={[0, 1, 2]}
+            displaySize={4}
+            wrap
+          >
+            {(item) => <Item item={item()} />}
+          </VirtualRow>
+        </view>
+      ));
+      const seen: Step[] = [rowStep(row)];
+      for (const key of [
+        'ArrowRight',
+        'ArrowRight',
+        'ArrowRight',
+        'ArrowLeft',
+      ]) {
+        await press(key);
+        seen.push(rowStep(row));
+      }
+      v.expect(seen).toEqual([
+        ['v0', 0, 0, 50, '0,1,2'],
+        ['v1', 1, 1, 50, '0,1,2'],
+        ['v2', 2, 2, 50, '0,1,2'],
+        ['v0', 0, 0, 50, '0,1,2'],
+        ['v2', 2, 2, 50, '0,1,2'],
+      ]);
+    },
+  );
+});
+
+v.describe('VirtualRow: bufferSize and onEndReached', () => {
+  v.it(
+    'bufferSize sets how many extra items are mounted; onEndReached fires on every press within onEndReachedThreshold; appended items extend the window',
+    async () => {
+      let row!: lng.ElementNode;
+      const [items, setItems] = s.createSignal(twelve);
+      const onEndReached = v.vi.fn();
+      dispose = await mount(() => (
+        <view width={1920} height={1080}>
+          <VirtualRow
+            ref={row}
+            autofocus
+            x={50}
+            each={items()}
+            displaySize={3}
+            bufferSize={1}
+            onEndReached={onEndReached}
+            onEndReachedThreshold={3}
+          >
+            {(item) => <Item item={item()} />}
+          </VirtualRow>
+        </view>
+      ));
+      const seen: [...Step, number][] = [[...rowStep(row), 0]];
+      for (let i = 0; i < 11; i++) {
+        await press('ArrowRight');
+        seen.push([...rowStep(row), onEndReached.mock.calls.length]);
+      }
+      // displaySize 3 + bufferSize 1 = 4 mounted. Threshold 3 of 12: fires once
+      // the cursor reaches 9, and again on each later press.
+      v.expect(seen).toEqual([
+        ['v0', 0, 0, 50, '0,1,2,3', 0],
+        ['v1', 1, 1, -180, '0,1,2,3', 0],
+        ['v2', 1, 2, -180, '1,2,3,4', 0],
+        ['v3', 1, 3, -180, '2,3,4,5', 0],
+        ['v4', 1, 4, -180, '3,4,5,6', 0],
+        ['v5', 1, 5, -180, '4,5,6,7', 0],
+        ['v6', 1, 6, -180, '5,6,7,8', 0],
+        ['v7', 1, 7, -180, '6,7,8,9', 0],
+        ['v8', 1, 8, -180, '7,8,9,10', 0],
+        ['v9', 1, 9, -180, '8,9,10,11', 1],
+        ['v10', 1, 10, -180, '9,10,11', 2],
+        ['v11', 2, 11, -180, '9,10,11', 3],
+      ]);
+
+      // The app appends a page in response.
+      setItems(Array.from({ length: 16 }, (_, i) => i));
+      await flush();
+      v.expect(rowStep(row)).toEqual(['v11', 1, 11, -180, '10,11,12,13']);
+      await press('ArrowRight', 'ArrowRight');
+      v.expect(rowStep(row)).toEqual(['v13', 1, 13, -180, '12,13,14,15']);
+      // 16 - 3 = 13: fires for cursor 13 but not 12.
+      v.expect(onEndReached).toHaveBeenCalledTimes(4);
+    },
+  );
+
+  v.it(
+    'onEndReached is never called without onEndReachedThreshold',
+    async () => {
+      let row!: lng.ElementNode;
+      const onEndReached = v.vi.fn();
+      dispose = await mount(() => (
+        <view width={1920} height={1080}>
+          <VirtualRow
+            ref={row}
+            autofocus
+            x={50}
+            each={twelve}
+            displaySize={3}
+            onEndReached={onEndReached}
+          >
+            {(item) => <Item item={item()} />}
+          </VirtualRow>
+        </view>
+      ));
+      await press(...Array.from({ length: 12 }, () => 'ArrowRight'));
+      v.expect(row.cursor).toBe(11);
+      v.expect(onEndReached).not.toHaveBeenCalled();
+    },
+  );
+});
+
+v.describe('VirtualRow: onSelectedChanged and selected', () => {
+  v.it(
+    'onSelectedChanged is called as (idx, container, active, lastIdx), this = container; idx is the child index before the window shift; this.cursor is still the previous data index',
+    async () => {
+      let row!: lng.ElementNode;
+      const calls: unknown[][] = [];
+      dispose = await mount(() => (
+        <view width={1920} height={1080}>
+          <VirtualRow
+            ref={row}
+            autofocus
+            x={50}
+            each={twelve}
+            displaySize={4}
+            onSelectedChanged={function (
+              this: lng.ElementNode,
+              idx,
+              container,
+              active,
+              lastIdx,
+            ) {
+              calls.push([
+                this === row,
+                container === row,
+                idx,
+                active.item,
+                lastIdx,
+                this.cursor,
+              ]);
+            }}
+          >
+            {(item) => <Item item={item()} />}
+          </VirtualRow>
+        </view>
+      ));
+      await press('ArrowRight', 'ArrowRight', 'ArrowRight');
+      // [this, container, idx, active.item, lastIdx, this.cursor]
+      v.expect(calls).toEqual([
+        // Once on mount (autofocus).
+        [true, true, 0, 0, 0, 0],
+        [true, true, 1, 1, 0, 0],
+        // The window then shifts and selected is corrected back to 1.
+        [true, true, 2, 2, 1, 1],
+        [true, true, 2, 3, 1, 2],
+      ]);
+      // After the press cursor is the data index of the focused item.
+      v.expect([row.cursor, row.selected, focusedId()]).toEqual([3, 1, 'v3']);
+    },
+  );
+
+  v.it(
+    'selected: initial value is a data index; a reactive change moves focus and the window without onSelectedChanged',
+    async () => {
+      let row!: lng.ElementNode;
+      const [sel, setSel] = s.createSignal(5);
+      const calls: unknown[][] = [];
+      dispose = await mount(() => (
+        <view width={1920} height={1080}>
+          <VirtualRow
+            ref={row}
+            autofocus
+            x={50}
+            each={twelve}
+            displaySize={4}
+            selected={sel()}
+            onSelectedChanged={(idx, _c, active, lastIdx) =>
+              calls.push([idx, active.id, lastIdx])
+            }
+          >
+            {(item) => <Item item={item()} />}
+          </VirtualRow>
+        </view>
+      ));
+      v.expect(rowStep(row)).toEqual(['v5', 1, 5, -180, '4,5,6,7,8,9']);
+      v.expect(calls).toEqual([[1, 'v5', 1]]);
+
+      // Current behaviour: the first press after an initial selected puts x
+      // back to 50 as the window shifts, so the focused item sits one slot
+      // further right (screen x 280) than when the row starts at 0 (screen x
+      // 50, see the auto case). The position used is the one saved before the
+      // initial shift (Virtual.tsx:500-502).
+      await press('ArrowRight');
+      v.expect(rowStep(row)).toEqual(['v6', 1, 6, 50, '5,6,7,8,9,10']);
+      await press('ArrowLeft', 'ArrowLeft');
+      v.expect(rowStep(row)).toEqual(['v4', 1, 4, 50, '3,4,5,6,7,8']);
+      calls.length = 0;
+
+      setSel(9);
+      await flush();
+      v.expect(rowStep(row)).toEqual(['v9', 3, 9, -180, '6,7,8,9,10,11']);
+      v.expect(calls).toEqual([]);
+
+      await press('ArrowRight');
+      v.expect(rowStep(row)).toEqual(['v10', 3, 10, 50, '7,8,9,10,11']);
+      v.expect(calls).toEqual([[4, 'v10', 3]]);
+    },
+  );
+
+  v.it(
+    'selected + wrap: the selected data item is placed in slot 1',
+    async () => {
+      let row!: lng.ElementNode;
+      dispose = await mount(() => (
+        <view width={1920} height={1080}>
+          <VirtualRow
+            ref={row}
+            autofocus
+            x={50}
+            each={twelve}
+            displaySize={4}
+            wrap
+            selected={5}
+          >
+            {(item) => <Item item={item()} />}
+          </VirtualRow>
+        </view>
+      ));
+      const seen: Step[] = [rowStep(row)];
+      for (const key of ['ArrowRight', 'ArrowLeft', 'ArrowLeft']) {
+        await press(key);
+        seen.push(rowStep(row));
+      }
+      v.expect(seen).toEqual([
+        ['v5', 1, 5, -180, '4,5,6,7,8,9'],
+        ['v6', 1, 6, -180, '5,6,7,8,9,10'],
+        ['v5', 1, 5, -180, '4,5,6,7,8,9'],
+        ['v4', 1, 4, -180, '3,4,5,6,7,8'],
+      ]);
+    },
+  );
+});
+
+v.describe('VirtualColumn', () => {
+  v.it(
+    'Down/Up shift the window and y; Left/Right are not handled',
+    async () => {
+      let col!: lng.ElementNode;
+      const parentRight = v.vi.fn(() => true);
+      dispose = await mount(() => (
+        <view width={1920} height={1080} onRight={parentRight}>
+          <VirtualColumn
+            ref={col}
+            autofocus
+            y={50}
+            each={twelve}
+            displaySize={3}
+          >
+            {(item) => <Item item={item()} />}
+          </VirtualColumn>
+        </view>
+      ));
+      const colStep = (): Step => [
+        focusedId(),
+        col.selected,
+        col.cursor as number,
+        col.y,
+        mounted(col),
+      ];
+      v.expect(col.children.map((c) => c.y)).toEqual([0, 130, 260, 390, 520]);
+      const seen: Step[] = [colStep()];
+      for (const key of [
+        'ArrowDown',
+        'ArrowDown',
+        'ArrowDown',
+        'ArrowUp',
+        'ArrowRight',
+      ]) {
+        await press(key);
+        seen.push(colStep());
+      }
+      // 100-high children + gap 30: one slot is 130.
+      v.expect(seen).toEqual([
+        ['v0', 0, 0, 50, '0,1,2,3,4'],
+        ['v1', 1, 1, -80, '0,1,2,3,4'],
+        ['v2', 1, 2, -80, '1,2,3,4,5'],
+        ['v3', 1, 3, -80, '2,3,4,5,6'],
+        ['v2', 1, 2, -80, '1,2,3,4,5'],
+        ['v2', 1, 2, -80, '1,2,3,4,5'],
+      ]);
+      v.expect(parentRight).toHaveBeenCalledTimes(1);
+      v.expect(col.x).toBe(0);
+    },
+  );
+});
