@@ -136,33 +136,17 @@ type TransitionObject = Exclude<
 
 // The base when `transition` is not an object (unset, true or false).
 const noTransition = {};
-// Merged transitions by base transition (by element when there is no base
-// object, so Rows without a `transition` do not share one), then by
-// directional transition. A press reuses the merged object for its direction
-// instead of allocating one, so the node's `transition` (and the settings
-// object animateProp gets) stays the same while the direction and the base do.
+// Merged transitions per element, then per directional transition. A press
+// reuses the merged object for its direction instead of allocating one, so
+// the node's `transition` (and the settings object animateProp gets) stays
+// the same while the direction and the base do. Per element, so an in-place
+// edit of one Row's `transition` never reaches another Row; the cache is
+// rebuilt when the element's base `transition` object changes (an in-place
+// edit of the same base object is not picked up: assign a new object).
 const mergedTransitions = new WeakMap<
   object,
   WeakMap<object, TransitionObject>
 >();
-
-function mergedTransition(
-  directional: object,
-  base: object,
-  key: object,
-): TransitionObject {
-  let byDirectional = mergedTransitions.get(key);
-  if (byDirectional === undefined) {
-    byDirectional = new WeakMap();
-    mergedTransitions.set(key, byDirectional);
-  }
-  let merged = byDirectional.get(directional);
-  if (merged === undefined) {
-    merged = { ...directional, ...base } as TransitionObject;
-    byDirectional.set(directional, merged);
-  }
-  return merged;
-}
 
 export function handleNavigation(
   direction: 'up' | 'right' | 'down' | 'left',
@@ -187,17 +171,26 @@ export function handleNavigation(
 
       // Re-snapshot the developer-supplied transition whenever el.transition
       // doesn't match our last merge — that means it was set externally
-      // (initial render or a reactive update), not by this handler.
-      if (current !== el._navLastMerged) {
+      // (initial render or a reactive update), not by this handler — and it
+      // is not the base the cache was built from.
+      let byDirectional = mergedTransitions.get(el);
+      if (
+        current !== el._navLastMerged &&
+        (current !== el._navBaseTransition || byDirectional === undefined)
+      ) {
         el._navBaseTransition = current;
+        byDirectional = new WeakMap();
+        mergedTransitions.set(el, byDirectional);
       }
 
-      const base = el._navBaseTransition!;
-      const merged = mergedTransition(
-        directional as object,
-        base,
-        base === noTransition ? el : base,
-      );
+      let merged = byDirectional!.get(directional as object);
+      if (merged === undefined) {
+        merged = {
+          ...(directional as object),
+          ...el._navBaseTransition,
+        } as TransitionObject;
+        byDirectional!.set(directional as object, merged);
+      }
       el.transition = merged;
       el._navLastMerged = merged;
     }
