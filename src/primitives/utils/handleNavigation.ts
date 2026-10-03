@@ -136,20 +136,25 @@ type TransitionObject = Exclude<
 
 // The base when `transition` is not an object (unset, true or false).
 const noTransition = {};
-// Merged transitions by base transition, then by directional transition.
-// A press reuses the merged object for its direction instead of allocating
-// one, so the node's `transition` (and the settings object animateProp gets)
-// stays the same while the direction and the base do.
+// Merged transitions by base transition (by element when there is no base
+// object, so Rows without a `transition` do not share one), then by
+// directional transition. A press reuses the merged object for its direction
+// instead of allocating one, so the node's `transition` (and the settings
+// object animateProp gets) stays the same while the direction and the base do.
 const mergedTransitions = new WeakMap<
   object,
   WeakMap<object, TransitionObject>
 >();
 
-function mergedTransition(directional: object, base: object): TransitionObject {
-  let byDirectional = mergedTransitions.get(base);
+function mergedTransition(
+  directional: object,
+  base: object,
+  key: object,
+): TransitionObject {
+  let byDirectional = mergedTransitions.get(key);
   if (byDirectional === undefined) {
     byDirectional = new WeakMap();
-    mergedTransitions.set(base, byDirectional);
+    mergedTransitions.set(key, byDirectional);
   }
   let merged = byDirectional.get(directional);
   if (merged === undefined) {
@@ -187,9 +192,11 @@ export function handleNavigation(
         el._navBaseTransition = current;
       }
 
+      const base = el._navBaseTransition!;
       const merged = mergedTransition(
         directional as object,
-        el._navBaseTransition!,
+        base,
+        base === noTransition ? el : base,
       );
       el.transition = merged;
       el._navLastMerged = merged;
