@@ -14,9 +14,10 @@ const key = (k: string) =>
 //   0 1 2
 //   3 4
 let grid!: lng.ElementNode;
+let dispose: () => void;
 
 v.beforeAll(async () => {
-  renderer.render(() => {
+  dispose = renderer.render(() => {
     useFocusManager();
     return (
       <view
@@ -41,6 +42,10 @@ v.beforeAll(async () => {
   });
   await waitForUpdate();
 });
+
+// Vitest runs files in one worker without isolation: dispose so the focus
+// manager's document listener does not handle the next file's keys too.
+v.afterAll(() => dispose());
 
 // Each test starts from an explicit child so it doesn't inherit the previous
 // test's selection.

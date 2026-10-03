@@ -9,3 +9,4 @@ releases
 .claude
 # This project uses `pnpm` for package management
 package-lock.json
+.vitest-attachments
