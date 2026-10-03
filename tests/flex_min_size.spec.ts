@@ -1,5 +1,5 @@
 import { ElementNode } from '../src/core/elementNode.ts';
-import calculateFlex from '../src/core/flex.ts';
+import calculateFlex from '../src/core/flexLayout.ts';
 import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { isElementNode } from '../src/core/utils.ts';
 import { TextNode } from '../src/core/nodeTypes.ts';

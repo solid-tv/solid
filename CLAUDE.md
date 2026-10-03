@@ -35,7 +35,7 @@ Run a single test file: `npx vitest tests/flex.spec.ts`
 - `src/core/elementNode.ts` — `ElementNode` is the core node abstraction. Manages properties, children, flex layout, focus, states, animations, and syncs to the underlying `@solidtv/renderer` INode.
 - `src/core/focusManager.ts` — Handles keyboard/remote input, focus path traversal, and key mapping. Focus walks the component tree via `onUp`/`onDown`/`onLeft`/`onRight`/`onEnter` handlers.
 - `src/core/config.ts` — Runtime `Config` object (debug flags, animation settings, font defaults, focus state key).
-- `src/core/flex.ts` / `src/core/flexLayout.ts` — Two flex layout implementations; toggled by `VITE_USE_NEW_FLEX` env var.
+- `src/core/flexLayout.ts` — The flex layout engine (one pass over one container). `elementNode.ts` runs it from a depth-ordered layout queue in the post-mutation pass.
 
 ### Build-Time Globals
 

@@ -17,13 +17,13 @@
  * font size is 30 (Config.fontSettings). `settle()` waits until the
  * renderer has no scene update pending for two frames in a row.
  *
- * The numbers are the final positions and sizes, after fonts load, on
- * solid 1.6.4 with SDF text on renderer 1.9. They are not derived from a
- * formula, they were read from a run; the comments show how they add up.
- * Each one is compared with
- * `expect.closeTo(n, 3)`, |actual - expected| < 0.0005: flex.ts sums child
- * sizes in Float32Arrays, so positions carry float32 rounding (109.70999908
- * for 109.71) while text sizes are float64.
+ * The numbers are the final positions and sizes on solid 1.6.4 with the
+ * renderer v2 lockstep (arm B): "final positions after fonts load must match
+ * arm B". They are not derived from a formula, they were read from arm B;
+ * the comments show how they add up. Each one is compared with
+ * `expect.closeTo(n, 3)`, |actual - expected| < 0.0005: until 1.7 the flex
+ * engines summed child sizes in Float32Arrays, so arm B's positions carry
+ * float32 rounding (109.70999908 for 109.71); 1.7 sums in Float64Arrays.
  *
  * Only final states are asserted. Intermediate ones (a container before its
  * texts have sizes, the number of frames, `loaded` events and flex
