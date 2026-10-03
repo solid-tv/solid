@@ -129,6 +129,36 @@ type NavWithTransitionCache = lngp.NavigableElement & {
   _navLastMerged?: object;
 };
 
+type TransitionObject = Exclude<
+  lng.ElementNode['transition'],
+  boolean | undefined
+>;
+
+// The base when `transition` is not an object (unset, true or false).
+const noTransition = {};
+// Merged transitions by base transition, then by directional transition.
+// A press reuses the merged object for its direction instead of allocating
+// one, so the node's `transition` (and the settings object animateProp gets)
+// stays the same while the direction and the base do.
+const mergedTransitions = new WeakMap<
+  object,
+  WeakMap<object, TransitionObject>
+>();
+
+function mergedTransition(directional: object, base: object): TransitionObject {
+  let byDirectional = mergedTransitions.get(base);
+  if (byDirectional === undefined) {
+    byDirectional = new WeakMap();
+    mergedTransitions.set(base, byDirectional);
+  }
+  let merged = byDirectional.get(directional);
+  if (merged === undefined) {
+    merged = { ...directional, ...base } as TransitionObject;
+    byDirectional.set(directional, merged);
+  }
+  return merged;
+}
+
 export function handleNavigation(
   direction: 'up' | 'right' | 'down' | 'left',
 ): lng.KeyHandler {
@@ -144,10 +174,11 @@ export function handleNavigation(
             : el.transitionRight;
 
     if (directional) {
+      const transition = el.transition;
       const current =
-        typeof el.transition === 'object' && el.transition !== null
-          ? el.transition
-          : {};
+        typeof transition === 'object' && transition !== null
+          ? transition
+          : noTransition;
 
       // Re-snapshot the developer-supplied transition whenever el.transition
       // doesn't match our last merge — that means it was set externally
@@ -156,7 +187,10 @@ export function handleNavigation(
         el._navBaseTransition = current;
       }
 
-      const merged = { ...(directional as object), ...el._navBaseTransition };
+      const merged = mergedTransition(
+        directional as object,
+        el._navBaseTransition!,
+      );
       el.transition = merged;
       el._navLastMerged = merged;
     }
