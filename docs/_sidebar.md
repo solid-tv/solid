@@ -54,6 +54,7 @@
   - [DOM Renderer](/articles/domrenderer.md)
   - [SolidTV Renderer](/articles/solidtv_renderer.md)
 - Build & Deploy
+  - [Building for TVs](/deploy/build.md)
   - [RDK Firebolt Integration](/deploy/firebolt.md)
   - [Tizen/Samsung](/deploy/tizen.md)
   - [WebOS/LG](/deploy/lg.md)
