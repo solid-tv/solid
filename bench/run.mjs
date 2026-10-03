@@ -1,4 +1,3 @@
-/* global window -- the page.evaluate callbacks run in the page */
 // The benchmark runner: `npm run bench` (node bench/run.mjs). Builds each arm,
 // serves it with COOP/COEP (so performance.now() has a 5 µs clock), and
 // drives one fresh Chromium per run with CDP CPU throttling. Methodology and
@@ -260,13 +259,23 @@ function armSource(arm) {
   };
 }
 
-const opCounts = (info) =>
-  args.quick
-    ? {
-        warmup: Math.min(info.warmup, 5),
-        measured: Math.min(info.measured, 10),
-      }
-    : { warmup: info.warmup, measured: info.measured };
+/**
+ * Ops per page load. --quick takes at most 5 warmup and 10 measured ops,
+ * rounded up to whole cycles (Scenario.cycle) so that a warm-cache scenario
+ * stays warm.
+ */
+const opCounts = (info) => {
+  if (!args.quick) {
+    return { warmup: info.warmup, measured: info.measured };
+  }
+  const cycle = info.cycle;
+  const whole = (n) =>
+    cycle === null ? n : Math.max(cycle, Math.ceil(n / cycle) * cycle);
+  return {
+    warmup: whole(Math.min(info.warmup, 5)),
+    measured: whole(Math.min(info.measured, 10)),
+  };
+};
 
 /** One page load: one scenario, one arm, one mode. */
 async function runOnce({ origin, arm, scenario, mode, run }) {
@@ -328,6 +337,7 @@ async function runOnce({ origin, arm, scenario, mode, run }) {
     record.text = info.text;
     record.warmup = warmup;
     record.measured = measured;
+    record.cycle = info.cycle;
     record.env = {
       chrome: browser.version(),
       gpu: info.gpu,

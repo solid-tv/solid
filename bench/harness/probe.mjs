@@ -1,4 +1,3 @@
-/* global window, document, KeyboardEvent */
 // The in-page half of the harness. `pageProbe` is serialized and injected
 // with page.addInitScript (sourceURL bench-probe.js, so that the profilers
 // charge what it does to the harness, not to the app), so it runs before the
@@ -45,10 +44,14 @@ export function pageProbe(opts) {
     writes: 0,
     shaderWrites: 0,
     frameWrites: 0,
+    created: 0,
+    creationProps: 0,
     animations: 0,
     walks: 0,
     loadedText: 0,
     loadedOther: 0,
+    loadedTextEmits: 0,
+    loadedOtherEmits: 0,
     textLayouts: 0,
     textLayoutMs: 0,
     cacheHits: 0,
@@ -88,6 +91,12 @@ export function pageProbe(opts) {
   const fWalks = new Float64Array(counting ? CAP : 1);
   let fCount = 0;
   let inRaf = false;
+  // Count mode: > 0 while renderer code is on the stack (a renderer frame, a
+  // renderer method the counters wrap, a setter, an emitter's dispatch to
+  // the renderer's own listeners). A write counts only at 0: made by app
+  // code (Solid, the scenario), including the app's listeners that the
+  // renderer calls (they run at 0).
+  let rdepth = 0;
   const rendererCallbacks = new WeakSet();
   const wrappers = new WeakMap();
   window.requestAnimationFrame = function (callback) {
@@ -101,11 +110,18 @@ export function pageProbe(opts) {
           a0 = C.flex + C.textLayouts + C.loadedText;
           w0 = C.walks;
         }
+        const internal = counting && rendererCallbacks.has(callback);
+        if (internal) {
+          rdepth++;
+        }
         inRaf = true;
         const start = now();
         callback(time);
         const end = now();
         inRaf = false;
+        if (internal) {
+          rdepth--;
+        }
         const i = fCount & MASK;
         fStart[i] = start;
         fEnd[i] = end;
@@ -250,10 +266,14 @@ export function pageProbe(opts) {
     writes: C.writes,
     shaderWrites: C.shaderWrites,
     frameWrites: C.frameWrites,
+    created: C.created,
+    creationProps: C.creationProps,
     animations: C.animations,
     walks: C.walks,
     loadedText: C.loadedText,
     loadedOther: C.loadedOther,
+    loadedTextEmits: C.loadedTextEmits,
+    loadedOtherEmits: C.loadedOtherEmits,
     textLayouts: C.textLayouts,
     textLayoutMs: C.textLayoutMs,
     cacheHits: C.cacheHits,
@@ -459,12 +479,19 @@ export function pageProbe(opts) {
             return props[name];
           },
           set(v) {
-            C.shaderWrites++;
-            if (inRaf) {
-              C.frameWrites++;
+            if (rdepth === 0) {
+              C.shaderWrites++;
+              if (inRaf) {
+                C.frameWrites++;
+              }
+              bump(detail.shaderWrites, name);
             }
-            bump(detail.shaderWrites, name);
-            props[name] = v;
+            rdepth++;
+            try {
+              props[name] = v;
+            } finally {
+              rdepth--;
+            }
           },
         });
       }
@@ -494,12 +521,19 @@ export function pageProbe(opts) {
               enumerable: d.enumerable,
               configurable: true,
               set(v) {
-                C.writes++;
-                if (inRaf) {
-                  C.frameWrites++;
+                if (rdepth === 0) {
+                  C.writes++;
+                  if (inRaf) {
+                    C.frameWrites++;
+                  }
+                  bump(detail.nodeWrites, name);
                 }
-                bump(detail.nodeWrites, name);
-                set.call(this, v);
+                rdepth++;
+                try {
+                  set.call(this, v);
+                } finally {
+                  rdepth--;
+                }
                 if (isShader) {
                   wrapShader(v);
                 }
@@ -511,8 +545,15 @@ export function pageProbe(opts) {
           ) {
             const fn = d.value;
             p[name] = function () {
-              C.animations++;
-              return fn.apply(this, arguments);
+              if (rdepth === 0) {
+                C.animations++;
+              }
+              rdepth++;
+              try {
+                return fn.apply(this, arguments);
+              } finally {
+                rdepth--;
+              }
             };
           }
         }
@@ -521,17 +562,43 @@ export function pageProbe(opts) {
     const nodeProto = Object.getPrototypeOf(r.root);
     patchProto(nodeProto);
     // Every node made later: its class may be one not seen in the tree yet.
+    // The creation bag is counted on its own (`creationProps`: its keys with
+    // a defined value), the same on both majors: renderer v2 applies it
+    // through the public setters, v1 in the constructor, and neither counts
+    // as a write.
     for (const method of ['createNode', 'createTextNode']) {
       const create = r[method];
-      r[method] = function () {
-        const node = create.apply(this, arguments);
+      r[method] = function (props) {
+        if (rdepth === 0) {
+          C.created++;
+          if (props !== null && typeof props === 'object') {
+            for (const k in props) {
+              if (props[k] !== undefined) {
+                C.creationProps++;
+              }
+            }
+          }
+        }
+        rdepth++;
+        let node;
+        try {
+          node = create.apply(this, arguments);
+        } finally {
+          rdepth--;
+        }
         patchProto(Object.getPrototypeOf(node));
         return node;
       };
     }
     const createShader = r.createShader;
     r.createShader = function () {
-      const sn = createShader.apply(this, arguments);
+      rdepth++;
+      let sn;
+      try {
+        sn = createShader.apply(this, arguments);
+      } finally {
+        rdepth--;
+      }
       wrapShader(sn);
       return sn;
     };
@@ -549,10 +616,12 @@ export function pageProbe(opts) {
       }
     };
     visit(r.root);
-    // `loaded` on nodes that listen for it (v1 emits to nodes without a
-    // listener too, v2 only queues for a listener): the emitter's emit,
-    // wherever the chain defines it. Both majors keep listeners in
-    // `eventListeners[event]`.
+    // The emitter's emit, wherever the chain defines it. `loaded` on nodes:
+    // every emit (v1 emits for every layout and texture load, listener or
+    // not; v2 queues one only for a node with a listener) and the ones a
+    // listener hears (both majors keep listeners in `eventListeners`).
+    // Listeners on nodes and on the renderer are the app's (they run at
+    // rdepth 0); any other emitter's (a texture's) are the renderer's own.
     const listened = (emitter, event) => {
       const map = emitter.eventListeners;
       const list = map !== null && map !== undefined ? map[event] : undefined;
@@ -565,18 +634,32 @@ export function pageProbe(opts) {
     if (ep !== null) {
       const emit = ep.emit;
       ep.emit = function (event, data) {
-        if (
-          event === 'loaded' &&
-          Object.prototype.isPrototypeOf.call(nodeProto, this) === true &&
-          listened(this, event)
-        ) {
-          if (data !== undefined && data !== null && data.type === 'text') {
-            C.loadedText++;
+        const isNode =
+          Object.prototype.isPrototypeOf.call(nodeProto, this) === true;
+        if (event === 'loaded' && isNode) {
+          const text =
+            data !== undefined && data !== null && data.type === 'text';
+          if (text) {
+            C.loadedTextEmits++;
           } else {
-            C.loadedOther++;
+            C.loadedOtherEmits++;
+          }
+          if (listened(this, event)) {
+            if (text) {
+              C.loadedText++;
+            } else {
+              C.loadedOther++;
+            }
           }
         }
-        return emit.call(this, event, data);
+        const app = isNode || this === r;
+        const saved = rdepth;
+        rdepth = app ? 0 : rdepth + 1;
+        try {
+          return emit.call(this, event, data);
+        } finally {
+          rdepth = saved;
+        }
       };
     }
     if (r.scene !== undefined && typeof r.scene.run === 'function') {
@@ -743,6 +826,7 @@ export function pageProbe(opts) {
         text: s.text === true,
         warmup: s.warmup === undefined ? 30 : s.warmup,
         measured: s.measured === undefined ? 60 : s.measured,
+        cycle: typeof s.cycle === 'number' && s.cycle > 0 ? s.cycle : null,
         scenarios: bench.scenarios,
         crossOriginIsolated: window.crossOriginIsolated === true,
         clockResolutionUs: res * 1000,

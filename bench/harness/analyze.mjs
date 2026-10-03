@@ -240,8 +240,12 @@ function countStatsOf(ops, flexHooked) {
     walksPerFrame:
       frames > 0 ? ops.reduce((a, o) => a + o.frameWalks, 0) / frames : null,
     drawnFrames: frames / n,
+    created: sum('created') / n,
+    creationProps: sum('creationProps') / n,
     loadedText: sum('loadedText') / n,
     loadedOther: sum('loadedOther') / n,
+    loadedTextEmits: sum('loadedTextEmits') / n,
+    loadedOtherEmits: sum('loadedOtherEmits') / n,
     textLayouts: sum('textLayouts') / n,
     textLayoutMs: sum('textLayoutMs') / n,
     cacheHitRate: hits + misses > 0 ? hits / (hits + misses) : null,
@@ -520,14 +524,14 @@ export function writeSummary(dir) {
   L.push('## Counts per op (instrumented build; its timings are not reported)');
   L.push('');
   L.push(
-    "`node writes` and `shader writes` count setter calls on renderer nodes and on shader `props`; `in frames` is the part of both made inside rAF callbacks (renderer v1 steps animations through the setters, v2 writes its arrays directly; Solid's flex on `loaded` runs there too). `loaded` counts events delivered to nodes that listen for them.",
+    "`node writes` and `shader writes` are setter calls on renderer nodes and on shader `props` made by app code (Solid and the scenario). A write made while renderer code is on the stack (a renderer frame, `createNode`/`createTextNode`/`createShader`/`animate`, another setter, a texture's event dispatch) is not counted; the app's listeners that the renderer calls (`loaded`, `idle`) are app code. `in frames`: the part of those writes made during a renderer frame (Solid's flex on `loaded`). Creation is counted on its own, the same way on both majors: `created` nodes and their `creation props` (keys with a defined value in the bag passed to `createNode`/`createTextNode`; renderer v2 applies the bag through its setters, v1 in its constructor). `loaded`: emitted / heard by a listener (v1 emits on every text layout and texture load, v2 queues one only for a node with a listener).",
   );
   L.push('');
   L.push(
-    '| scenario | arm | flex passes | node writes | shader writes | in frames | animations | walks/drawn frame | drawn frames | loaded (text) | loaded (other) | runs |',
+    '| scenario | arm | flex passes | node writes | shader writes | in frames | animations | walks/drawn frame | drawn frames | created | creation props | loaded text (emitted / heard) | loaded other (emitted / heard) | runs |',
   );
   L.push(
-    '| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |',
+    '| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |',
   );
   const textRows = [];
   for (const s of scenarios) {
@@ -541,7 +545,7 @@ export function writeSummary(dir) {
         const st = (r) => (kind === null ? r.stats : r.stats.byKind?.[kind]);
         const v = (k) => c.map((r) => st(r)?.[k] ?? null);
         L.push(
-          `| ${s} | ${a}${kind === null ? '' : ` [${kind}]`} | ${cell(v('flexPasses'), 1)} | ${cell(v('writes'), 1)} | ${cell(v('shaderWrites'), 1)} | ${cell(v('frameWrites'), 1)} | ${cell(v('animations'), 1)} | ${cell(v('walksPerFrame'), 2)} | ${cell(v('drawnFrames'), 1)} | ${cell(v('loadedText'), 1)} | ${cell(v('loadedOther'), 1)} | ${c.length} |`,
+          `| ${s} | ${a}${kind === null ? '' : ` [${kind}]`} | ${cell(v('flexPasses'), 1)} | ${cell(v('writes'), 1)} | ${cell(v('shaderWrites'), 1)} | ${cell(v('frameWrites'), 1)} | ${cell(v('animations'), 1)} | ${cell(v('walksPerFrame'), 2)} | ${cell(v('drawnFrames'), 1)} | ${cell(v('created'), 1)} | ${cell(v('creationProps'), 1)} | ${cell(v('loadedTextEmits'), 1)} / ${cell(v('loadedText'), 1)} | ${cell(v('loadedOtherEmits'), 1)} / ${cell(v('loadedOther'), 1)} | ${c.length} |`,
         );
       }
       const v = (k) => c.map((r) => r.stats[k]);

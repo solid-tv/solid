@@ -37,6 +37,12 @@ export interface Scenario {
   /** Operations measured. Default 60. */
   measured?: number;
   /**
+   * Operations per cycle of the workload (one that returns the scene to its
+   * start state). `--quick` rounds its warmup and measured counts up to
+   * whole cycles, so that a warm-cache scenario stays warm.
+   */
+  cycle?: number;
+  /**
    * A JSON-serializable snapshot of the scene's state (focus path, list
    * offsets, mounted counts). The runner records it after mount, after the
    * warmup and after the measured operations, and flags a run whose two
