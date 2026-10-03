@@ -345,6 +345,71 @@ v.describe('VirtualRow: window and scroll modes', () => {
     },
   );
 
+  // B13 with wrap: the window follows the cursor around the end of the data
+  // (it is a modular window, as in the other wrap modes), so Right past the
+  // last item wraps to the first and Left past the first to the last.
+  v.it(
+    'B13: scroll="none" + wrap on VirtualRow: Right past the last item wraps to the first; x never changes after mount',
+    async () => {
+      let row!: lng.ElementNode;
+      const parentRight = v.vi.fn(() => true);
+      const parentLeft = v.vi.fn(() => true);
+      dispose = await mount(() => (
+        <view
+          width={1920}
+          height={1080}
+          onRight={parentRight}
+          onLeft={parentLeft}
+        >
+          <VirtualRow
+            ref={row}
+            autofocus
+            x={50}
+            each={twelve}
+            displaySize={4}
+            scroll="none"
+            wrap
+          >
+            {(item) => <Item item={item()} />}
+          </VirtualRow>
+        </view>
+      ));
+      const seen: Step[] = [rowStep(row)];
+      for (let i = 0; i < 13; i++) {
+        await press('ArrowRight');
+        seen.push(rowStep(row));
+      }
+      for (let i = 0; i < 3; i++) {
+        await press('ArrowLeft');
+        seen.push(rowStep(row));
+      }
+      v.expect(seen).toEqual([
+        // As in the other wrap modes, one item before the cursor and the row
+        // one slot left (wrap's mount offset): v0 is at screen x 50.
+        ['v0', 1, 0, -180, '11,0,1,2,3,4'],
+        ['v1', 2, 1, -180, '11,0,1,2,3,4'],
+        ['v2', 3, 2, -180, '11,0,1,2,3,4'],
+        ['v3', 4, 3, -180, '11,0,1,2,3,4'],
+        ['v4', 4, 4, -180, '0,1,2,3,4,5'],
+        ['v5', 4, 5, -180, '1,2,3,4,5,6'],
+        ['v6', 4, 6, -180, '2,3,4,5,6,7'],
+        ['v7', 4, 7, -180, '3,4,5,6,7,8'],
+        ['v8', 4, 8, -180, '4,5,6,7,8,9'],
+        ['v9', 4, 9, -180, '5,6,7,8,9,10'],
+        ['v10', 4, 10, -180, '6,7,8,9,10,11'],
+        ['v11', 4, 11, -180, '7,8,9,10,11,0'],
+        // Past the last item: the first, then the second.
+        ['v0', 4, 0, -180, '8,9,10,11,0,1'],
+        ['v1', 4, 1, -180, '9,10,11,0,1,2'],
+        ['v0', 3, 0, -180, '9,10,11,0,1,2'],
+        ['v11', 2, 11, -180, '9,10,11,0,1,2'],
+        ['v10', 1, 10, -180, '9,10,11,0,1,2'],
+      ]);
+      v.expect(parentRight).not.toHaveBeenCalled();
+      v.expect(parentLeft).not.toHaveBeenCalled();
+    },
+  );
+
   // B14 (fixed in 1.7): a window shift moves the row by one slot, the
   // item's unscaled size plus the gap, which is how far flex moves the items.
   // With factorScale and a `$focus` scale of 1.2 it moved by 200 * 1.2 + 30 =
