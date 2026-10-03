@@ -61,7 +61,8 @@
     "prepare": "husky",
     "prepack": "pnpm run build",
     "release": "release-it",
-    "test:browser": "vitest --config=vitest.browser.config.ts"
+    "test:browser": "vitest --config=vitest.browser.config.ts",
+    "test:webgl": "vitest run --config=vitest.webgl.config.ts"
   },
   "keywords": [
     "lightning",
