@@ -8,7 +8,7 @@
 // Exits 1 if any route logged an error.
 import { mkdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { launchChromium, routeTmdbFixtures, serveDir } from './lib.mjs';
+import { ROUTES, launchChromium, routeTmdbFixtures, serveDir } from './lib.mjs';
 
 const args = process.argv.slice(2);
 const opt = (name, dflt) => {
@@ -23,62 +23,7 @@ const tmdb = opt('tmdb', 'fixtures');
 const shots = opt('shots', null);
 const only = opt('only', null)?.split(',');
 
-// src/index.tsx's routes (player/:id needs a video stream; left out).
-const ROUTES = [
-  '',
-  'browse/all',
-  'examples',
-  'examples/tmdb',
-  'loops',
-  'infinite',
-  'tmdbgrid',
-  'virtual',
-  'destroy',
-  'grid',
-  'matrix',
-  'text',
-  'firebolt',
-  'login',
-  'nested',
-  'textposter',
-  'textcentering',
-  'countdown',
-  'custombuttons',
-  'positioning',
-  'layout',
-  'focusbasics',
-  'transitions',
-  'components',
-  'focushandling',
-  'keyhandling',
-  'gradients',
-  'flex',
-  'create',
-  'viewport',
-  'flexsize',
-  'flexmenu',
-  'flexcolumnsize',
-  'flexcolumn',
-  'flexgrow',
-  'flexjustifywidth',
-  'keepalive',
-  'suspense',
-  'superflex',
-  'tags',
-  'buttonsmaterial',
-  'entity/movie/1013',
-  'entity/tv/1013',
-  'entity/people/1013',
-  'image-performance',
-  'large-image-performance',
-  'mixed-image-performance',
-  'texture-compression-performance',
-  'complexflex',
-  'complexflexcaps',
-  'benchmark',
-  'versions',
-  'does-not-exist',
-].filter((r) => !only || only.includes(r));
+const routes = ROUTES.filter((r) => !only || only.includes(r));
 
 const server = await serveDir(dist);
 const browser = await launchChromium();
@@ -86,7 +31,7 @@ if (shots) mkdirSync(shots, { recursive: true });
 const unknownTmdb = new Set();
 const report = [];
 
-for (const route of ROUTES) {
+for (const route of routes) {
   const context = await browser.newContext({
     viewport: { width: 1920, height: 1080 },
   });
