@@ -1,35 +1,30 @@
 /**
  * Phase 1 contract tests: flex layout.
  *
- * Part 1 runs ONE table of flex cases against BOTH engines by calling them
- * directly on ElementNode trees:
- *   - src/core/flex.ts       (default)
- *   - src/core/flexLayout.ts (selected in src/core/elementNode.ts:22 by
- *     `import.meta.env?.VITE_USE_NEW_FLEX` being truthy — note any non-empty
- *     string, including "false", selects it)
- * Where the engines differ today, a case carries `expectedNew` and a
- * `newDiffers` note. The rewrite keeps one engine; these cases show what each
- * one does.
+ * Part 1 runs one table of flex cases against the flex engine
+ * (src/core/flexLayout.ts) by calling it directly on ElementNode trees.
+ *
+ * Until 1.7 there were two engines: src/core/flex.ts (the default build) and
+ * flexLayout.ts (selected by a non-empty `VITE_USE_NEW_FLEX`, as the demo app
+ * does). 1.7 keeps flexLayout.ts only (decision 5.3). Where flex.ts gave a
+ * different result, the case keeps it in a `flex.ts (default build until
+ * 1.7)` comment: that is what changes for apps that did not set
+ * VITE_USE_NEW_FLEX. A pin changed by an approved bug fix (B5-B10) names the
+ * bug and the result before the fix.
  *
  * Part 2 pins the end-to-end behaviour through JSX, the renderer and the
- * post-mutation layout queue, on whichever engine elementNode.ts selected.
- * Run it on both:
- *   npx vitest run tests/contract-flex.test.tsx
- *   VITE_USE_NEW_FLEX=true npx vitest run tests/contract-flex.test.tsx
+ * post-mutation layout queue.
  */
 import { describe, it, expect, vi } from 'vitest';
 import * as s from 'solid-js';
 import * as lng from '@solidtv/solid';
 import { ElementNode } from '../src/core/elementNode.ts';
 import { TextNode } from '../src/core/nodeTypes.ts';
-import flexOld from '../src/core/flex.ts';
-import flexNew from '../src/core/flexLayout.ts';
+import calculateFlex from '../src/core/flexLayout.ts';
 import { renderer, waitForUpdate } from './setup.js';
 
-const NEW_FLEX_ACTIVE = !!import.meta.env?.VITE_USE_NEW_FLEX;
-
 // ---------------------------------------------------------------------------
-// Part 1: table of flex cases, run on both engines
+// Part 1: table of flex cases
 // ---------------------------------------------------------------------------
 
 type Props = Record<string, unknown>;
@@ -55,10 +50,6 @@ interface FlexCase {
   container: Props;
   kids: KidSpec[];
   expected: FlexResult;
-  /** flexLayout.ts result, when it differs from flex.ts today. */
-  expectedNew?: FlexResult;
-  /** Why the engines differ (listed in the Phase 1 report). */
-  newDiffers?: string;
 }
 
 const view = (width: number, height: number, extra: Props = {}): KidSpec => ({
@@ -105,9 +96,9 @@ function snapshot(
   };
 }
 
-function run(engine: typeof flexOld, c: Pick<FlexCase, 'container' | 'kids'>) {
+function run(c: Pick<FlexCase, 'container' | 'kids'>) {
   const { node, children } = build(c.container, c.kids);
-  const returned = engine(node);
+  const returned = calculateFlex(node);
   return snapshot(node, children, returned);
 }
 
@@ -474,7 +465,7 @@ const cases: FlexCase[] = [
 
   // --- padding (a number) ---------------------------------------------------
   {
-    name: 'padding number + flexStart: main-axis start and auto-size include padding; cross-axis padding only in flexLayout.ts',
+    name: 'padding number + flexStart: main-axis start and auto-size include padding; the cross axis starts at paddingTop',
     container: {
       width: 300,
       height: 100,
@@ -483,18 +474,14 @@ const cases: FlexCase[] = [
     },
     kids: [A(), B()],
     expected: res(true, { w: 130, h: 100 }, [
-      { x: 10, y: 0, w: 50, h: 50 },
-      { x: 60, y: 0, w: 60, h: 40 },
-    ]),
-    expectedNew: res(true, { w: 130, h: 100 }, [
       { x: 10, y: 10, w: 50, h: 50 },
       { x: 60, y: 10, w: 60, h: 40 },
     ]),
-    newDiffers:
-      'flex.ts applies a number padding on the main axis only; flexLayout.ts also offsets the cross axis by paddingTop',
+    // flex.ts (default build until 1.7): y 0 and 0 (padding on the main axis
+    // only).
   },
   {
-    name: 'padding number + alignItems flexEnd: flexLayout.ts adds the top padding instead of subtracting the bottom one',
+    name: 'padding number + alignItems flexEnd: children end at the bottom padding',
     container: {
       width: 300,
       height: 100,
@@ -503,21 +490,16 @@ const cases: FlexCase[] = [
       alignItems: 'flexEnd',
     },
     kids: [A(), B()],
+    // B7: 100 - 10 - 50 = 40. Before the fix flexLayout.ts added the top
+    // padding instead (y 60 and 70, the first child 10px past the bottom
+    // edge). flex.ts (default build until 1.7): y 50 and 60 (no cross padding).
     expected: res(false, { w: 300, h: 100 }, [
-      { x: 10, y: 50, w: 50, h: 50 },
-      { x: 60, y: 60, w: 60, h: 40 },
+      { x: 10, y: 40, w: 50, h: 50 },
+      { x: 60, y: 50, w: 60, h: 40 },
     ]),
-    // BUG (flexLayout.ts:271-276): flexEnd adds paddingCrossStart, pushing the
-    // child 10px past the container's bottom edge (60 + 50 = 110 > 100).
-    expectedNew: res(false, { w: 300, h: 100 }, [
-      { x: 10, y: 60, w: 50, h: 50 },
-      { x: 60, y: 70, w: 60, h: 40 },
-    ]),
-    newDiffers:
-      'cross-axis flexEnd/center with padding: flexLayout.ts offsets by paddingTop (child overflows the bottom); flex.ts ignores cross padding',
   },
   {
-    name: 'padding number + alignItems center',
+    name: 'padding number + alignItems center: centred in the padded box',
     container: {
       width: 300,
       height: 100,
@@ -526,16 +508,13 @@ const cases: FlexCase[] = [
       alignItems: 'center',
     },
     kids: [A(), B()],
+    // B7: 10 + (100 - 20 - 50) / 2 = 25. Before the fix flexLayout.ts added
+    // the top padding to the centre of the full height (y 35 and 40).
+    // flex.ts gave 25 and 30 as well.
     expected: res(false, { w: 300, h: 100 }, [
       { x: 10, y: 25, w: 50, h: 50 },
       { x: 60, y: 30, w: 60, h: 40 },
     ]),
-    expectedNew: res(false, { w: 300, h: 100 }, [
-      { x: 10, y: 35, w: 50, h: 50 },
-      { x: 60, y: 40, w: 60, h: 40 },
-    ]),
-    newDiffers:
-      'cross-axis center with padding: flexLayout.ts shifts by paddingTop instead of centering in the padded box',
   },
   {
     name: 'padding number + flexEnd (row)',
@@ -552,7 +531,7 @@ const cases: FlexCase[] = [
     ]),
   },
   {
-    name: 'padding number + center (row): content is shifted right by the padding (see BUG test below)',
+    name: 'padding number + center (row): centred in the padded box',
     container: {
       width: 300,
       height: 100,
@@ -560,9 +539,11 @@ const cases: FlexCase[] = [
       justifyContent: 'center',
     },
     kids: [A(), B()],
+    // B6: 10 + (300 - 20 - 110) / 2 = 95. Before the fix both engines added
+    // the padding to the centre of the full width (x 105 and 155).
     expected: res(false, { w: 300, h: 100 }, [
-      { x: 105, y: U, w: 50, h: 50 },
-      { x: 155, y: U, w: 60, h: 40 },
+      { x: 95, y: U, w: 50, h: 50 },
+      { x: 145, y: U, w: 60, h: 40 },
     ]),
   },
   {
@@ -670,19 +651,15 @@ const cases: FlexCase[] = [
     ]),
   },
   {
-    name: 'margin array [t, r, b, l]: only flexLayout.ts reads it',
+    name: 'margin array [t, r, b, l]',
     container: { width: 300, height: 100, alignItems: 'flexStart' },
     kids: [A({ margin: [1, 2, 3, 4] }), B()],
-    expected: res(true, { w: 110, h: 100 }, [
-      { x: 0, y: 0, w: 50, h: 50 },
-      { x: 50, y: 0, w: 60, h: 40 },
-    ]),
-    expectedNew: res(true, { w: 116, h: 100 }, [
+    expected: res(true, { w: 116, h: 100 }, [
       { x: 4, y: 1, w: 50, h: 50 },
       { x: 56, y: 0, w: 60, h: 40 },
     ]),
-    newDiffers:
-      '`margin` array is read by flexLayout.ts only; flex.ts ignores it',
+    // flex.ts (default build until 1.7) ignored the array: w 110, x 0 and 50,
+    // y 0 and 0.
   },
 
   // --- flexGrow -------------------------------------------------------------
@@ -711,7 +688,7 @@ const cases: FlexCase[] = [
     expected: res(true, { w: 50, h: 100 }, [{ x: 0, y: U, w: 50, h: 50 }]),
   },
   {
-    name: 'flexGrow: no free space means no growth (flex.ts also console.warns)',
+    name: 'flexGrow: no free space means no growth (flex.ts also console.warned until 1.7)',
     container: { width: 100, height: 100 },
     kids: [A({ flexGrow: 1 }), B()],
     expected: res(false, { w: 100, h: 100 }, [
@@ -784,7 +761,7 @@ const cases: FlexCase[] = [
     ]),
   },
   {
-    name: 'flexWrap + padding: cross-axis padding only in flexLayout.ts',
+    name: 'flexWrap + padding: lines start at paddingTop and the height adds paddingBottom',
     container: {
       width: 250,
       height: 50,
@@ -793,45 +770,55 @@ const cases: FlexCase[] = [
       flexWrap: 'wrap',
     },
     kids: [view(100, 50), view(100, 50), view(100, 50)],
-    expected: res(true, { w: 250, h: 110 }, [
-      { x: 10, y: 0, w: 100, h: 50 },
-      { x: 120, y: 0, w: 100, h: 50 },
-      { x: 10, y: 60, w: 100, h: 50 },
-    ]),
-    expectedNew: res(true, { w: 250, h: 130 }, [
+    expected: res(true, { w: 250, h: 130 }, [
       { x: 10, y: 10, w: 100, h: 50 },
       { x: 120, y: 10, w: 100, h: 50 },
       { x: 10, y: 70, w: 100, h: 50 },
     ]),
-    newDiffers:
-      'wrap + padding: flexLayout.ts starts lines at paddingTop and adds paddingBottom to the height; flex.ts ignores cross padding',
+    // flex.ts (default build until 1.7) ignored the cross padding: h 110,
+    // y 0, 0 and 60.
   },
   {
-    name: 'flexWrap with no container height: lines are counted but children are never moved on the cross axis (see BUG test)',
+    name: 'flexWrap with no container height: wrapped items move to the next line',
     container: { width: 250, gap: 10, flexWrap: 'wrap' },
     kids: [view(100, 50), view(100, 50), view(100, 50)],
+    // B9: before the fix y was never written (both engines), so the wrapped
+    // item overlapped the first line.
     expected: res(true, { w: 250, h: 110 }, [
-      { x: 0, y: U, w: 100, h: 50 },
-      { x: 110, y: U, w: 100, h: 50 },
-      { x: 0, y: U, w: 100, h: 50 },
+      { x: 0, y: 0, w: 100, h: 50 },
+      { x: 110, y: 0, w: 100, h: 50 },
+      { x: 0, y: 60, w: 100, h: 50 },
     ]),
   },
   {
-    name: 'flexWrap wrap-reverse: flex.ts stacks lines upward to negative y and shrinks the width; flexLayout.ts does not wrap',
+    name: 'flexWrap wrap-reverse: lines stack from the bottom of the grown container',
     container: { width: 250, height: 50, gap: 10, flexWrap: 'wrap-reverse' },
     kids: [view(100, 50), view(100, 50), view(100, 50)],
-    expected: res(true, { w: 100, h: 110 }, [
+    // B10: before the fix flexLayout.ts did not wrap (one line, x 220 for the
+    // third item, width auto-sized to 320, height 50); flex.ts (default build
+    // until 1.7) stacked lines upward to y -60 and shrank the width to 100.
+    expected: res(true, { w: 250, h: 110 }, [
+      { x: 0, y: 60, w: 100, h: 50 },
+      { x: 110, y: 60, w: 100, h: 50 },
       { x: 0, y: 0, w: 100, h: 50 },
-      { x: 110, y: 0, w: 100, h: 50 },
-      { x: 0, y: -60, w: 100, h: 50 },
     ]),
-    expectedNew: res(true, { w: 320, h: 50 }, [
-      { x: 0, y: 0, w: 100, h: 50 },
-      { x: 110, y: 0, w: 100, h: 50 },
-      { x: 220, y: 0, w: 100, h: 50 },
+  },
+  {
+    name: 'flexWrap wrap-reverse + padding: the last line starts at paddingTop',
+    container: {
+      width: 250,
+      height: 50,
+      gap: 10,
+      padding: 10,
+      flexWrap: 'wrap-reverse',
+    },
+    kids: [view(100, 50), view(100, 50), view(100, 50)],
+    // B10: the mirror of 'flexWrap + padding' inside the padded box.
+    expected: res(true, { w: 250, h: 130 }, [
+      { x: 10, y: 70, w: 100, h: 50 },
+      { x: 120, y: 70, w: 100, h: 50 },
+      { x: 10, y: 10, w: 100, h: 50 },
     ]),
-    newDiffers:
-      'wrap-reverse: flexLayout.ts only wraps for "wrap" (flexLayout.ts:297), so it lays out one line and auto-sizes the width',
   },
 
   // --- flexOrder ------------------------------------------------------------
@@ -874,6 +861,22 @@ const cases: FlexCase[] = [
     expected: res(false, { w: 300, h: 100 }, [
       { x: U, y: U, w: 50, h: 50 },
       { x: U, y: U, w: 60, h: 40 },
+    ]),
+  },
+  {
+    name: 'flexItem={false} on an unsized <text> does not block the pass',
+    container: { width: 300 },
+    kids: [
+      A(),
+      { kind: 'text', props: { text: 'Badge', flexItem: false } },
+      B(),
+    ],
+    // B5: before the fix the text check came first, so the unsized text
+    // aborted the whole pass (returned false, nothing placed).
+    expected: res(true, { w: 110, h: U }, [
+      { x: 0, y: U, w: 50, h: 50 },
+      { x: U, y: U, w: U, h: U },
+      { x: 50, y: U, w: 60, h: 40 },
     ]),
   },
   {
@@ -944,120 +947,101 @@ const cases: FlexCase[] = [
   },
 ];
 
-describe.each([
-  ['flex.ts', flexOld, false],
-  ['flexLayout.ts', flexNew, true],
-] as const)(
-  'contract: flex props, table run on %s',
-  (_label, engine, isNew) => {
-    it.each(cases.map((c) => [c.name, c] as const))('%s', (_name, c) => {
-      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-      try {
-        const expected = isNew && c.expectedNew ? c.expectedNew : c.expected;
-        expect(run(engine, c)).toEqual(expected);
-      } finally {
-        warn.mockRestore();
-      }
-    });
-  },
-);
+describe('contract: flex props, table', () => {
+  it.each(cases.map((c) => [c.name, c] as const))('%s', (_name, c) => {
+    expect(run(c)).toEqual(c.expected);
+  });
+});
 
-describe('contract: flex props, engine-specific details', () => {
-  const both = [
-    ['flex.ts', flexOld],
-    ['flexLayout.ts', flexNew],
-  ] as const;
+describe('contract: flex props, details', () => {
+  it('flexGrow: a second pass on the same tree gives the same result', () => {
+    const { node, children } = build({ width: 300, gap: 10 }, [
+      A({ flexGrow: 1 }),
+      B(),
+    ]);
+    const first = snapshot(node, children, calculateFlex(node));
+    const second = snapshot(node, children, calculateFlex(node));
+    expect(second).toEqual(first);
+    expect(first.children[0]).toEqual({ x: 0, y: U, w: 230, h: 50 });
+  });
 
-  it.each(both)(
-    'flexGrow: a second pass on the same tree gives the same result (%s)',
-    (_label, engine) => {
-      const { node, children } = build({ width: 300, gap: 10 }, [
-        A({ flexGrow: 1 }),
-        B(),
-      ]);
-      const first = snapshot(node, children, engine(node));
-      const second = snapshot(node, children, engine(node));
-      expect(second).toEqual(first);
-      expect(first.children[0]).toEqual({ x: 0, y: U, w: 230, h: 50 });
-    },
-  );
+  // B8: flexGrow starts from the item's own size on every pass. Before the
+  // fix the grown width (230) became the next pass's base, so the item kept
+  // 230 and the sibling went to x 240 (the row overflowed: 230 + 10 + 100).
+  it('flexGrow: a grown item shrinks back when a sibling grows', () => {
+    const { node, children } = build({ width: 300, gap: 10 }, [
+      A({ flexGrow: 1 }),
+      B(),
+    ]);
+    calculateFlex(node);
+    const [grow, sibling] = children as ElementNode[];
+    expect(grow!.width).toBe(230);
+    sibling!.width = 100;
+    calculateFlex(node);
+    expect(grow!.width).toBe(190);
+    expect(sibling!.x).toBe(200);
+    sibling!.width = 60;
+    calculateFlex(node);
+    expect(grow!.width).toBe(230);
+    expect(sibling!.x).toBe(240);
+  });
 
-  it.each(both)(
-    'flexGrow: on a relayout the grown width is the new base, so the item never shrinks back (%s)',
-    (_label, engine) => {
-      const { node, children } = build({ width: 300, gap: 10 }, [
-        A({ flexGrow: 1 }),
-        B(),
-      ]);
-      engine(node);
-      const [grow, sibling] = children as ElementNode[];
-      expect(grow!.width).toBe(230);
-      sibling!.width = 100;
-      engine(node);
-      // 230 + 10 + 100 = 340 > 300: the row overflows (see BUG test below).
-      expect(grow!.width).toBe(230);
-      expect(sibling!.x).toBe(240);
-    },
-  );
+  // B8: with no free space left the item goes back to its own size (50)
+  // instead of keeping the last grown one.
+  it('flexGrow: a grown item returns to its own size when no space is left', () => {
+    const { node, children } = build({ width: 300, gap: 10 }, [
+      A({ flexGrow: 1 }),
+      B(),
+    ]);
+    calculateFlex(node);
+    const [grow, sibling] = children as ElementNode[];
+    sibling!.width = 280;
+    calculateFlex(node);
+    expect(grow!.width).toBe(50);
+    expect(sibling!.x).toBe(60);
+  });
 
-  // BUG: flexGrow should start from the item's own size on every pass; after
-  // the sibling grows to 100 the grow item should be 300 - 100 - 10 = 190.
-  // flex.ts:146 / flexLayout.ts:199 add the free space to the current, already
-  // grown, width.
-  it.skip.each(both)(
-    'BUG: flexGrow: a grown item shrinks back when a sibling grows (%s)',
-    (_label, engine) => {
-      const { node, children } = build({ width: 300, gap: 10 }, [
-        A({ flexGrow: 1 }),
-        B(),
-      ]);
-      engine(node);
-      const [grow, sibling] = children as ElementNode[];
-      sibling!.width = 100;
-      engine(node);
-      expect(grow!.width).toBe(190);
-      expect(sibling!.x).toBe(200);
-    },
-  );
+  it('flexGrow: a width the app writes on a grown item is its new own size', () => {
+    const { node, children } = build({ width: 300, gap: 10 }, [
+      A({ flexGrow: 1 }),
+      B(),
+    ]);
+    calculateFlex(node);
+    const [grow, sibling] = children as ElementNode[];
+    grow!.width = 100;
+    calculateFlex(node);
+    // 300 - 100 - 60 - 10 = 130 free, all to the grow item.
+    expect(grow!.width).toBe(230);
+    sibling!.width = 160;
+    calculateFlex(node);
+    // Own size 100: 300 - 100 - 160 - 10 = 30 free.
+    expect(grow!.width).toBe(130);
+  });
 
-  it.each(both)(
-    'flexGrow: the container gets flexBoundary "fixed" written onto it (%s)',
-    (_label, engine) => {
-      const { node } = build({ width: 300 }, [A({ flexGrow: 1 }), B()]);
-      expect(node.flexBoundary).toBeUndefined();
-      engine(node);
-      expect(node.flexBoundary).toBe('fixed');
-    },
-  );
+  it('flexGrow: the container gets flexBoundary "fixed" written onto it', () => {
+    const { node } = build({ width: 300 }, [A({ flexGrow: 1 }), B()]);
+    expect(node.flexBoundary).toBeUndefined();
+    calculateFlex(node);
+    expect(node.flexBoundary).toBe('fixed');
+  });
 
-  it('flexGrow with no free space: flex.ts warns, flexLayout.ts is silent', () => {
+  // 5.3: flex.ts (default build until 1.7) called console.warn here, in
+  // production too.
+  it('flexGrow with no free space does not warn', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     try {
-      flexOld(build({ width: 100 }, [A({ flexGrow: 1 }), B()]).node);
-      expect(warn).toHaveBeenCalledTimes(1);
-      warn.mockClear();
-      flexNew(build({ width: 100 }, [A({ flexGrow: 1 }), B()]).node);
+      calculateFlex(build({ width: 100 }, [A({ flexGrow: 1 }), B()]).node);
       expect(warn).not.toHaveBeenCalled();
     } finally {
       warn.mockRestore();
     }
   });
 
-  it('padding array: flex.ts does not support it (docs: number only); positions become non-numeric', () => {
-    // flex.ts:95 casts `padding` to a number; an array then string-concatenates.
-    const { node, children } = build(
-      { width: 300, height: 100, padding: [5, 20, 15, 10] },
-      [A(), B()],
-    );
-    flexOld(node);
-    const [a, b] = children as ElementNode[];
-    expect(Number.isFinite(a!.x)).toBe(false);
-    expect(Number.isFinite(b!.x)).toBe(false);
-    expect(Number.isFinite(node.width)).toBe(false);
-  });
-
-  it('padding array [t, r, b, l] (flexLayout.ts)', () => {
-    const r = run(flexNew, {
+  // flex.ts (default build until 1.7) did not support a padding array: it
+  // cast `padding` to a number, so positions and the auto-size became
+  // non-numeric (NaN or concatenated strings).
+  it('padding array [t, r, b, l]', () => {
+    const r = run({
       container: {
         width: 300,
         height: 100,
@@ -1074,8 +1058,8 @@ describe('contract: flex props, engine-specific details', () => {
     );
   });
 
-  it('padding array [v, h] and [t, h, b] (flexLayout.ts)', () => {
-    const two = run(flexNew, {
+  it('padding array [v, h] and [t, h, b]', () => {
+    const two = run({
       container: {
         width: 300,
         height: 100,
@@ -1090,7 +1074,7 @@ describe('contract: flex props, engine-specific details', () => {
         { x: 60, y: 5, w: 60, h: 40 },
       ]),
     );
-    const three = run(flexNew, {
+    const three = run({
       container: {
         width: 200,
         height: 500,
@@ -1108,7 +1092,9 @@ describe('contract: flex props, engine-specific details', () => {
     );
   });
 
-  it('paddingLeft/paddingTop override the padding value (flexLayout.ts only)', () => {
+  // flex.ts (default build until 1.7) ignored paddingLeft/paddingTop: w 130,
+  // x 10 and 60, y 0 and 0.
+  it('paddingLeft/paddingTop override the padding value', () => {
     const container = {
       width: 300,
       height: 100,
@@ -1117,106 +1103,81 @@ describe('contract: flex props, engine-specific details', () => {
       paddingTop: 2,
       alignItems: 'flexStart',
     };
-    expect(run(flexNew, { container, kids: [A(), B()] })).toEqual(
+    expect(run({ container, kids: [A(), B()] })).toEqual(
       res(true, { w: 150, h: 100 }, [
         { x: 30, y: 2, w: 50, h: 50 },
         { x: 80, y: 2, w: 60, h: 40 },
       ]),
     );
-    // flex.ts ignores paddingLeft/paddingTop.
-    expect(run(flexOld, { container, kids: [A(), B()] })).toEqual(
-      res(true, { w: 130, h: 100 }, [
-        { x: 10, y: 0, w: 50, h: 50 },
-        { x: 60, y: 0, w: 60, h: 40 },
-      ]),
-    );
   });
 
-  // BUG: with a symmetric padding, justifyContent center should center the
-  // items in the container: (300 - 110) / 2 = 95. Both engines add the padding
-  // on top of an already-centered start (flex.ts:282-284,
-  // flexLayout.ts:361-363), giving 105.
-  it.skip.each(both)(
-    'BUG: padding + justifyContent center centers the items (%s)',
-    (_label, engine) => {
-      const r = run(engine, {
-        container: {
-          width: 300,
-          height: 100,
-          padding: 10,
-          justifyContent: 'center',
-        },
-        kids: [A(), B()],
-      });
-      expect(r.children.map((c) => c.x)).toEqual([95, 145]);
-    },
-  );
-
-  // BUG: a wrapped row with no height never writes y, so the wrapped item
-  // overlaps the first line (doCrossAlign is a no-op when the container cross
-  // size is 0: flex.ts:179, flexLayout.ts:258).
-  it.skip.each(both)(
-    'BUG: flexWrap moves wrapped items to the next line even when the container has no height (%s)',
-    (_label, engine) => {
-      const r = run(engine, {
-        container: { width: 250, gap: 10, flexWrap: 'wrap' },
-        kids: [view(100, 50), view(100, 50), view(100, 50)],
-      });
-      expect(r.children.map((c) => c.y)).toEqual([0, 0, 60]);
-    },
-  );
-
-  // BUG: wrap-reverse should put the first line at the bottom of the grown
-  // container (CSS): lines at y 60 and 0 in a 110-high container, width kept.
-  // flex.ts stacks lines upward to y = -60 and shrinks the width to the last
-  // line; flexLayout.ts does not wrap at all.
-  it.skip.each(both)(
-    'BUG: flexWrap wrap-reverse stacks lines from the bottom (%s)',
-    (_label, engine) => {
-      const r = run(engine, {
-        container: {
-          width: 250,
-          height: 50,
-          gap: 10,
-          flexWrap: 'wrap-reverse',
-        },
-        kids: [view(100, 50), view(100, 50), view(100, 50)],
-      });
-      expect(r).toEqual(
-        res(true, { w: 250, h: 110 }, [
-          { x: 0, y: 60, w: 100, h: 50 },
-          { x: 110, y: 60, w: 100, h: 50 },
-          { x: 0, y: 0, w: 100, h: 50 },
-        ]),
-      );
-    },
-  );
-
-  // BUG (flexLayout.ts only): cross-axis flexEnd with padding should keep the
-  // child inside the padded box: y = 100 - 10 - 50 = 40 for a 50-high child.
-  it.skip('BUG: padding + alignItems flexEnd keeps children inside the padding (flexLayout.ts)', () => {
-    const r = run(flexNew, {
+  // B6, with asymmetric padding: centred between paddingLeft and paddingRight.
+  it('padding + justifyContent center centres the items in the padded box', () => {
+    const r = run({
       container: {
         width: 300,
         height: 100,
-        padding: 10,
-        flexBoundary: 'fixed',
-        alignItems: 'flexEnd',
+        padding: [0, 30, 0, 10],
+        justifyContent: 'center',
       },
       kids: [A(), B()],
     });
-    expect(r.children.map((c) => c.y)).toEqual([40, 50]);
+    // 10 + (300 - 40 - 110) / 2 = 85
+    expect(r.children.map((c) => c.x)).toEqual([85, 135]);
+  });
+
+  // B7, with asymmetric padding: center and flexEnd stay inside the padded
+  // box on the cross axis.
+  it('padding + alignItems center/flexEnd use the padded box', () => {
+    const r = run({
+      container: {
+        width: 300,
+        height: 100,
+        padding: [20, 0, 10, 0],
+        flexBoundary: 'fixed',
+        alignItems: 'center',
+      },
+      kids: [A(), B({ alignSelf: 'flexEnd' })],
+    });
+    // center: 20 + (100 - 30 - 50) / 2 = 30; flexEnd: 100 - 10 - 40 = 50
+    expect(r.children.map((c) => c.y)).toEqual([30, 50]);
+  });
+
+  it('a relayout that changes nothing writes nothing', () => {
+    const { node, children } = build(
+      { width: 300, height: 100, gap: 10, alignItems: 'center' },
+      [A(), B()],
+    );
+    calculateFlex(node);
+    const writes: string[] = [];
+    for (const c of [node, ...children] as ElementNode[]) {
+      for (const key of ['x', 'y', 'w', 'h']) {
+        const desc = Object.getOwnPropertyDescriptor(
+          Object.getPrototypeOf(c),
+          key,
+        )!;
+        Object.defineProperty(c, key, {
+          configurable: true,
+          get: desc.get,
+          set(v: number) {
+            writes.push(key);
+            desc.set!.call(this, v);
+          },
+        });
+      }
+    }
+    expect(calculateFlex(node)).toBe(false);
+    expect(writes).toEqual([]);
   });
 });
 
 // ---------------------------------------------------------------------------
-// Part 2: end to end through JSX and the layout queue (active engine)
+// Part 2: end to end through JSX and the layout queue
 // ---------------------------------------------------------------------------
 
-describe(`contract: flex through the renderer (active engine: ${
-  NEW_FLEX_ACTIVE ? 'flexLayout.ts' : 'flex.ts'
-})`, () => {
-  it('engine selection: a truthy VITE_USE_NEW_FLEX string selects flexLayout.ts (margin arrays only work there)', async () => {
+describe('contract: flex through the renderer', () => {
+  // flex.ts (the default build until 1.7) ignored the margin array: x 0.
+  it('one engine: margin arrays work through JSX', async () => {
     let item!: lng.ElementNode;
     const dispose = renderer.render(() => (
       <view display="flex">
@@ -1224,7 +1185,7 @@ describe(`contract: flex through the renderer (active engine: ${
       </view>
     ));
     await waitForUpdate();
-    expect(item.x).toBe(NEW_FLEX_ACTIVE ? 10 : 0);
+    expect(item.x).toBe(10);
     dispose();
   });
 

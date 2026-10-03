@@ -16,12 +16,7 @@ import {
   type DollarString,
 } from './intrinsicTypes.js';
 import States, { type NodeStates } from './states.js';
-import calculateFlexOld from './flex.js';
-import calculateFlexNew from './flexLayout.js';
-
-const calculateFlex = import.meta.env?.VITE_USE_NEW_FLEX
-  ? calculateFlexNew
-  : calculateFlexOld;
+import calculateFlex from './flexLayout.js';
 import {
   log,
   isArray,
@@ -323,6 +318,10 @@ export interface ElementNode extends RendererNode, FocusNode {
   _animationSettings?: AnimationSettings;
   _autofocus?: any;
   _containsFlexGrow?: boolean | null;
+  /** @internal flexGrow record (B8): the size before the last growth. */
+  _flexBase?: number;
+  /** @internal flexGrow record (B8): the size the last growth wrote. */
+  _flexGrown?: number;
   _hasRenderedChildren?: boolean;
   _effects?: Record<string, any>;
   _fontFamily?: string;
@@ -759,7 +758,6 @@ export interface ElementNode extends RendererNode, FocusNode {
   /**
    * The individual padding on each side of an element, acting as an override to the `padding` array property.
    * `paddingTop`, `paddingRight`, `paddingBottom`, `paddingLeft`.
-   * Only in the new flex engine.
    *
    * @see https://solid-tv.github.io/solid/#/flow/layout?id=flex
    */
@@ -808,6 +806,8 @@ export class ElementNode {
     this._calcWidth = undefined;
     this._calcHeight = undefined;
     this._containsFlexGrow = undefined;
+    this._flexBase = undefined;
+    this._flexGrown = undefined;
     this._hasRenderedChildren = undefined;
     this._effects = undefined;
     this._fontFamily = undefined;

@@ -708,7 +708,7 @@ describe('contract: text in a flex container (DOM renderer)', () => {
     dispose();
   });
 
-  it('flexGrow next to a text (docs example): the grow item takes the rest; it never shrinks back when the text grows', async () => {
+  it('flexGrow next to a text (docs example): the grow item takes the rest and follows the text size', async () => {
     mockTextMeasure();
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const [label, setLabel] = s.createSignal('Flex Grow');
@@ -727,13 +727,14 @@ describe('contract: text in a flex container (DOM renderer)', () => {
     expect(grow.width).toBe(490);
     expect(row.width).toBe(600);
 
-    // Today the grown width is the item's base on the next pass, so it keeps
-    // 490 and the row overflows (200 + 490 = 690 > 600).
+    // B8: the grow item shrinks to 600 - 180 - 20 = 400. Before the fix the
+    // grown width was the item's base on the next pass, so it kept 490 and
+    // the row overflowed (200 + 490 = 690 > 600).
     setLabel('Flex Grow Longer!!');
     await waitForUpdate();
     expect(t.width).toBe(180);
     expect(grow.x).toBe(200);
-    expect(grow.width).toBe(490);
+    expect(grow.width).toBe(400);
 
     // A shorter text lets it grow again.
     setLabel('Flex');
@@ -741,28 +742,6 @@ describe('contract: text in a flex container (DOM renderer)', () => {
     expect(grow.x).toBe(60);
     expect(grow.width).toBe(540);
     expect(warn).not.toHaveBeenCalled();
-    dispose();
-  });
-
-  // BUG: flexGrow should be computed from the item's own size each pass, so
-  // the grow item shrinks to 600 - 180 - 20 = 400 when the text grows.
-  // flex.ts:146 / flexLayout.ts:199 add the free space to the current
-  // (already grown) width.
-  it.skip('BUG: a flexGrow item shrinks back when a text sibling grows', async () => {
-    mockTextMeasure();
-    const [label, setLabel] = s.createSignal('Flex Grow');
-    let grow!: lng.ElementNode;
-    const dispose = renderer.render(() => (
-      <view width={600} display="flex" gap={20} height={42}>
-        <text>{label()}</text>
-        <view ref={grow} flexGrow={1} height={4} />
-      </view>
-    ));
-    await waitForUpdate();
-    setLabel('Flex Grow Longer!!');
-    await waitForUpdate();
-    expect(grow.x).toBe(200);
-    expect(grow.width).toBe(400);
     dispose();
   });
 });
