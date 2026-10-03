@@ -435,6 +435,13 @@ function createVirtual<T>(
   let shiftView!: lng.ElementNode;
   let shiftActive!: lng.ElementNode;
   let shiftPrevChildPos = 0;
+  // The shift animation's props and settings, reused: renderer v2 and the
+  // DOM renderer copy both when they create the animation. The settings are
+  // copied again from the row's animationSettings on every shift, into a
+  // new object only when the row's settings object changes.
+  const shiftProps: Partial<lng.AnimateProps> = isRow ? { x: 0 } : { y: 0 };
+  let shiftSettings: lng.AnimationSettings = {};
+  let shiftSettingsFrom: lng.AnimationSettings | undefined;
   function applyShift() {
     const view = shiftView;
     const active = shiftActive;
@@ -453,14 +460,19 @@ function createVirtual<T>(
     if (lng.Config.animationsEnabled) {
       view.lng[axis] = shiftPrevChildPos - active[axis];
       targetPosition = view.lng[axis] + childSize * slice.shiftBy;
+      const settings = view.animationSettings;
+      if (settings !== shiftSettingsFrom) {
+        shiftSettings = {};
+        shiftSettingsFrom = settings;
+      }
+      for (const key in settings) {
+        (shiftSettings as Record<string, unknown>)[key] =
+          settings[key as keyof lng.AnimationSettings];
+      }
+      shiftSettings.duration = getAdaptiveDuration(settings?.duration);
+      shiftProps[axis] = targetPosition;
       cachedAnimationController = view
-        .animate(
-          { [axis]: targetPosition },
-          {
-            ...view.animationSettings,
-            duration: getAdaptiveDuration(view.animationSettings?.duration),
-          },
-        )
+        .animate(shiftProps, shiftSettings)
         .start();
     } else {
       view.lng[axis] =

@@ -783,6 +783,59 @@ v.describe('VirtualRow: work per press (1.7)', () => {
     },
   );
 
+  v.it(
+    'with animations on, each window shift animates the row to the same x the non-animated shift sets',
+    async () => {
+      let now = 0;
+      // Presses far apart: the adaptive duration is the full duration.
+      const spy = v.vi
+        .spyOn(performance, 'now')
+        .mockImplementation(() => (now += 1000));
+      lng.Config.animationsEnabled = true;
+      try {
+        let row!: lng.ElementNode;
+        dispose = await mount(() => (
+          <view width={1920} height={1080}>
+            <VirtualRow
+              ref={row}
+              autofocus
+              x={50}
+              each={twelve}
+              displaySize={4}
+            >
+              {(item) => <Item item={item()} />}
+            </VirtualRow>
+          </view>
+        ));
+        const targets: unknown[] = [];
+        row.animate = (props, settings) => {
+          // Copied at the call, as the renderers do.
+          targets.push([props.x, settings?.duration]);
+          return {
+            state: 'stopped',
+            start() {
+              return this;
+            },
+            stop() {},
+          } as unknown as lng.IAnimationController;
+        };
+        await press('ArrowRight', 'ArrowRight', 'ArrowRight', 'ArrowLeft');
+        const duration = row.animationSettings?.duration;
+        // The auto case's x after each press (-180), the left press included.
+        v.expect(targets).toEqual([
+          [-180, duration],
+          [-180, duration],
+          [-180, duration],
+          [-180, duration],
+        ]);
+        v.expect(row.cursor).toBe(2);
+      } finally {
+        lng.Config.animationsEnabled = false;
+        spy.mockRestore();
+      }
+    },
+  );
+
   // Eight Right presses then four Left presses.
   const expected = {
     auto: [0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
