@@ -1607,17 +1607,22 @@ export class ElementNode {
           textProps.maxLines = textProps.maxLines ?? 99;
         }
 
+        // B11: margins live on the ElementNode, not in the renderer props.
         if (!textProps.maxWidth) {
           textProps.maxWidth =
-            parentWidth - textProps.x! - (textProps.marginRight || 0);
+            parentWidth - textProps.x! - (node.marginRight || 0);
         }
 
         if (textProps.contain === 'both' && !textProps.maxHeight) {
           textProps.maxHeight =
-            parentHeight - textProps.y! - (textProps.marginBottom || 0);
-        } else if (textProps.maxLines === 1) {
+            parentHeight - textProps.y! - (node.marginBottom || 0);
+        } else if (textProps.maxLines === 1 && !textProps.maxHeight) {
+          // B12: a lineHeight at or below 3 multiplies the font size.
+          const lineHeight = textProps.lineHeight;
           textProps.maxHeight =
-            textProps.maxHeight || textProps.lineHeight || textProps.fontSize;
+            lineHeight && lineHeight <= 3 && textProps.fontSize
+              ? lineHeight * textProps.fontSize
+              : lineHeight || textProps.fontSize;
         }
         // textProps.w = textProps.h = 0;
       }
