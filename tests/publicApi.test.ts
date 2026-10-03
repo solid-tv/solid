@@ -18,6 +18,8 @@ import * as primitives from '@solidtv/solid/primitives';
 import * as router from '@solidtv/solid/primitives/router';
 import * as devtools from '@solidtv/solid/devtools';
 import jsxLocator from '@solidtv/solid/devtools/jsx-locator';
+import * as shaders from '@solidtv/solid/shaders';
+import * as focusManager from '@solidtv/solid/focusManager';
 
 const names = (mod: object) => Object.keys(mod).sort();
 
@@ -227,6 +229,45 @@ v.describe('Exports: runtime export names of every entry point', () => {
     ]);
   });
 
+  // B21: ./shaders and ./focusManager are entry points of their own.
+  v.test('@solidtv/solid/shaders (src/core/shaders.ts): 17 names', () => {
+    v.expect(names(shaders)).toEqual([
+      'defaultShaderHolePunch',
+      'defaultShaderLinearGradient',
+      'defaultShaderRadialGradient',
+      'defaultShaderRounded',
+      'defaultShaderRoundedWithBorder',
+      'defaultShaderRoundedWithBorderAndShadow',
+      'defaultShaderRoundedWithShadow',
+      'defaultShaderShadow',
+      'registerDefaultShaderHolePunch',
+      'registerDefaultShaderLinearGradient',
+      'registerDefaultShaderRadialGradient',
+      'registerDefaultShaderRounded',
+      'registerDefaultShaderRoundedWithBorder',
+      'registerDefaultShaderRoundedWithBorderAndShadow',
+      'registerDefaultShaderRoundedWithShadow',
+      'registerDefaultShaderShadow',
+      'registerDefaultShaders',
+    ]);
+  });
+
+  v.test(
+    '@solidtv/solid/focusManager (src/core/focusManager.ts): 8 names',
+    () => {
+      v.expect(names(focusManager)).toEqual([
+        'focusPath',
+        'getFocusHistory',
+        'printFocusHistory',
+        'releaseKeySuppression',
+        'setActiveElementCore',
+        'setFocusPath',
+        'suppressKeyUntilRelease',
+        'useFocusManager',
+      ]);
+    },
+  );
+
   v.test(
     '@solidtv/solid/devtools/jsx-locator is a Babel plugin (default export)',
     () => {
@@ -342,7 +383,7 @@ v.describe('package.json exports', () => {
   const sourceTarget = (entry: string | Record<string, unknown>) =>
     typeof entry === 'string' ? entry : (entry['@solidtv/source'] as string);
 
-  v.test('the subpaths exported today', () => {
+  v.test('the subpaths exported', () => {
     v.expect(Object.keys(pkg.exports)).toEqual([
       '.',
       './primitives',
@@ -350,27 +391,43 @@ v.describe('package.json exports', () => {
       './devtools',
       './devtools/jsx-locator',
       './shaders',
+      './focusManager',
       './jsx-runtime',
     ]);
   });
 
-  v.test('every source target exists, except ./shaders', () => {
+  v.test('every source target exists', () => {
     for (const [subpath, entry] of Object.entries(pkg.exports)) {
-      if (subpath === './shaders') continue;
       v.expect(exists(sourceTarget(entry)), subpath).toBe(true);
     }
   });
 
-  // BUG: ./shaders points at src/shaders/index.ts (and dist/src/shaders/*),
-  // deleted in cf3b1e0 ("use shaders from renderer"). The brief says fix it.
-  v.test.skip('BUG: ./shaders points at a file that exists', () => {
+  // The published files are tsc's output of the source files: dist/src/<path
+  // under src>.js and .d.ts. Checked as strings (dist is not built in a test
+  // run); `pnpm build` then proves the files exist.
+  v.test('every dist target mirrors its source target', () => {
+    for (const [subpath, entry] of Object.entries(pkg.exports)) {
+      if (typeof entry === 'string' || subpath === './jsx-runtime') continue;
+      const stem = (entry['@solidtv/source'] as string)
+        .replace('./src/', './dist/src/')
+        .replace(/\.ts$/, '');
+      v.expect(entry['import'], subpath).toEqual({
+        types: stem + '.d.ts',
+        default: stem + '.js',
+      });
+    }
+  });
+
+  // B21 (Phase 2, stream M): ./shaders pointed at src/shaders/index.ts (and
+  // dist/src/shaders/*), deleted in cf3b1e0 ("use shaders from renderer").
+  v.test('./shaders points at a file that exists', () => {
     v.expect(exists(sourceTarget(pkg.exports['./shaders']!))).toBe(true);
   });
 
-  // BUG: the demo app imports `KeyMap, KeyHoldMap` from
-  // "@solidtv/solid/focusManager" (src/pages/App.tsx:5), which is not in
-  // `exports`. The brief says add it.
-  v.test.skip('BUG: ./focusManager is exported', () => {
+  // B21: the demo app imports `KeyMap, KeyHoldMap` from
+  // "@solidtv/solid/focusManager" (src/pages/App.tsx:5), which was not in
+  // `exports`.
+  v.test('./focusManager is exported', () => {
     v.expect(pkg.exports['./focusManager']).toBeDefined();
   });
 });
