@@ -345,90 +345,98 @@ v.describe('VirtualRow: window and scroll modes', () => {
     },
   );
 
-  // B14 (fixed in 1.7): with factorScale, the window shift is the item size
-  // times its focus scale, plus the gap. The scale was read from
-  // `style.focus`, which is never set, so it was seen only when the size was
-  // first measured after the child had focus (its `scale` was then 1.2):
-  // the plain case below. With wrap or an initial `selected`, the size was
-  // measured before focus and cached unscaled (230): x was -180 at mount and
-  // the shift 230. It is now read from `$focus`, so every case shifts by
-  // 200 * 1.2 + 30 = 270.
+  // B14 (fixed in 1.7): a window shift moves the row by one slot, the
+  // item's unscaled size plus the gap, which is how far flex moves the items.
+  // With factorScale and a `$focus` scale of 1.2 it moved by 200 * 1.2 + 30 =
+  // 270 instead of 230 whenever it saw the scale, so the focused item drifted
+  // 40 left per shift (screen x 50, 10, -30, ... on the plain path, before and
+  // after the first B14 attempt that read `$focus`, which spread the drift to
+  // the wrap and initial-selected paths). factorScale has no effect now: the
+  // positions are the same with and without it.
   //
-  // Flex lays the children out unscaled (a 230 slot), so a 270 shift moves
-  // the focused item 40 further per shift: the drift is visible below. It
-  // comes with factorScale, before and after B14.
+  // Animations are on, as in an app. The DOM renderer's animations run on
+  // requestAnimationFrame, and jsdom's frame time is on another clock than
+  // the performance.now() the animations start from, so frames are driven
+  // here with a time far ahead: each shift animation ends on its first frame.
   v.it(
-    'B14: factorScale with a $focus scale: the window shift is the scaled item size + gap',
+    'B14: with factorScale and a $focus scale, the focused item keeps its screen x across window shifts (animations on)',
     async () => {
-      const cases = {
-        // Unchanged by B14.
-        plain: [
-          ['v0', 0, 0, 50, '0,1,2,3,4,5'],
-          ['v1', 1, 1, -220, '0,1,2,3,4,5'],
-          ['v2', 1, 2, -260, '1,2,3,4,5,6'],
-          ['v3', 1, 3, -300, '2,3,4,5,6,7'],
-          ['v2', 1, 2, -260, '1,2,3,4,5,6'],
-          ['v1', 1, 1, -220, '0,1,2,3,4,5'],
-        ],
-        // B14: was -180 after every press.
-        wrap: [
-          ['v0', 1, 0, -220, '11,0,1,2,3,4'],
-          ['v1', 1, 1, -260, '0,1,2,3,4,5'],
-          ['v2', 1, 2, -260, '1,2,3,4,5,6'],
-          ['v3', 1, 3, -260, '2,3,4,5,6,7'],
-          ['v2', 1, 2, -180, '1,2,3,4,5,6'],
-          ['v1', 1, 1, -180, '0,1,2,3,4,5'],
-        ],
-        // B14: was -180, then 50 after every press.
-        selected: [
-          ['v5', 1, 5, -220, '4,5,6,7,8,9'],
-          ['v6', 1, 6, 10, '5,6,7,8,9,10'],
-          ['v7', 1, 7, 10, '6,7,8,9,10,11'],
-          ['v8', 1, 8, 10, '7,8,9,10,11'],
-          ['v7', 1, 7, 90, '6,7,8,9,10,11'],
-          ['v6', 1, 6, 90, '5,6,7,8,9,10'],
-        ],
+      const settle = async () => {
+        for (let i = 0; i < 4; i++) await flush();
       };
-      for (const [variant, expected] of Object.entries(cases)) {
-        let row!: lng.ElementNode;
-        dispose = await mount(() => (
-          <view width={1920} height={1080}>
-            <VirtualRow
-              ref={row}
-              autofocus
-              x={50}
-              each={twelve}
-              displaySize={4}
-              factorScale
-              wrap={variant === 'wrap'}
-              selected={variant === 'selected' ? 5 : undefined}
-            >
-              {(item) => (
-                <view
-                  id={`v${item()}`}
-                  item={item()}
-                  width={200}
-                  height={100}
-                  style={{ $focus: { scale: 1.2 } }}
-                />
-              )}
-            </VirtualRow>
-          </view>
-        ));
-        const seen: Step[] = [rowStep(row)];
-        for (const key of [
-          'ArrowRight',
-          'ArrowRight',
-          'ArrowRight',
-          'ArrowLeft',
-          'ArrowLeft',
-        ]) {
-          await press(key);
-          seen.push(rowStep(row));
+      v.vi.stubGlobal(
+        'requestAnimationFrame',
+        (cb: (time: number) => void) =>
+          setTimeout(() => cb(performance.now() + 1e6), 0),
+      );
+      lng.Config.animationsEnabled = true;
+      try {
+        // Focused item's screen x (row x + its x) at mount, then after Right
+        // x5 and Left x3.
+        const expected: Record<string, number[]> = {
+          plain: [50, 50, 50, 50, 50, 50, 50, 50, 50],
+          wrap: [50, 50, 50, 50, 50, 50, 50, 50, 50],
+          // Not constant: an initial `selected` makes the first and fifth
+          // press move the focused item one slot right, with or without
+          // factorScale. A separate bug from before 1.7 (out of scope here).
+          selected: [50, 280, 280, 280, 280, 510, 510, 510, 510],
+        };
+        for (const factorScale of [true, false]) {
+          for (const variant of ['plain', 'wrap', 'selected']) {
+            let row!: lng.ElementNode;
+            dispose = await mount(() => (
+              <view width={1920} height={1080}>
+                <VirtualRow
+                  ref={row}
+                  autofocus
+                  x={50}
+                  each={twelve}
+                  displaySize={4}
+                  factorScale={factorScale}
+                  wrap={variant === 'wrap'}
+                  selected={variant === 'selected' ? 5 : undefined}
+                >
+                  {(item) => (
+                    <view
+                      id={`v${item()}`}
+                      item={item()}
+                      width={200}
+                      height={100}
+                      style={{ $focus: { scale: 1.2 } }}
+                    />
+                  )}
+                </VirtualRow>
+              </view>
+            ));
+            await settle();
+            const screenX = () => row.x + lng.activeElement()!.x;
+            const seen = [screenX()];
+            for (const key of [
+              'ArrowRight',
+              'ArrowRight',
+              'ArrowRight',
+              'ArrowRight',
+              'ArrowRight',
+              'ArrowLeft',
+              'ArrowLeft',
+              'ArrowLeft',
+            ]) {
+              await press(key);
+              await settle();
+              seen.push(screenX());
+            }
+            v.expect([factorScale, variant, seen]).toEqual([
+              factorScale,
+              variant,
+              expected[variant],
+            ]);
+            dispose();
+            dispose = undefined;
+          }
         }
-        v.expect([variant, seen]).toEqual([variant, expected]);
-        dispose();
-        dispose = undefined;
+      } finally {
+        lng.Config.animationsEnabled = false;
+        v.vi.unstubAllGlobals();
       }
     },
   );
