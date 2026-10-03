@@ -213,6 +213,12 @@ export default defineConfig({
     },
     terserOptions: {
       mangle: false,
+      // BENCH_TERSER_COMPRESS='{"reduce_funcs":false}' tries other compress
+      // options against the demo app's defaults.
+      compress:
+        process.env.BENCH_TERSER_COMPRESS !== undefined
+          ? JSON.parse(process.env.BENCH_TERSER_COMPRESS)
+          : undefined,
       format: { comments: false, beautify: true },
     },
   },
