@@ -388,6 +388,9 @@ function getPropertyAlias(name: string) {
   return name;
 }
 
+// Forwarded to the renderer node (lng[key] = v). Only the renderer's props:
+// on a @solidtv/renderer 2.0 node any other name becomes a field of its
+// own. fontStretch, the DOM renderer's alone, has an accessor below.
 const LightningRendererNumberProps = [
   'alpha',
   'color',
@@ -400,8 +403,6 @@ const LightningRendererNumberProps = [
   'colorBl',
   'colorBr',
   'h',
-  'fontSize',
-  'lineHeight',
   'mount',
   'mountX',
   'mountY',
@@ -422,48 +423,45 @@ const LightningRendererNumberProps = [
 ];
 
 const LightningRendererNonAnimatingProps = [
-  'absX',
-  'absY',
   'atlasGroup',
   'autosize',
   'clipping',
-  'contain',
   'componentName',
   'componentLocation',
   'data',
-  'destroyed',
-  'forceLoad',
-  'fontStretch',
-  'fontStyle',
-  'group',
   'ignoreParentAlpha',
   'imageType',
+  'placeholderColor',
+  'srcHeight',
+  'srcWidth',
+  'srcX',
+  'srcY',
+  'texture',
+  'textureOptions',
+];
+
+// Text only: forwarded on a `<text>`, kept on the ElementNode elsewhere.
+const TextNumberProps = ['fontSize', 'lineHeight'];
+
+const TextNonAnimatingProps = [
+  'contain',
+  'forceLoad',
+  'fontStyle',
   'letterSpacing',
   'maxHeight',
   'maxLines',
   'maxWidth',
   'offsetY',
   'overflowSuffix',
-  'placeholderColor',
-  'preventCleanup',
-  'scrollable',
-  'scrollY',
-  'srcHeight',
-  'srcWidth',
-  'srcX',
-  'srcY',
-  'strictBounds',
   'text',
   'textAlign',
-  'textBaseline',
-  'textOverflow',
-  'texture',
-  'textureOptions',
-  'textRendererOverride',
   'verticalAlign',
   'wordBreak',
   'wordWrap',
 ];
+
+// Read-only on the renderer node: a write would throw there (B20).
+const ReadOnlyProps = ['absX', 'absY', 'destroyed'];
 
 declare global {
   interface HTMLElement {
@@ -523,6 +521,8 @@ export interface ElementNode extends RendererNode, FocusNode {
   _rendererProps?: any;
   _states?: States;
   _style?: Styles;
+  /** @internal text-only props written to an element that is not a `<text>` (B20) */
+  _textProps?: Record<string, unknown>;
   _theme?: Styles;
   _lastAnyKeyPressTime?: number;
   _type: 'element' | 'textNode';
@@ -1023,6 +1023,7 @@ export class ElementNode {
     this._requiresLayout = false;
     this._focusGen = 0;
     this._layoutQueued = false;
+    this._textProps = undefined;
   }
 
   get effects(): StyleEffects | undefined {
@@ -1148,9 +1149,14 @@ export class ElementNode {
 
   /**
    * The renderer's family name from `fontFamily` and `fontWeight`, resolved
-   * in one place so either JSX order gives the same name (B17).
+   * in one place so either JSX order gives the same name (B17). Only a
+   * `<text>` has a font: another element keeps both on the ElementNode and
+   * writes nothing to its renderer node (B20).
    */
   _writeFontFamily() {
+    if (this._type !== NodeType.TextNode) {
+      return;
+    }
     const weight = this._fontWeight as number | string | undefined;
     if (weight === undefined) {
       // No family of its own: before render, undefined lets render's font
@@ -2068,6 +2074,35 @@ export class ElementNode {
   }
 }
 
+const NO_TEXT_PROPS: Readonly<Record<string, unknown>> = Object.freeze({});
+
+/**
+ * Where a text-only prop is written: a `<text>`'s renderer node (its props
+ * bag before render); on any other element, the ElementNode's `_textProps`.
+ * A renderer v2 handle takes no field it does not know (it would become a
+ * field of its own) and a view draws no text (B20).
+ */
+function textPropsFor(node: ElementNode): Record<string, unknown> {
+  if (node._type === NodeType.TextNode) {
+    return node.lng as Record<string, unknown>;
+  }
+  let own = node._textProps;
+  if (own === undefined) {
+    own = {};
+    node._textProps = own;
+  }
+  return own;
+}
+
+/** Where a text-only prop is read (textPropsFor), without allocating. */
+function textPropsOf(node: ElementNode): Readonly<Record<string, unknown>> {
+  if (node._type === NodeType.TextNode) {
+    return node.lng as Record<string, unknown>;
+  }
+  const own = node._textProps;
+  return own === undefined ? NO_TEXT_PROPS : own;
+}
+
 for (const key of LightningRendererNumberProps) {
   Object.defineProperty(ElementNode.prototype, key, {
     get(): number {
@@ -2089,6 +2124,55 @@ for (const key of LightningRendererNonAnimatingProps) {
     },
   });
 }
+
+for (const key of TextNumberProps) {
+  Object.defineProperty(ElementNode.prototype, key, {
+    get(this: ElementNode): unknown {
+      return textPropsOf(this)[key];
+    },
+    set(this: ElementNode, v: number) {
+      if (this._type === NodeType.TextNode) {
+        this._sendToLightningAnimatable(key, v);
+      } else {
+        textPropsFor(this)[key] = v;
+      }
+    },
+  });
+}
+
+for (const key of TextNonAnimatingProps) {
+  Object.defineProperty(ElementNode.prototype, key, {
+    get(this: ElementNode): unknown {
+      return textPropsOf(this)[key];
+    },
+    set(this: ElementNode, v: unknown) {
+      textPropsFor(this)[key] = v;
+    },
+  });
+}
+
+for (const key of ReadOnlyProps) {
+  Object.defineProperty(ElementNode.prototype, key, {
+    get(): unknown {
+      return this.lng[key];
+    },
+    set(_v: unknown) {},
+  });
+}
+
+// The DOM renderer draws fontStretch; a rendered WebGL text node has no such
+// prop, and a @solidtv/renderer 2.0 node would take it as a field of its own.
+// Before render the value waits in the props bag, which the renderer's
+// createTextNode ignores.
+Object.defineProperty(ElementNode.prototype, 'fontStretch', {
+  get(this: ElementNode): unknown {
+    return (this.lng as unknown as Record<string, unknown>).fontStretch;
+  },
+  set(this: ElementNode, v: unknown) {
+    if (this.rendered && !isDomRendererActive()) return;
+    (this.lng as unknown as Record<string, unknown>).fontStretch = v;
+  },
+});
 
 export function createRawShaderAccessor<T>(key: keyof StyleEffects) {
   return {
