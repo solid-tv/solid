@@ -1079,6 +1079,79 @@ v.test(
   },
 );
 
+// Post-round-5 fix 1: a direct write with no active state's object of the
+// group recomputes the display from the base record, so the colour the
+// undo's fade left at alpha 0 is not inherited.
+v.test(
+  'PA: a direct colourless side after a state border over none was removed equals a never-focused node with the same write',
+  async () => {
+    const { changed, never, dispose } = await pair({
+      width: 100,
+      height: 100,
+      color: 0xffffffff,
+      $focus: { border: { width: 4, color: BLUE } },
+    });
+    changed.states.add('$focus');
+    changed.states.remove('$focus');
+    v.expect(alphaOf(shaderOf(changed).props['border-color'])).toBe(0);
+    changed.borderTop = { width: 6 };
+    never.borderTop = { width: 6 };
+    v.expect(declaredProps(changed)).toEqual(declaredProps(never));
+    v.expect(borderOf(changed)).toEqual([0xffffffff, [6, 0, 0, 0]]);
+    changed.states.add('$focus');
+    changed.states.remove('$focus');
+    v.expect(declaredProps(changed)).toEqual(declaredProps(never));
+    dispose();
+  },
+);
+
+v.test(
+  'PA2: the same while another state that names no border stays on',
+  async () => {
+    const { changed, never, dispose } = await pair({
+      width: 100,
+      height: 100,
+      color: 0xffffffff,
+      $focus: { border: { width: 4, color: BLUE } },
+      $active: { alpha: 0.9 },
+    });
+    changed.states.add('$active');
+    never.states.add('$active');
+    changed.states.add('$focus');
+    changed.states.remove('$focus');
+    changed.borderBottom = { width: 3 };
+    never.borderBottom = { width: 3 };
+    v.expect(declaredProps(changed)).toEqual(declaredProps(never));
+    v.expect(borderOf(changed)).toEqual([0xffffffff, [0, 0, 3, 0]]);
+    changed.states.remove('$active');
+    v.expect(borderOf(changed)).toEqual([0xffffffff, [0, 0, 3, 0]]);
+    dispose();
+  },
+);
+
+v.test(
+  'PA-shadow: a direct colourless shadow after a state shadow over none was removed shows the fresh colour',
+  async () => {
+    const { changed, never, dispose } = await pair({
+      width: 100,
+      height: 100,
+      color: 0xffffffff,
+      $focus: { shadow: { color: RED, blur: 10 } },
+    });
+    changed.states.add('$focus');
+    changed.states.remove('$focus');
+    v.expect(alphaOf(shaderOf(changed).props['shadow-color'])).toBe(0);
+    changed.shadow = { blur: 20 } as NodeStyles['shadow'];
+    never.shadow = { blur: 20 } as NodeStyles['shadow'];
+    v.expect(declaredProps(changed)).toEqual(declaredProps(never));
+    v.expect(shaderOf(changed).props['shadow-color']).toBe(0x000000ff);
+    v.expect(shaderOf(changed).props['shadow-projection']).toEqual([
+      0, 0, 20, 5,
+    ]);
+    dispose();
+  },
+);
+
 v.test(
   'a style listing a side before border: focus and blur agree with a never-focused node',
   async () => {

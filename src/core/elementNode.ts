@@ -932,34 +932,40 @@ function writeShaderGroup(
   const base = node._shaderBase;
   let n = 0;
   let fromHeld = false;
-  if (direct !== null) {
-    groupParses[0] = direct;
-    n = 1;
-    fromHeld = true;
-  } else {
-    const states = node._states;
-    const count =
-      states !== undefined && states.length > 0 ? node._undoCount : 0;
-    if (count > 0) {
-      // The tracked keys of the group whose value comes from a state block
-      // (not the fallback: the base record holds the style's object).
-      const keys = node._undoStyles!;
-      const applied = node._applied!;
-      const bits = node._stateShaderBits;
-      for (let i = 0; i < count; i++) {
-        const key = keys[i]!;
-        const bit = SHADER_BIT[key];
-        if (
-          bit !== undefined &&
-          (bits & bit) !== 0 &&
-          SHADER_GROUP_OF[key] === group
-        ) {
-          const obj = applied[key];
-          if (isObject(obj)) {
-            groupParses[n++] = shaderParse(key, obj);
-          }
+  const states = node._states;
+  const count = states !== undefined && states.length > 0 ? node._undoCount : 0;
+  if (count > 0) {
+    // The tracked keys of the group whose value comes from a state block
+    // (not the fallback: the base record holds the style's object).
+    const keys = node._undoStyles!;
+    const applied = node._applied!;
+    const bits = node._stateShaderBits;
+    for (let i = 0; i < count; i++) {
+      const key = keys[i]!;
+      const bit = SHADER_BIT[key];
+      if (
+        bit !== undefined &&
+        (bits & bit) !== 0 &&
+        SHADER_GROUP_OF[key] === group
+      ) {
+        const obj = applied[key];
+        if (isObject(obj)) {
+          groupParses[n++] = shaderParse(key, obj);
         }
       }
+    }
+  }
+  if (direct !== null) {
+    // A direct write, already in the base record. With an active state's
+    // object of the group on the display, the object goes over the current
+    // display (it wins for what it names, as 1.6 wrote it). With none, the
+    // display is the base record, recomputed: a colour the undo's fade left
+    // at alpha 0 is not kept, so the node equals a never-focused one with
+    // the same write.
+    if (n > 0) {
+      groupParses[0] = direct;
+      n = 1;
+      fromHeld = true;
     }
   }
 
@@ -988,14 +994,25 @@ function writeShaderGroup(
     }
     // Renderer v2, rendered, no shader: the first object creates it, from a
     // bag of the base and that object (its type as 1.6 chose it); the other
-    // objects are then live writes into it.
-    if (n === 0) {
+    // objects are then live writes into it. (A direct write with no state
+    // object is in the base already.)
+    if (n === 0 && direct === null) {
       return;
     }
     const target: Record<string, unknown> = {};
-    replayGroup(target, null, null, group, base, 0, 1, INTO_BAG, false);
+    replayGroup(
+      target,
+      null,
+      null,
+      group,
+      base,
+      0,
+      n > 0 ? 1 : 0,
+      INTO_BAG,
+      false,
+    );
     node._writeShaderTarget(target);
-    if (n === 1) {
+    if (n <= 1) {
       return;
     }
     shader = node.lng.shader as IRendererShader | null | undefined;
