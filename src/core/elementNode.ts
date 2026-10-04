@@ -3578,9 +3578,16 @@ export class ElementNode {
     this.onCreate?.(this);
     this.onRender?.(this);
 
-    if (node.onEvent) {
-      for (const [name, handler] of Object.entries(node.onEvent)) {
-        if (typeof node.lng.on === 'function') {
+    const onEvent = node.onEvent;
+    if (onEvent) {
+      // for-in with an own-property test, as Object.entries (Chrome 54)
+      // reads it: the floor is Chrome 47.
+      for (const name in onEvent) {
+        if (
+          Object.prototype.hasOwnProperty.call(onEvent, name) &&
+          typeof node.lng.on === 'function'
+        ) {
+          const handler = onEvent[name as keyof OnEvent]!;
           node.lng.on(name, (_inode, data) => handler.call(node, node, data));
         }
       }

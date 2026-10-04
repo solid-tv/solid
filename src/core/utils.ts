@@ -126,8 +126,8 @@ function convertEffectsToShader(styleEffects) {
   const effects = [];
   let index = 0;
 
-  for (const [type, props] of Object.entries(styleEffects)) {
-    effects.push({ type, props });
+  for (const type in styleEffects) {
+    effects.push({ type, props: styleEffects[type] });
     index++;
   }
   return createShader('DynamicShader', { effects });
