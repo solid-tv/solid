@@ -31,7 +31,6 @@ import {
   isElementText,
   logRenderTree,
   isFunction,
-  spliceItem,
 } from './utils.js';
 import { isDev, SHADERS_ENABLED } from './env.js';
 import { Config, isDomRendererActive } from './config.js';
@@ -887,36 +886,79 @@ export class ElementNode {
     node: ElementNode | ElementText | TextNode,
     beforeNode?: ElementNode | ElementText | TextNode | null,
   ) {
+    const children = this.children;
+    const prevParent = node.parent;
+    // The renderer node of a rendered element is placed among its siblings
+    // in `children` order (B19: renderer v2 draws siblings in that order).
+    const drawn = this.rendered && isElementNode(node) && node.rendered;
+    // A move within this node: the renderer sibling it was drawn before, so
+    // a move that leaves it there costs the renderer nothing.
+    let drawnBefore: ElementNode | null = null;
     // always remove nodes if they have a parent - for back swap of node
     // this will then put the node at the end of the array when re-added
-    if (node.parent) {
-      node.parent.removeChild(node);
-
-      // We're inserting a node thats been rendered into a node that hasn't been
-      if (!this.rendered) {
-        this._hasRenderedChildren = true;
+    if (prevParent !== undefined) {
+      if (drawn && prevParent === this) {
+        drawnBefore = nextDrawn(children, lastIndexOf(children, node) + 1);
       }
+      prevParent.removeChild(node);
     }
 
-    node.parent = this;
-
-    if (beforeNode) {
-      // SolidJS can move nodes around in the children array.
-      // We need to insert following DOM insertBefore which moves elements.
-      spliceItem(this.children, node as ElementNode, 1);
-      if (spliceItem(this.children, beforeNode as ElementNode, 0, node) > -1) {
-        return;
-      }
+    // We're inserting a node thats been rendered into a node that hasn't been
+    if (!this.rendered && isElementNode(node) && node.rendered) {
+      this._hasRenderedChildren = true;
     }
 
-    this.children.push(node as ElementNode);
+    // DOM insertBefore semantics: an anchor that is not a child appends.
+    let index =
+      beforeNode !== undefined && beforeNode !== null
+        ? lastIndexOf(children, beforeNode)
+        : -1;
+    if (index === -1) {
+      index = children.length;
+      children.push(node as ElementNode);
+    } else {
+      insertAt(children, index, node as ElementNode);
+    }
+
+    if (!drawn) {
+      node.parent = this;
+      return;
+    }
+    // insertBefore reparents the renderer node too, so the parent setter's
+    // renderer write is skipped.
+    (node as ElementNode)._parent = this;
+    const next = nextDrawn(children, index + 1);
+    if (prevParent !== this || next !== drawnBefore) {
+      (this.lng as INode).insertBefore(
+        (node as ElementNode).lng as INode,
+        next === null ? null : (next.lng as INode),
+      );
+    }
+  }
+
+  /**
+   * After `render()` made `node`'s renderer node (it appends), move it before
+   * the renderer node of its next rendered sibling (B19). solidOpts calls it
+   * for a node inserted before an anchor.
+   */
+  _drawInOrder(node: ElementNode) {
+    const children = this.children;
+    const next = nextDrawn(children, lastIndexOf(children, node) + 1);
+    if (next !== null) {
+      (this.lng as INode).insertBefore(node.lng as INode, next.lng as INode);
+    }
   }
 
   removeChild(node: ElementNode | ElementText | TextNode) {
-    if (spliceItem(this.children, node, 1) > -1) {
+    const children = this.children;
+    const index = lastIndexOf(children, node);
+    if (index > -1) {
+      removeAt(children, index);
       if (isElementNode(node) && node.onRemove) {
         node.onRemove.call(node, node);
       }
+      // Out of the tree: a re-insert finds no parent to remove it from.
+      node.parent = undefined;
 
       if (this.requiresLayout()) {
         addToLayoutQueue(this);
@@ -1734,6 +1776,59 @@ export class ElementNode {
 
     if (node._autofocus) node.setFocus();
   }
+}
+
+/**
+ * The index of `item` in `list`, scanning from the end: Solid appends and
+ * removes at the tail most often. The first item is checked first, for
+ * Solid's cleanChildren, which removes the first child until none is left.
+ */
+function lastIndexOf<T>(list: T[], item: T): number {
+  if (list[0] === item) {
+    return 0;
+  }
+  let i = list.length - 1;
+  while (i > 0 && list[i] !== item) {
+    i--;
+  }
+  return i === 0 ? -1 : i;
+}
+
+/** Removes `list[index]` without allocating (`splice` returns an array). */
+function removeAt<T>(list: T[], index: number): void {
+  if (index === 0) {
+    list.shift();
+    return;
+  }
+  const last = list.length - 1;
+  for (let i = index; i < last; i++) {
+    list[i] = list[i + 1]!;
+  }
+  list.pop();
+}
+
+/** Inserts `item` at `index` without allocating. */
+function insertAt<T>(list: T[], index: number, item: T): void {
+  let i = list.length;
+  list.push(item);
+  for (; i > index; i--) {
+    list[i] = list[i - 1]!;
+  }
+  list[index] = item;
+}
+
+/** The first rendered element in `children` from `from` on: the renderer sibling to draw before. */
+function nextDrawn(
+  children: ElementNode['children'],
+  from: number,
+): ElementNode | null {
+  for (let i = from; i < children.length; i++) {
+    const c = children[i];
+    if (c instanceof ElementNode && c.rendered) {
+      return c;
+    }
+  }
+  return null;
 }
 
 // Props forwarded to the renderer node, one accessor per prop (design
