@@ -1174,7 +1174,7 @@ function updateDOMTextSize(node: DOMText, emitLoaded = true): void {
  * family no font face names counts as loaded: a system font). Without a
  * FontFaceSet, or for a font string it cannot parse, it is taken as loaded.
  */
-function isFontLoaded(props: IRendererTextNodeProps): boolean {
+function isFontLoaded(node: DOMText): boolean {
   if (typeof document === 'undefined') {
     return true;
   }
@@ -1186,10 +1186,14 @@ function isFontLoaded(props: IRendererTextNodeProps): boolean {
   ) {
     return true;
   }
+  let font = node.font;
+  if (font === undefined) {
+    const props = node.props;
+    font = `${props.fontStyle} ${props.fontWeight} ${props.fontSize}px "${props.fontFamily}"`;
+    node.font = font;
+  }
   try {
-    return fonts.check(
-      `${props.fontStyle} ${props.fontWeight} ${props.fontSize}px "${props.fontFamily}"`,
-    );
+    return fonts.check(font);
   } catch {
     return true;
   }
@@ -1976,6 +1980,8 @@ class DOMText extends DOMNode {
   /** The size `loaded` last told (updateDOMTextSize). */
   public loadedW = 0;
   public loadedH = 0;
+  /** Its CSS font, for document.fonts.check; undefined once a font prop changes. */
+  public font: string | undefined = undefined;
 
   constructor(
     stage: IRendererStage,
@@ -2003,7 +2009,7 @@ class DOMText extends DOMNode {
    * destroyed node too.
    */
   measure(): boolean {
-    if (!elMap.has(this) || !isFontLoaded(this.props)) {
+    if (!elMap.has(this) || !isFontLoaded(this)) {
       return false;
     }
     updateDOMTextSize(this, false);
@@ -2025,6 +2031,7 @@ class DOMText extends DOMNode {
   set fontFamily(v) {
     if (this.props.fontFamily === v) return;
     this.props.fontFamily = v;
+    this.font = undefined;
     updateNodeStyles(this);
     scheduleUpdateDOMTextMeasurement(this);
   }
@@ -2034,6 +2041,7 @@ class DOMText extends DOMNode {
   set fontSize(v) {
     if (this.props.fontSize === v) return;
     this.props.fontSize = v;
+    this.font = undefined;
     updateNodeStyles(this);
     scheduleUpdateDOMTextMeasurement(this);
   }
@@ -2043,6 +2051,7 @@ class DOMText extends DOMNode {
   set fontStyle(v) {
     if (this.props.fontStyle === v) return;
     this.props.fontStyle = v;
+    this.font = undefined;
     updateNodeStyles(this);
     scheduleUpdateDOMTextMeasurement(this);
   }
@@ -2052,6 +2061,7 @@ class DOMText extends DOMNode {
   set fontWeight(v) {
     if (this.props.fontWeight === v) return;
     this.props.fontWeight = v;
+    this.font = undefined;
     updateNodeStyles(this);
     scheduleUpdateDOMTextMeasurement(this);
   }

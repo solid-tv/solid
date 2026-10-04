@@ -17,3 +17,13 @@ export function fontLoaded(): void {
     listener();
   }
 }
+
+/**
+ * lightningInit.ts: a font passed to loadFonts() failed for good. The texts
+ * that waited are measured again (one whose font is still missing waits
+ * again; a destroyed one is dropped), and the failure goes on to the caller.
+ */
+export function fontFailed(error: unknown): never {
+  fontLoaded();
+  throw error;
+}
