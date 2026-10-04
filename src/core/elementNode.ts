@@ -897,8 +897,16 @@ export class ElementNode {
     // A move within this node: the renderer sibling it was drawn before, so
     // a move that leaves it there costs the renderer nothing.
     let drawnBefore: ElementNode | null = null;
-    // always remove nodes if they have a parent - for back swap of node
-    // this will then put the node at the end of the array when re-added
+    // Before itself: it stays where it is (DOM semantics). Solid's swap of
+    // adjacent items asks for this (insertNode(parent, y, nextSibling(x))).
+    if (beforeNode === node) {
+      beforeNode =
+        prevParent === this
+          ? children[lastIndexOf(children, node) + 1]
+          : undefined;
+    }
+    // A node in a parent (this one too) is taken out first, then inserted
+    // before `beforeNode`, or appended.
     if (prevParent !== undefined) {
       if (drawn && prevParent === this) {
         drawnBefore = nextDrawn(children, lastIndexOf(children, node) + 1);

@@ -137,6 +137,69 @@ v.describe('B19: the DOM renderer draws children in children order', () => {
     expectOrder(right);
     dispose();
   });
+
+  // Solid's swap of adjacent items asks for insertNode(parent, y, y): a node
+  // placed before itself stays (DOM semantics), it is not appended.
+  v.test(
+    'an adjacent <For> swap with a later sibling keeps the declared order',
+    async () => {
+      const [items, setItems] = s.createSignal(['a', 'x', 'y', 'b']);
+      let parent!: ElementNode;
+      const dispose = renderer.render(() => (
+        <view ref={parent} width={300} height={100}>
+          <view id="head" width={10} height={10} />
+          <s.For each={items()}>
+            {(id) => <view id={id} width={10} height={10} />}
+          </s.For>
+          <view id="tail" width={10} height={10} />
+        </view>
+      ));
+      await tick();
+      setItems(['a', 'y', 'x', 'b']);
+      await tick();
+      v.expect(ids(parent)).toEqual(['head', 'a', 'y', 'x', 'b', 'tail']);
+      expectOrder(parent);
+      dispose();
+    },
+  );
+
+  v.test(
+    'a move that leaves a child where it is does not call the renderer',
+    () => {
+      let parent!: ElementNode;
+      const dispose = renderer.render(() => (
+        <view ref={parent} width={300} height={100}>
+          <view id="a" width={10} height={10} />
+          <view id="b" width={10} height={10} />
+          <view id="c" width={10} height={10} />
+        </view>
+      ));
+      const [a, b, c] = parent.children as [
+        ElementNode,
+        ElementNode,
+        ElementNode,
+      ];
+      const spy = v.vi.spyOn(
+        parent.lng as unknown as { insertBefore: () => void },
+        'insertBefore',
+      );
+      try {
+        parent.insertChild(b, c);
+        parent.insertChild(c);
+        parent.insertChild(a, a);
+        v.expect(ids(parent)).toEqual(['a', 'b', 'c']);
+        v.expect(spy).not.toHaveBeenCalled();
+
+        parent.insertChild(c, a);
+        v.expect(ids(parent)).toEqual(['c', 'a', 'b']);
+        v.expect(spy).toHaveBeenCalledTimes(1);
+        expectOrder(parent);
+      } finally {
+        spy.mockRestore();
+        dispose();
+      }
+    },
+  );
 });
 
 v.describe('child list', () => {

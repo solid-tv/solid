@@ -131,3 +131,28 @@ v.test('insertChild(node, before) between rendered parents', () => {
   v.expect(drawn(right)).toEqual(expected(right));
   dispose();
 });
+
+// Solid's swap of adjacent items asks for insertNode(parent, y, y): a node
+// placed before itself stays (DOM semantics), it is not appended.
+v.test(
+  'an adjacent <For> swap with a later sibling keeps the drawn order',
+  async () => {
+    const [items, setItems] = s.createSignal(['a', 'x', 'y', 'b']);
+    let parent!: ElementNode;
+    const dispose = render(() => (
+      <view ref={parent} width={300} height={100}>
+        <view id="head" width={10} height={10} />
+        <s.For each={items()}>
+          {(id) => <view id={id} width={10} height={10} />}
+        </s.For>
+        <view id="tail" width={10} height={10} />
+      </view>
+    ));
+    await tick();
+    setItems(['a', 'y', 'x', 'b']);
+    await tick();
+    v.expect(ids(parent)).toEqual(['head', 'a', 'y', 'x', 'b', 'tail']);
+    v.expect(drawn(parent)).toEqual(expected(parent));
+    dispose();
+  },
+);
