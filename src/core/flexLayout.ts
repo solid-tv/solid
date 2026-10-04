@@ -35,10 +35,13 @@ let shrinkFactor = new Float64Array(0);
 let orderKey = new Float64Array(0);
 let lineStart = new Float64Array(0);
 
-function ensureCapacity(n: number): void {
-  if (n <= capacity) {
-    return;
-  }
+/**
+ * Grows the scratch arrays to hold `n` children (`n > capacity`). Called
+ * only on that cold branch: terser's default `reduce_funcs` turns a function
+ * with one call site into a closure per call, so a capacity test in here
+ * would make one per pass.
+ */
+function growScratch(n: number): void {
   let c = capacity * 2;
   if (c < n) {
     c = n < 16 ? 16 : n;
@@ -275,7 +278,9 @@ function layout(node: ElementNode): boolean {
   const wrapping = flexWrap === 'wrap' || isWrapReverse;
   const align = node.alignItems || (flexWrap ? 'flexStart' : undefined);
 
-  ensureCapacity(numChildren);
+  if (numChildren > capacity) {
+    growScratch(numChildren);
+  }
 
   let n = 0;
   let hasOrder = false;
