@@ -15,29 +15,32 @@ import { render, renderer } from './setup.js';
 type Handle = Record<string, unknown>;
 const handle = (el: ElementNode) => el.lng as unknown as Handle;
 
-v.test('text-only props written to a rendered <view> add no field to its handle', () => {
-  let view!: ElementNode;
-  const dispose = render(() => <view ref={view} width={100} height={100} />);
-  v.expect(view.rendered).toBe(true);
-  const keys = Object.keys(view.lng);
+v.test(
+  'text-only props written to a rendered <view> add no field to its handle',
+  () => {
+    let view!: ElementNode;
+    const dispose = render(() => <view ref={view} width={100} height={100} />);
+    v.expect(view.rendered).toBe(true);
+    const keys = Object.keys(view.lng);
 
-  view.fontSize = 20;
-  view.lineHeight = 30;
-  view.maxWidth = 50;
-  view.text = 'hello';
-  view.contain = 'width';
-  view.fontWeight = 'bold';
+    view.fontSize = 20;
+    view.lineHeight = 30;
+    view.maxWidth = 50;
+    view.text = 'hello';
+    view.contain = 'width';
+    view.fontWeight = 'bold';
 
-  v.expect(Object.keys(view.lng)).toEqual(keys);
-  // The values stay on the ElementNode.
-  v.expect(view.fontSize).toBe(20);
-  v.expect(view.lineHeight).toBe(30);
-  v.expect(view.maxWidth).toBe(50);
-  v.expect(view.text).toBe('hello');
-  v.expect(view.contain).toBe('width');
-  v.expect(view.fontWeight).toBe('bold');
-  dispose();
-});
+    v.expect(Object.keys(view.lng)).toEqual(keys);
+    // The values stay on the ElementNode.
+    v.expect(view.fontSize).toBe(20);
+    v.expect(view.lineHeight).toBe(30);
+    v.expect(view.maxWidth).toBe(50);
+    v.expect(view.text).toBe('hello');
+    v.expect(view.contain).toBe('width');
+    v.expect(view.fontWeight).toBe('bold');
+    dispose();
+  },
+);
 
 v.test('text-only props written to a rendered <text> reach its handle', () => {
   let text!: ElementNode;
@@ -57,29 +60,32 @@ v.test('text-only props written to a rendered <text> reach its handle', () => {
   dispose();
 });
 
-v.test('absX, absY and destroyed: writes do not throw, reads come from the handle', () => {
-  let parent!: ElementNode;
-  let view!: ElementNode;
-  const dispose = render(() => (
-    <view ref={parent} x={10} y={20} width={300} height={300}>
-      <view ref={view} x={5} y={7} width={10} height={10} />
-    </view>
-  ));
-  const keys = Object.keys(view.lng);
+v.test(
+  'absX, absY and destroyed: writes do not throw, reads come from the handle',
+  () => {
+    let parent!: ElementNode;
+    let view!: ElementNode;
+    const dispose = render(() => (
+      <view ref={parent} x={10} y={20} width={300} height={300}>
+        <view ref={view} x={5} y={7} width={10} height={10} />
+      </view>
+    ));
+    const keys = Object.keys(view.lng);
 
-  v.expect(() => {
-    view.absX = 1;
-    view.absY = 2;
-    view.destroyed = true;
-  }).not.toThrow();
+    v.expect(() => {
+      view.absX = 1;
+      view.absY = 2;
+      view.destroyed = true;
+    }).not.toThrow();
 
-  v.expect(Object.keys(view.lng)).toEqual(keys);
-  v.expect(view.absX).toBe(handle(view).absX);
-  v.expect(view.absY).toBe(handle(view).absY);
-  v.expect(view.destroyed).toBe(false);
-  void parent;
-  dispose();
-});
+    v.expect(Object.keys(view.lng)).toEqual(keys);
+    v.expect(view.absX).toBe(handle(view).absX);
+    v.expect(view.absY).toBe(handle(view).absY);
+    v.expect(view.destroyed).toBe(false);
+    void parent;
+    dispose();
+  },
+);
 
 // Every prop Solid forwards to the renderer node, written alone on a
 // rendered node: the handle gets exactly the value (no field of its own) and
@@ -178,3 +184,64 @@ v.test('every forwarded prop reaches the handle under its own name', () => {
   v.expect(Object.keys(text.lng)).toEqual(textKeys);
   dispose();
 });
+
+// The transition path. With `transition` on a rendered node, an animatable
+// setter hands the renderer's animateProp its own name and the value, and
+// does not store the value itself. animateProp is stubbed: this checks what
+// Solid passes, not the animation.
+const ANIMATABLE_NODE_PROPS = NODE_PROPS.slice(0, 25) as Array<
+  [string, number]
+>;
+const ANIMATABLE_TEXT_PROPS: Array<[string, number]> = [
+  ['fontSize', 40],
+  ['lineHeight', 50],
+];
+
+v.test(
+  'with a transition, every animatable prop animates under its own name',
+  () => {
+    let view!: ElementNode;
+    let text!: ElementNode;
+    const dispose = render(() => (
+      <view>
+        <view ref={view} width={100} height={100} />
+        <text ref={text}>a</text>
+      </view>
+    ));
+    // Node.prototype (a TextNode inherits it).
+    const proto = Object.getPrototypeOf(view.lng) as {
+      animateProp: (name: string, value: number, settings: unknown) => unknown;
+    };
+    const animateProp = v.vi
+      .spyOn(proto, 'animateProp')
+      .mockImplementation(() => undefined);
+    try {
+      view.transition = true;
+      text.transition = true;
+      const el = (n: ElementNode) => n as unknown as Handle;
+      const check = (node: ElementNode, name: string, value: number) => {
+        const before = handle(node)[name];
+        v.expect(before, name).not.toBe(value);
+        const calls = animateProp.mock.calls.length;
+        el(node)[name] = value;
+        v.expect(animateProp.mock.calls.length, name).toBe(calls + 1);
+        v.expect(animateProp.mock.lastCall, name).toEqual([
+          name,
+          value,
+          v.expect.anything(),
+        ]);
+        v.expect(animateProp.mock.contexts.at(-1), name).toBe(node.lng);
+        v.expect(handle(node)[name], name).toBe(before);
+      };
+      for (const [name, value] of ANIMATABLE_NODE_PROPS) {
+        check(view, name, value);
+      }
+      for (const [name, value] of ANIMATABLE_TEXT_PROPS) {
+        check(text, name, value);
+      }
+    } finally {
+      animateProp.mockRestore();
+      dispose();
+    }
+  },
+);
