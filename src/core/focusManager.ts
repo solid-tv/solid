@@ -30,8 +30,6 @@ const keyMapEntries: KeyMapEntries = {
   Escape: 'Escape',
 };
 
-const keyOf = (e: KeyboardEvent): KeyNameOrKeyCode => e.key || e.keyCode;
-
 const flattenKeyMap = (
   keyMap: Partial<KeyMap>,
   targetMap: KeyMapEntries,
@@ -68,22 +66,20 @@ interface HandlerNames {
 const mappedHandlerNames = new Map<string, HandlerNames>();
 const unmappedHandlerNames = new Map<string, HandlerNames>();
 
-const handlerNamesOf = (
+// The first event of a key builds its names; dispatch looks them up itself
+// and calls this only then (a module function with one call site on every
+// event would be a closure per event under terser's default reduce_funcs).
+const internHandlerNames = (
   mappedEvent: string | undefined,
-  key: string,
+  base: string,
 ): HandlerNames => {
-  const cache = mappedEvent ? mappedHandlerNames : unmappedHandlerNames;
-  const base = mappedEvent || key;
-  let names = cache.get(base);
-  if (names === undefined) {
-    names = {
-      on: mappedEvent ? 'on' + base : undefined,
-      onRelease: mappedEvent ? 'on' + base + 'Release' : undefined,
-      onCapture: 'onCapture' + base,
-      onCaptureRelease: 'onCapture' + base + 'Release',
-    };
-    cache.set(base, names);
-  }
+  const names: HandlerNames = {
+    on: mappedEvent ? 'on' + base : undefined,
+    onRelease: mappedEvent ? 'on' + base + 'Release' : undefined,
+    onCapture: 'onCapture' + base,
+    onCaptureRelease: 'onCapture' + base + 'Release',
+  };
+  (mappedEvent ? mappedHandlerNames : unmappedHandlerNames).set(base, names);
   return names;
 };
 
@@ -380,21 +376,62 @@ const isElementThrottled = (elm: ElementNode, currentTime: number): boolean => {
   return last !== undefined && currentTime - last < throttle;
 };
 
-// Walk focus path root→leaf. Returns true if a capture handler claimed the
-// event (or, for a repeated press, an element on the path is rate-limited).
-const runCapturePhase = (
-  fp: ElementNode[],
+const propagateKeyPress = (
   e: KeyboardEvent,
   mappedEvent: string | undefined,
-  names: HandlerNames,
   isUp: boolean,
-  checkThrottle: boolean,
-  currentTime: number,
 ): boolean => {
+  const currentTime = performance.now();
+  const key: KeyNameOrKeyCode = e.key || e.keyCode;
+  const sameKey = lastInputKey === key;
+  lastInputKey = key;
+
+  if (!isUp && Config.throttleInput) {
+    if (
+      sameKey &&
+      currentTime - lastGlobalKeyPressTime < Config.throttleInput
+    ) {
+      if (isDev && Config.keyDebug) {
+        console.log(
+          `Keypress throttled by global Config.throttleInput: ${Config.throttleInput}ms`,
+        );
+      }
+      // Dropped on purpose, so consumed: the same answer an element's own
+      // throttleInput gives below, and what a host asking through
+      // Config.preventDefaultOnHandledKeys needs to hear.
+      return true;
+    }
+    lastGlobalKeyPressTime = currentTime;
+  }
+
+  // Keyup events don't trigger focus changes, so don't record their key.
+  if (!isUp) {
+    _pendingHistoryKey.keyPressed = key;
+    _pendingHistoryKey.mappedKey = mappedEvent;
+  }
+
+  const fp = focusPath();
+  if (fp.length === 0) return false;
+
+  // The handler prop names for this key. The lookup, the two phases and
+  // the key above are written out here, not in helpers: each would have
+  // this one call site, which terser's default reduce_funcs turns into a
+  // closure per event.
+  const base = mappedEvent || e.key;
+  let names = (mappedEvent ? mappedHandlerNames : unmappedHandlerNames).get(
+    base,
+  );
+  if (names === undefined) {
+    names = internHandlerNames(mappedEvent, base);
+  }
+  // Only a repeat of the same key can be throttled, and only on key-down.
+  const checkThrottle = !isUp && sameKey;
   const finalFocusElm = fp[0]!;
+
+  // Capture phase, root→leaf: a capture handler that returns true claims
+  // the event (as does, for a repeated press, a rate-limited element).
   const captureEvent = isUp ? names.onCaptureRelease : names.onCapture;
   const captureKey = isUp ? 'onCaptureKeyRelease' : 'onCaptureKey';
-
   for (let i = fp.length - 1; i >= 0; i--) {
     const elm = fp[i]!;
     if (checkThrottle && isElementThrottled(elm, currentTime)) return true;
@@ -408,24 +445,11 @@ const runCapturePhase = (
       return true;
     }
   }
-  return false;
-};
 
-// Walk focus path leaf→root. Returns whether the event was handled.
-const runBubblePhase = (
-  fp: ElementNode[],
-  e: KeyboardEvent,
-  mappedEvent: string | undefined,
-  names: HandlerNames,
-  isUp: boolean,
-  checkThrottle: boolean,
-  currentTime: number,
-): boolean => {
-  const finalFocusElm = fp[0]!;
+  // Bubble phase, leaf→root: returns whether the event was handled.
   const eventHandlerKey = isUp ? names.onRelease : names.on;
   // The last element with *any* matching handler, for the no-handler log.
   let lastHandlerSeen: ElementNode | undefined;
-
   for (let i = 0; i < fp.length; i++) {
     const elm = fp[i]!;
     if (checkThrottle && isElementThrottled(elm, currentTime)) return true;
@@ -463,63 +487,6 @@ const runBubblePhase = (
     }
   }
   return false;
-};
-
-const propagateKeyPress = (
-  e: KeyboardEvent,
-  mappedEvent: string | undefined,
-  isUp: boolean,
-): boolean => {
-  const currentTime = performance.now();
-  const key = keyOf(e);
-  const sameKey = lastInputKey === key;
-  lastInputKey = key;
-
-  if (!isUp && Config.throttleInput) {
-    if (
-      sameKey &&
-      currentTime - lastGlobalKeyPressTime < Config.throttleInput
-    ) {
-      if (isDev && Config.keyDebug) {
-        console.log(
-          `Keypress throttled by global Config.throttleInput: ${Config.throttleInput}ms`,
-        );
-      }
-      // Dropped on purpose, so consumed: the same answer an element's own
-      // throttleInput gives below, and what a host asking through
-      // Config.preventDefaultOnHandledKeys needs to hear.
-      return true;
-    }
-    lastGlobalKeyPressTime = currentTime;
-  }
-
-  // Keyup events don't trigger focus changes, so don't record their key.
-  if (!isUp) {
-    _pendingHistoryKey.keyPressed = key;
-    _pendingHistoryKey.mappedKey = mappedEvent;
-  }
-
-  const fp = focusPath();
-  if (fp.length === 0) return false;
-
-  const names = handlerNamesOf(mappedEvent, e.key);
-  // Only a repeat of the same key can be throttled, and only on key-down.
-  const checkThrottle = !isUp && sameKey;
-
-  if (
-    runCapturePhase(fp, e, mappedEvent, names, isUp, checkThrottle, currentTime)
-  ) {
-    return true;
-  }
-  return runBubblePhase(
-    fp,
-    e,
-    mappedEvent,
-    names,
-    isUp,
-    checkThrottle,
-    currentTime,
-  );
 };
 
 // `key` is not a stable identity for a physical key across key-down and key-up.
