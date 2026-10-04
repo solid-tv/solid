@@ -433,6 +433,16 @@ class TextMeasure {
  */
 const NO_ANIMATION_SETTINGS: Readonly<AnimationSettings> = Object.freeze({});
 
+/** onAnimation.stopped for one write, after its duration and delay. */
+function fireAnimationStopped(
+  node: ElementNode,
+  stopped: AnimationEventHandler,
+  name: string,
+  value: number,
+): void {
+  stopped.call(node, name, value);
+}
+
 onFontLoaded(() => {
   if (fontWaiting.length > 0) {
     fontWaitingDue = true;
@@ -2427,7 +2437,8 @@ export class ElementNode {
     }
     if (stopped) {
       const total = (settings?.duration ?? 0) + (settings?.delay ?? 0);
-      setTimeout(() => stopped.call(this, name, value), total);
+      // Its arguments through the timer, not a closure per write.
+      setTimeout(fireAnimationStopped, total, this, stopped, name, value);
     }
   }
 
