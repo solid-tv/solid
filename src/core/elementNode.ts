@@ -2643,13 +2643,20 @@ export class ElementNode {
       const key = keys[i]!;
       const value = resolveStateValue(this, key, states, order);
       const bit = SHADER_BIT[key];
+      let changed = !diff || value !== applied[key];
       if (bit !== undefined) {
         // From a block, or the fallback: then the key adds nothing to the
-        // display (the base record holds the style's object).
-        bits = resolvedFromState ? bits | bit : bits & ~bit;
-        this._stateShaderBits = bits;
+        // display (the base record holds the style's object). A flip with
+        // the same value (a block reusing the style's own object) recomputes
+        // the group too (PI).
+        const fromState = resolvedFromState;
+        if (fromState !== ((bits & bit) !== 0)) {
+          bits = fromState ? bits | bit : bits & ~bit;
+          this._stateShaderBits = bits;
+          changed = true;
+        }
       }
-      if (!diff || value !== applied[key]) {
+      if (changed) {
         applied[key] = value;
         if (bit === undefined) {
           this[key] = value;

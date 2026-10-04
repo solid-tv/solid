@@ -1152,6 +1152,34 @@ v.test(
   },
 );
 
+// Post-round-5 fix 3: a key whose value is the same object from a block and
+// as the fallback (a `$state` reusing the style's own border object) still
+// recomputes its group when its source flips.
+v.test(
+  "PI: a $focus that reuses the style's own border object, removed while $active stays on, leaves a never-focused node",
+  async () => {
+    const ring = { width: 2, color: RED };
+    const { changed, never, dispose } = await pair({
+      width: 100,
+      height: 100,
+      border: ring,
+      borderTop: { width: 6 },
+      $focus: { border: ring },
+      $active: { alpha: 0.9 },
+    });
+    changed.states.add('$active');
+    never.states.add('$active');
+    changed.states.add('$focus');
+    v.expect(borderOf(changed)).toEqual([RED, [2, 2, 2, 2]]);
+    changed.states.remove('$focus');
+    v.expect(declaredProps(changed)).toEqual(declaredProps(never));
+    v.expect(borderOf(changed)).toEqual([RED, [6, 2, 2, 2]]);
+    changed.states.remove('$active');
+    v.expect(borderOf(changed)).toEqual([RED, [6, 2, 2, 2]]);
+    dispose();
+  },
+);
+
 v.test(
   'a style listing a side before border: focus and blur agree with a never-focused node',
   async () => {
