@@ -947,3 +947,35 @@ v.test(
     }
   },
 );
+
+v.test(
+  'text whose font is loaded with renderer.loadFont (not loadFonts) lays out when the font arrives',
+  async () => {
+    let row!: ElementNode;
+    let home!: ElementNode;
+    let movies!: ElementNode;
+
+    const dispose = render(() => (
+      <view ref={row} display="flex" gap={20} padding={10}>
+        <text ref={home} fontFamily="LatoDirect">
+          Home
+        </text>
+        <text ref={movies} fontFamily="LatoDirect">
+          Movies
+        </text>
+      </view>
+    ));
+    await settle();
+
+    // The renderer's own loadFont: Solid hears of it only through the
+    // texts' `loaded` (the walk lays them out when the font arrives).
+    await renderer.loadFont('sdf', latoFont('LatoDirect'));
+    await settle();
+
+    expectBox(home, 10, 0, 79.71, LINE_30);
+    expectBox(movies, 109.71, 0, 95.67, LINE_30);
+    expectBox(row, 0, 0, 215.38, LINE_30); // 109.71 + 95.67 + 10
+
+    dispose();
+  },
+);

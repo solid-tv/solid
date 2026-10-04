@@ -1138,4 +1138,52 @@ describe('contract: Solid measures text before flex (1.7, stream T)', () => {
     ]);
     dispose();
   });
+
+  it('a loaded at a size Solid did not measure (a web font that loaded after the text was measured) lays the container out again', async () => {
+    mockTextMeasure();
+    let count = 0;
+    let t!: lng.ElementNode;
+    let last!: lng.ElementNode;
+    const dispose = renderer.render(() => (
+      <view display="flex" gap={10} onLayout={() => void count++}>
+        <text ref={t}>Hello</text>
+        <view ref={last} width={50} height={50} />
+      </view>
+    ));
+    await nextTask();
+    expect(last.x).toBe(60);
+    count = 0;
+
+    // The face arrived: the DOM renderer measured the text again.
+    t.lng.w = 80;
+    (t.lng as unknown as lng.IEventEmitter).emit('loaded', {
+      type: 'text',
+      dimensions: { w: 80, h: 20 },
+    });
+    await nextTask();
+    expect(last.x).toBe(90);
+    expect(count).toBe(1);
+    dispose();
+  });
+
+  it('a contain change lays the container out again (the DOM renderer sizes the text by it)', async () => {
+    mockFontMeasure();
+    const [contain, setContain] = s.createSignal<'none' | 'width'>('none');
+    let last!: lng.ElementNode;
+    const dispose = renderer.render(() => (
+      <view display="flex" flexDirection="column">
+        <text contain={contain()} maxWidth={100} fontSize={20}>
+          Hello world, twice
+        </text>
+        <view ref={last} width={50} height={10} />
+      </view>
+    ));
+    await nextTask();
+    expect(last.y).toBe(20); // one line of 180
+
+    setContain('width'); // two lines of 100
+    await microtask();
+    expect(last.y).toBe(40);
+    dispose();
+  });
 });

@@ -105,7 +105,10 @@ let textMeasureCount = 0;
 // set fontWaitingDue; the layout phase then measures them.
 const fontWaiting: ElementNode[] = [];
 let fontWaitingDue = false;
-// Re-measures in one layout phase before the rest waits for the next run:
+// Length at which the list is next swept of texts that no longer wait
+// (destroyed: nothing else takes them off while their font never loads).
+let fontWaitingSweepAt = 64;
+// Re-measures in one layout phase before the rest waits for its next change:
 // a text whose size flex writes (flexGrow, flexShrink, minWidth) settles in
 // one or two, so more means a layout that does not converge.
 const MAX_TEXT_SWEEPS = 16;
@@ -243,12 +246,24 @@ function runLayoutQueue(): void {
       measureQueuedTexts();
     }
   }
-  if (isDev && textMeasureCount > 0) {
-    console.warn(
-      '[solid] Text sizes did not settle in ' +
-        MAX_TEXT_SWEEPS +
-        ' layout passes (a flex size that depends on a text that flex sizes); the rest waits for the next change.',
-    );
+  if (textMeasureCount > 0) {
+    // Not converging: drop the rest (each is measured again at its next
+    // change), or the run its writes scheduled would start over.
+    for (let i = 0; i < textMeasureCount; i++) {
+      const t = textMeasureQueue[i];
+      textMeasureQueue[i] = undefined;
+      if (t !== undefined) {
+        t._text!.due = false;
+      }
+    }
+    textMeasureCount = 0;
+    if (isDev) {
+      console.warn(
+        '[solid] Text sizes did not settle in ' +
+          MAX_TEXT_SWEEPS +
+          ' layout passes (a layout that changes the size of a text it lays out); the rest waits for its next change.',
+      );
+    }
   }
 }
 
@@ -259,8 +274,12 @@ function runLayoutQueue(): void {
  */
 function measureQueuedTexts(): void {
   for (let i = 0; i < textMeasureCount; i++) {
-    const t = textMeasureQueue[i]!;
+    const t = textMeasureQueue[i];
     textMeasureQueue[i] = undefined;
+    // Cleared by a run that threw part way (the count was not reset).
+    if (t === undefined) {
+      continue;
+    }
     const m = t._text!;
     if (m.due !== true) {
       continue;
@@ -325,6 +344,19 @@ function measureFontWaiting(): void {
     fontWaiting[i - n] = fontWaiting[i]!;
   }
   fontWaiting.length = length - n;
+}
+
+/** Drops the texts that no longer wait for a font (destroyed ones). */
+function sweepFontWaiting(): void {
+  let kept = 0;
+  for (let i = 0; i < fontWaiting.length; i++) {
+    const t = fontWaiting[i]!;
+    if (t._text!.waiting === true && t.destroyed !== true) {
+      fontWaiting[kept++] = t;
+    }
+  }
+  fontWaiting.length = kept;
+  fontWaitingSweepAt = kept * 2 > 64 ? kept * 2 : 64;
 }
 
 /**
@@ -1533,7 +1565,36 @@ export class ElementNode {
   _waitForFont(m: TextMeasure): void {
     m.waiting = true;
     (this.lng as IRendererTextNode).on('loaded', fontWaitHeard);
+    if (fontWaiting.length >= fontWaitingSweepAt) {
+      sweepFontWaiting();
+    }
     fontWaiting.push(this);
+  }
+
+  /**
+   * @internal After a layout Solid did not make (the DOM renderer's late
+   * re-measure): whether this text's size, as flex reads it, changed since
+   * Solid last saw it. If so, it is recorded and the caller lays the parent
+   * out. False while a measure is due.
+   */
+  _textSizeChanged(): boolean {
+    const m = this._text;
+    if (m === undefined || m.due === true || m.waiting === true) {
+      return false;
+    }
+    const parent = this._parent;
+    if (parent === undefined || parent._requiresLayout !== true) {
+      return false;
+    }
+    const lng = this.lng as IRendererTextNode;
+    const w = lng.maxWidth || lng.w;
+    const h = lng.maxHeight || lng.h;
+    if (w === m.w && h === m.h) {
+      return false;
+    }
+    m.w = w;
+    m.h = h;
+    return true;
   }
 
   getText(this: ElementText) {
@@ -2165,7 +2226,17 @@ export class ElementNode {
       // pass, before the parent's layout (queued above) and before the frame,
       // instead of waiting for the walk's `loaded`. Not here: a write later
       // in this tick would lay it out twice (and `loaded` twice).
-      if (isDev) {
+      if (isDomRendererActive()) {
+        // The DOM renderer measures again when a web font loads after the
+        // text was measured (its size then was the fallback font's): lay the
+        // container out at that size, as before 1.7.
+        (node.lng as IRendererTextNode).on('loaded', () => {
+          if (node._textSizeChanged() === true) {
+            enqueueLayout(node._parent!);
+            schedulePostMutationInFrame();
+          }
+        });
+      } else if (isDev) {
         (node.lng as IRendererTextNode).on('loaded', () =>
           node._warnUnmeasuredLayout(),
         );
@@ -2798,6 +2869,9 @@ Object.defineProperties(ElementNode.prototype, {
     },
     set(this: ElementNode, v: unknown) {
       textPropsFor(this).contain = v;
+      // The DOM renderer sizes a text by it (renderer v2 only moves the
+      // block: the measure finds nothing to lay out).
+      this._textLayoutDirty();
     },
   },
   forceLoad: {

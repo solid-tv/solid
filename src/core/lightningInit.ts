@@ -3,7 +3,7 @@ import { prefetchFont } from '@solidtv/renderer';
 import { Config, DOM_RENDERING } from './config.js';
 import { DOMRendererMain, loadFontToDom } from './dom-renderer/domRenderer.js';
 import { DomRendererMainSettings } from './dom-renderer/domRendererTypes.js';
-import { fontLoaded } from './fontLoaded.js';
+import { fontFailed, fontLoaded } from './fontLoaded.js';
 import { FontLoadOptions } from './intrinsicTypes.js';
 
 export type SdfFontType = 'ssdf' | 'msdf';
@@ -132,10 +132,11 @@ function attachFonts(fonts: FontLoadOptions[]) {
       ) {
         // Loaded: Solid measures the texts that waited for a font, those
         // under a hidden or out-of-bounds ancestor too (no walk visits
-        // them, so they hear no `loaded`).
+        // them, so they hear no `loaded`). Failed: the same, so destroyed
+        // ones leave the list; the rejection goes on.
         return renderer.stage
           .loadFont('sdf', font as lng.FontLoadOptions)
-          .then(fontLoaded);
+          .then(fontLoaded, fontFailed);
       }
       if (enableDomRenderer && font.fontUrl !== undefined) {
         loadFontToDom(font);

@@ -415,3 +415,102 @@ describe('post-mutation scheduling', () => {
     }
   });
 });
+
+describe('text measurement in the layout phase', () => {
+  it('stops re-measuring after 16 sweeps of texts that never settle, warns once, and leaves later runs working', async () => {
+    mockTextMeasure();
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    let passes = 0;
+    let t!: lng.ElementNode;
+    let toggle = false;
+    let last!: lng.ElementNode;
+    const dispose = renderer.render(() => (
+      <view
+        display="flex"
+        gap={10}
+        onLayout={() => {
+          passes++;
+          // A layout that changes the size of a text it lays out: never settles.
+          toggle = !toggle;
+          t.text = toggle ? 'Hello world' : 'Hi';
+        }}
+      >
+        <text ref={t}>Hello</text>
+        <view ref={last} width={50} height={50} />
+      </view>
+    ));
+    // One post-mutation run (microtasks only: the DOM renderer's own
+    // re-measure, on a timer, would start the loop again, as in 1.6).
+    for (let i = 0; i < 5; i++) await Promise.resolve();
+    // The first pass, then one per sweep: 16 more; then it stops.
+    expect(passes).toBe(17);
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(String(warn.mock.calls[0]![0])).toContain('did not settle');
+    dispose();
+    void last;
+
+    // Later runs lay out.
+    let next!: lng.ElementNode;
+    const dispose2 = renderer.render(() => (
+      <view display="flex" gap={10}>
+        <text>Hello</text>
+        <view ref={next} width={50} height={50} />
+      </view>
+    ));
+    await settle();
+    expect(next.x).toBe(60);
+    dispose2();
+  });
+
+  it('a measure that throws does not stop later post-mutation runs', async () => {
+    mockTextMeasure();
+    const [label, setLabel] = s.createSignal('Hello');
+    let t!: lng.ElementNode;
+    let last!: lng.ElementNode;
+    const dispose = renderer.render(() => (
+      <view display="flex" gap={10}>
+        <text ref={t}>{label()}</text>
+        <view ref={last} width={50} height={50} />
+      </view>
+    ));
+    await settle();
+    expect(last.x).toBe(60);
+
+    const proto = Object.getPrototypeOf(t.lng) as { measure(): boolean };
+    const measure = proto.measure;
+    let throws = true;
+    const spy = vi.spyOn(proto, 'measure').mockImplementation(function (
+      this: unknown,
+    ) {
+      if (throws) {
+        throws = false;
+        throw new Error('measure failed');
+      }
+      return measure.call(this);
+    });
+    const errors: unknown[] = [];
+    const saved = globalThis.queueMicrotask;
+    globalThis.queueMicrotask = (fn: () => void) =>
+      saved(() => {
+        try {
+          fn();
+        } catch (e) {
+          errors.push(e);
+        }
+      });
+    try {
+      setLabel('Hello world'); // its run throws in the measure
+      await settle();
+      expect(errors).toHaveLength(1);
+
+      setLabel('Hi'); // a later run measures and lays out
+      await settle();
+      expect(errors).toHaveLength(1);
+      expect(last.x).toBe(30);
+    } finally {
+      globalThis.queueMicrotask = saved;
+      spy.mockRestore();
+    }
+    dispose();
+  });
+});
