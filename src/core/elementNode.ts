@@ -425,6 +425,14 @@ class TextMeasure {
   }
 }
 
+/**
+ * The settings of an animation that has none (no `animationSettings` on the
+ * node or in Config): one object, so renderer v2's animateProp, which reuses
+ * its controller for the same settings object, retargets a running one
+ * rather than stopping it and making another per write. Nothing writes it.
+ */
+const NO_ANIMATION_SETTINGS: Readonly<AnimationSettings> = Object.freeze({});
+
 onFontLoaded(() => {
   if (fontWaiting.length > 0) {
     fontWaitingDue = true;
@@ -2390,7 +2398,7 @@ export class ElementNode {
     (this.lng as INode).animateProp(
       name,
       value,
-      animationSettings || this.animationSettings || {},
+      animationSettings || this.animationSettings || NO_ANIMATION_SETTINGS,
     );
     // A text's layout prop: its container follows the animated sizes.
     if (
@@ -2433,7 +2441,7 @@ export class ElementNode {
     }
     const controller = (this.lng as IRendererNode).animate(
       props,
-      animationSettings || this.animationSettings || {},
+      animationSettings || this.animationSettings || NO_ANIMATION_SETTINGS,
     );
     // A prop the text's layout reads (inline: a module function with this
     // one call site would be a closure per call under terser's defaults).

@@ -9,7 +9,7 @@
  * nodes are plain objects that take any field.
  */
 import * as v from 'vitest';
-import type { ElementNode } from '@solidtv/solid';
+import { Config, type ElementNode } from '@solidtv/solid';
 import { render, renderer } from './setup.js';
 
 type Handle = Record<string, unknown>;
@@ -240,6 +240,40 @@ v.test(
         check(text, name, value);
       }
     } finally {
+      animateProp.mockRestore();
+      dispose();
+    }
+  },
+);
+
+// With no animation settings anywhere (none on the node, Config's cleared),
+// every write hands animateProp the same settings object, so a write while
+// the last one's animation runs retargets its controller: the renderer
+// reuses a controller only for the same settings object.
+v.test(
+  'with no animation settings, a second write retargets the animation of the first',
+  () => {
+    let view!: ElementNode;
+    const dispose = render(() => <view ref={view} width={100} height={100} />);
+    const proto = Object.getPrototypeOf(view.lng) as {
+      animateProp: (name: string, value: number, settings: unknown) => unknown;
+    };
+    const animateProp = v.vi.spyOn(proto, 'animateProp');
+    const saved = Config.animationSettings;
+    Config.animationSettings = undefined;
+    try {
+      view.transition = true;
+      view.x = 50;
+      view.x = 80;
+      v.expect(animateProp).toHaveBeenCalledTimes(2);
+      v.expect(animateProp.mock.calls[1]![2]).toBe(
+        animateProp.mock.calls[0]![2],
+      );
+      v.expect(animateProp.mock.results[1]!.value).toBe(
+        animateProp.mock.results[0]!.value,
+      );
+    } finally {
+      Config.animationSettings = saved;
       animateProp.mockRestore();
       dispose();
     }
