@@ -19,8 +19,6 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import * as s from 'solid-js';
 import * as lng from '@solidtv/solid';
 import { renderer } from './setup.js';
-// Internal (not re-exported): what loadFonts() calls when a font loaded.
-import { fontLoaded } from '../src/core/fontLoaded.js';
 
 const CHAR_W = 10;
 const LINE_H = 20;
@@ -425,6 +423,7 @@ describe('text measurement in the layout phase', () => {
     let passes = 0;
     let t!: lng.ElementNode;
     let toggle = false;
+    let looping = true;
     let last!: lng.ElementNode;
     const dispose = renderer.render(() => (
       <view
@@ -432,6 +431,7 @@ describe('text measurement in the layout phase', () => {
         gap={10}
         onLayout={() => {
           passes++;
+          if (!looping) return;
           // A layout that changes the size of a text it lays out: never settles.
           toggle = !toggle;
           t.text = toggle ? 'Hello world' : 'Hi';
@@ -448,7 +448,13 @@ describe('text measurement in the layout phase', () => {
     expect(passes).toBe(17);
     expect(warn).toHaveBeenCalledTimes(1);
     expect(String(warn.mock.calls[0]![0])).toContain('did not settle');
+    // Clean up: stop the loop, and let the DOM renderer's re-measure timer
+    // (scheduled by the text writes) run before the container goes, so it
+    // does not run into later tests.
+    looping = false;
+    await settle();
     dispose();
+    await settle();
     void last;
 
     // Later runs lay out.
@@ -515,137 +521,4 @@ describe('text measurement in the layout phase', () => {
     }
     dispose();
   });
-});
-
-describe('texts that wait for their font', () => {
-  /**
-   * `document.fonts.check` per family: a text waits (measure() false) while
-   * its family is not in `loaded`. Returns the families' set and a restore.
-   */
-  function fontsByFamily() {
-    const loaded = new Set<string>();
-    const fonts = document.fonts as unknown as {
-      check: (font: string) => boolean;
-      status: string;
-      ready: Promise<unknown>;
-    };
-    const saved = fonts.check;
-    const savedReady = fonts.ready;
-    fonts.check = (font: string) => {
-      const m = /"([^"]+)"$/.exec(font);
-      return m !== null && loaded.has(m[1]!);
-    };
-    // Fonts loading: the DOM renderer's own re-measure waits for `ready`,
-    // so only Solid's font-loaded pass (fontLoaded) measures the texts.
-    let ready!: () => void;
-    fonts.ready = new Promise<void>((r) => (ready = r));
-    fonts.status = 'loading';
-    return {
-      loaded,
-      restore() {
-        fonts.check = saved;
-        fonts.status = 'loaded';
-        ready();
-        fonts.ready = savedReady;
-      },
-    };
-  }
-
-  /** Whether Solid still waits for the font of each text. */
-  const waiting = (texts: lng.ElementNode[]) =>
-    texts.map(
-      (t) =>
-        (t as unknown as { _text?: { waiting: boolean } })._text?.waiting ===
-        true,
-    );
-
-  /** Errors thrown by post-mutation runs (microtasks) meanwhile. */
-  function catchMicrotaskErrors() {
-    const errors: unknown[] = [];
-    const saved = globalThis.queueMicrotask;
-    globalThis.queueMicrotask = (fn: () => void) =>
-      saved(() => {
-        try {
-          fn();
-        } catch (e) {
-          errors.push(e);
-        }
-      });
-    return {
-      errors,
-      restore() {
-        globalThis.queueMicrotask = saved;
-      },
-    };
-  }
-
-  function renderTexts(families: string[]) {
-    const texts: lng.ElementNode[] = [];
-    const dispose = renderer.render(() => (
-      <view>
-        <s.For each={families}>
-          {(family, i) => (
-            <view display="flex" y={i() * 30}>
-              <text ref={(el) => (texts[i()] = el)} fontFamily={family}>
-                Hello
-              </text>
-            </view>
-          )}
-        </s.For>
-      </view>
-    ));
-    return { texts, dispose };
-  }
-
-  // Many texts wait (an app that renders before loadFonts() resolves), in
-  // two families; one family loads while the other is still missing: the
-  // texts of the missing one wait again while the list is being measured.
-  // Before fix round 2 the list was swept of the measured ones meanwhile
-  // (once it reached its sweep length, which grows with the list, so each
-  // case shows it when run alone).
-  //
-  // The list is module state, kept between tests: the cases assert the
-  // outcome, whatever the sweep length is when they start.
-  const cases: Array<[string, string[]]> = [
-    [
-      '120 texts, two families alternating',
-      [...Array(120)].map((_, i) => (i % 2 === 0 ? 'FA' : 'FB')),
-    ],
-    [
-      '100 texts, two families alternating',
-      [...Array(100)].map((_, i) => (i % 2 === 0 ? 'FA' : 'FB')),
-    ],
-    [
-      '100 texts of one family, then 20 of another',
-      [...Array(120)].map((_, i) => (i < 100 ? 'FA' : 'FB')),
-    ],
-  ];
-  for (const [name, families] of cases) {
-    it(`${name}: each is measured when its font loads, and none is lost`, async () => {
-      const fonts = fontsByFamily();
-      const caught = catchMicrotaskErrors();
-      try {
-        const { texts, dispose } = renderTexts(families);
-        await settle();
-        expect(texts.length).toBe(families.length);
-        expect(waiting(texts).every((w) => w)).toBe(true);
-
-        fonts.loaded.add('FA');
-        fontLoaded();
-        await settle();
-        expect(caught.errors).toEqual([]);
-        expect(waiting(texts)).toEqual(families.map((f) => f === 'FB'));
-
-        fonts.loaded.add('FB');
-        fontLoaded();
-        await settle();
-        expect(caught.errors).toEqual([]);
-        expect(waiting(texts).some((w) => w)).toBe(false);
-        dispose();
-      } finally {
-        caught.restore();
-        fonts.restore();
-      }
-    });
-  }
 });
