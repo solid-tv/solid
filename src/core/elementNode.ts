@@ -117,6 +117,9 @@ let animatingTextsDue = false;
 // loads), or whose animation stopped with no layout to tell.
 let fontWaitingSweepAt = 64;
 let animatingSweepAt = 64;
+// Set while measureFontWaiting walks fontWaiting: _waitForFont appends to
+// it then, and must not sweep it under the loop.
+let measuringFontWaiting = false;
 // Re-measures in one layout phase before the rest waits for its next change:
 // a text whose size flex writes (flexGrow, flexShrink, minWidth) settles in
 // one or two, so more means a layout that does not converge.
@@ -328,27 +331,34 @@ function fontWaitHeard(): void {
 function measureFontWaiting(): void {
   fontWaitingDue = false;
   const n = fontWaiting.length;
-  for (let i = 0; i < n; i++) {
-    const t = fontWaiting[i]!;
-    const m = t._text!;
-    if (m.waiting !== true) {
-      continue; // measured meanwhile
+  // A text whose font is still missing is appended again (_waitForFont),
+  // which must not sweep the list under this loop.
+  measuringFontWaiting = true;
+  try {
+    for (let i = 0; i < n; i++) {
+      const t = fontWaiting[i]!;
+      const m = t._text!;
+      if (m.waiting !== true) {
+        continue; // measured meanwhile
+      }
+      // Off first, so a measure() now queues no `loaded` for it.
+      (t.lng as IRendererTextNode).off('loaded', fontWaitHeard);
+      m.waiting = false;
+      if (t.destroyed === true) {
+        continue;
+      }
+      const parent = t._parent;
+      if (parent === undefined || parent._requiresLayout !== true) {
+        m.w = NaN;
+        continue;
+      }
+      // Waits again (appended past n) while the font is still missing.
+      if (t._measureText() === true) {
+        enqueueLayout(parent);
+      }
     }
-    // Off first, so a measure() now queues no `loaded` for it.
-    (t.lng as IRendererTextNode).off('loaded', fontWaitHeard);
-    m.waiting = false;
-    if (t.destroyed === true) {
-      continue;
-    }
-    const parent = t._parent;
-    if (parent === undefined || parent._requiresLayout !== true) {
-      m.w = NaN;
-      continue;
-    }
-    // Waits again (appended past n) while the font is still missing.
-    if (t._measureText() === true) {
-      enqueueLayout(parent);
-    }
+  } finally {
+    measuringFontWaiting = false;
   }
   // Keep the entries appended meanwhile, without allocating.
   const length = fontWaiting.length;
@@ -1657,7 +1667,10 @@ export class ElementNode {
   _waitForFont(m: TextMeasure): void {
     m.waiting = true;
     (this.lng as IRendererTextNode).on('loaded', fontWaitHeard);
-    if (fontWaiting.length >= fontWaitingSweepAt) {
+    if (
+      measuringFontWaiting === false &&
+      fontWaiting.length >= fontWaitingSweepAt
+    ) {
       sweepFontWaiting();
     }
     fontWaiting.push(this);
