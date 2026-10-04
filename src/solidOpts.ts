@@ -1,5 +1,4 @@
 import {
-  assertTruthy,
   isElementText,
   ElementNode,
   TextNode,
@@ -21,8 +20,10 @@ export default {
     log('Replace Text: ', node, value);
     node.text = value;
     const parent = node.parent;
-    assertTruthy(parent);
-    parent.text = parent.getText();
+    // A removed node has no parent (removeChild clears it): no text to update.
+    if (parent !== undefined) {
+      parent.text = parent.getText();
+    }
   },
   setProperty(node: ElementNode, name: string, value: any): void {
     node[name] = value;
@@ -30,14 +31,24 @@ export default {
   insertNode(parent: ElementNode, node: SolidNode, anchor: SolidNode): void {
     log('INSERT: ', parent, node, anchor);
 
-    const prevParent = node.parent;
+    // Inserted before: in a parent now, or removed with its delete still
+    // pending (a removed node has no parent; removeNode counted -1 in
+    // _queueDelete). A preserved node never inserted has 0 there.
+    const queued = node instanceof ElementNode ? node._queueDelete : undefined;
+    const reinserted =
+      node.parent !== undefined || (queued !== undefined && queued < 0);
     parent.insertChild(node, anchor);
 
     if (node instanceof ElementNode) {
       if (node.parent!.rendered) {
+        const wasRendered = node.rendered;
         node.render(true);
+        // render() appended the new renderer node: place it (B19).
+        if (!wasRendered && anchor && node.rendered) {
+          parent._drawInOrder(node);
+        }
       }
-      if (prevParent !== undefined) {
+      if (reinserted) {
         enqueueDelete(node, 1);
       }
     } else if (isElementText(parent)) {
@@ -67,11 +78,16 @@ export default {
     return node.children[0];
   },
   getNextSibling(node: SolidNode): SolidNode | undefined {
-    const children = (node.parent!.children || []) as SolidNode[];
-    const index = children.indexOf(node) + 1;
-    if (index < children.length) {
-      return children[index];
+    const parent = node.parent;
+    if (parent === undefined) {
+      return undefined;
     }
-    return undefined;
+    // From the end: Solid asks for the sibling after a list's last item.
+    const children = parent.children as SolidNode[];
+    let i = children.length - 1;
+    while (i >= 0 && children[i] !== node) {
+      i--;
+    }
+    return i >= 0 ? children[i + 1] : undefined;
   },
 } satisfies SolidRendererOptions;
