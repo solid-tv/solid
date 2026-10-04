@@ -487,883 +487,36 @@ const parseAndAssignShaderProps = (
   obj: Record<string, unknown>,
   props: Record<string, unknown>,
 ) => {
-  // Parsed once per object (stylePlan.ts): `border` and `border-w`, ...
+  // Parsed once per object (stylePlan.ts): `border` and `border-w`, ... A
+  // sub-prop the props already hold with that value is not written again
+  // (a facade write repacks); the result is the merge 1.6's writes gave.
   const parse = shaderParse(prefix, obj);
   const keys = parse.keys;
   const values = parse.values;
   for (let i = 0; i < keys.length; i++) {
-    props[keys[i]!] = values[i];
+    const name = keys[i]!;
+    const value = values[i];
+    if (props[name] !== value) {
+      props[name] = value;
+    }
   }
 };
 
 const copyOf = (value: unknown): unknown =>
   isArray(value) ? value.slice() : value;
 
-/** A renderer `AdvancedProp`, as far as these writes read it. */
+/** A renderer `AdvancedProp`, as far as the gradient update reads it. */
 interface AdvancedPropLike {
   default?: unknown;
-  resolve?: (value: unknown, props: Record<string, unknown>) => unknown;
-  set?: (value: unknown, props: Record<string, unknown>) => void;
-  get?: (props: Record<string, unknown>) => unknown;
-}
-
-/** The declared props of a shader type that one shader-key group writes. */
-interface GroupInfo {
-  /**
-   * The props with the group's prefix that are neither a vec4 family nor
-   * one of its element aliases, in declaration order.
-   */
-  readonly plain: string[];
-  /** The vec4 family props with the group's prefix. */
-  readonly vec4s: string[];
-}
-
-/** What the shader writes need of a renderer v2 shader type, built once per type. */
-interface ShaderTypeInfo {
-  /**
-   * Per declared prop and alias, the value a shader created without it
-   * holds: the props resolved from nothing in declaration order, then each
-   * alias read from them (`shadow-blur` is 5: the projection's default
-   * `[0, 0, 5, 5]`), as `createShader` builds them.
-   */
-  readonly fresh: Record<string, unknown>;
-  /** The props that resolve their value: a write of undefined gives their default. */
-  readonly resolves: Record<string, boolean | undefined>;
-  /** Per resolving prop, its definition: a value compares as the facade holds it. */
-  readonly resolvers: Record<string, AdvancedPropLike | undefined>;
-  /**
-   * Per resolving prop whose fresh value is one number repeated (a vec4 of
-   * zeros), that number: it resolves to the same value, and an animation
-   * takes it as a number track instead of a jump at the end.
-   */
-  readonly scalar: Record<string, number | undefined>;
-  /** The aliases (an AdvancedProp with `set`): createShader writes them only when given. */
-  readonly alias: Record<string, boolean | undefined>;
-  /**
-   * Per member of a vec4 family (a vec4 prop and its element aliases), the
-   * prop: `familyOf['shadow-y']` is `shadow-projection`.
-   */
-  readonly familyOf: Record<string, string | undefined>;
-  /** Per element alias, the element of its vec4 it writes. */
-  readonly elementIndex: Record<string, number | undefined>;
-  /** Per vec4 family prop whose every element has an alias, the alias per element. */
-  readonly elements: Record<string, string[] | undefined>;
-  /** Per group prefix, the group's declared props, built on first use. */
-  readonly groups: Record<string, GroupInfo | undefined>;
-}
-
-const shaderTypeInfos = new WeakMap<object, ShaderTypeInfo | null>();
-
-/** A value no alias holds, to see which prop an alias writes. */
-const ALIAS_PROBE = -987654.321;
-
-/** Whether `a` is an array of `length` copies of `n`. */
-function repeats(a: unknown, n: unknown, length: number): boolean {
-  if (!isArray(a) || a.length !== length) {
-    return false;
-  }
-  for (let i = 0; i < a.length; i++) {
-    if (a[i] !== n) {
-      return false;
-    }
-  }
-  return true;
-}
-
-function copyRecord(from: Record<string, unknown>): Record<string, unknown> {
-  const out = Object.create(null) as Record<string, unknown>;
-  for (const k in from) {
-    out[k] = copyOf(from[k]);
-  }
-  return out;
-}
-
-function buildShaderTypeInfo(defs: unknown): ShaderTypeInfo | null {
-  if (!isObject(defs)) {
-    return null;
-  }
-  const fresh = Object.create(null) as Record<string, unknown>;
-  const resolves = Object.create(null) as Record<string, boolean | undefined>;
-  const resolvers = Object.create(null) as Record<
-    string,
-    AdvancedPropLike | undefined
-  >;
-  const scalar = Object.create(null) as Record<string, number | undefined>;
-  const alias = Object.create(null) as Record<string, boolean | undefined>;
-  const familyOf = Object.create(null) as Record<string, string | undefined>;
-  const elementIndex = Object.create(null) as Record<
-    string,
-    number | undefined
-  >;
-  const elements = Object.create(null) as Record<string, string[] | undefined>;
-  try {
-    for (const name in defs) {
-      const value = defs[name];
-      // An AdvancedProp has a default (the registry's test).
-      if (isObject(value) && value.default !== undefined) {
-        const def = value as AdvancedPropLike;
-        if (def.set !== undefined) {
-          alias[name] = true;
-        } else if (def.resolve !== undefined) {
-          resolves[name] = true;
-          resolvers[name] = def;
-          fresh[name] = def.resolve(undefined, fresh);
-        } else {
-          fresh[name] = copyOf(def.default);
-        }
-      } else {
-        fresh[name] = copyOf(value);
-      }
-    }
-    for (const name in resolves) {
-      const f = fresh[name];
-      if (isArray(f) && f.length > 0 && typeof f[0] === 'number') {
-        const n = f[0];
-        const def = defs[name] as AdvancedPropLike;
-        if (
-          repeats(f, n, f.length) &&
-          repeats(def.resolve!(n, copyRecord(fresh)), n, f.length)
-        ) {
-          scalar[name] = n;
-        }
-      }
-    }
-    for (const name in alias) {
-      const def = defs[name] as AdvancedPropLike;
-      fresh[name] = def.get !== undefined ? def.get(fresh) : def.default;
-      // Which element of which vec4 does it write? A probe into a copy.
-      const probe = copyRecord(fresh);
-      def.set!(ALIAS_PROBE, probe);
-      for (const k in fresh) {
-        const a = fresh[k];
-        const b = probe[k];
-        if (k === name || alias[k] === true || !isArray(a) || !isArray(b)) {
-          continue;
-        }
-        for (let i = 0; i < a.length; i++) {
-          if (a[i] !== b[i]) {
-            familyOf[k] = k;
-            familyOf[name] = k;
-            elementIndex[name] = i;
-          }
-        }
-      }
-    }
-    for (const k in familyOf) {
-      if (familyOf[k] !== k) {
-        continue;
-      }
-      const list: string[] = [];
-      const len = (fresh[k] as unknown[]).length;
-      for (let i = 0; i < len; i++) {
-        for (const name in elementIndex) {
-          if (familyOf[name] === k && elementIndex[name] === i) {
-            list[i] = name;
-          }
-        }
-      }
-      let complete = list.length === len;
-      for (let i = 0; i < len; i++) {
-        if (list[i] === undefined) {
-          complete = false;
-        }
-      }
-      if (complete) {
-        elements[k] = list;
-      }
-    }
-  } catch (e) {
-    // A type whose props cannot be read this way: reset to undefined.
-    if (isDev) console.warn('shader props not read: ', e);
-    return null;
-  }
-  return {
-    fresh,
-    resolves,
-    resolvers,
-    scalar,
-    alias,
-    familyOf,
-    elementIndex,
-    elements,
-    groups: Object.create(null) as Record<string, GroupInfo | undefined>,
-  };
-}
-
-/** The info of a renderer v2 shader's type; null on the DOM renderer (a name). */
-function shaderTypeInfo(shader: IRendererShader): ShaderTypeInfo | null {
-  const type = shader.shaderType as unknown;
-  if (!isObject(type)) {
-    return null;
-  }
-  let info = shaderTypeInfos.get(type);
-  if (info === undefined) {
-    info = buildShaderTypeInfo(type.props);
-    shaderTypeInfos.set(type, info);
-  }
-  return info;
-}
-
-/**
- * The value to reset sub-prop `name` to, so that it holds what a shader
- * created without it holds (B18). Into the props directly, a prop that
- * resolves its value takes undefined (it resolves its own fresh default, as
- * in createShader); into an animation target it takes the fresh value (the
- * animator makes no track for undefined), as a number when one number
- * resolves to it (a shrinking track, not a jump at the end). Undefined when
- * the type is not known (the DOM renderer reads an absent sub-prop as its
- * default) or does not declare `name`.
- */
-function shaderResetValue(
-  info: ShaderTypeInfo | null,
-  name: string,
-  animated: boolean,
-): unknown {
-  if (info === null) {
-    return undefined;
-  }
-  if (!animated) {
-    return info.resolves[name] === true ? undefined : copyOf(info.fresh[name]);
-  }
-  const n = info.scalar[name];
-  return n !== undefined ? n : copyOf(info.fresh[name]);
-}
-
-/**
- * A group of shader style keys whose objects write one prefix's props: the
- * border family (`border`, `borderTop`, ...) and the shadow. A state change
- * or a direct write of any of its keys recomputes the group as a unit.
- */
-interface ShaderGroup {
-  /** Its style keys. */
-  readonly keys: string[];
-  /** The shader-prop prefix: a parse's first key, and `<prefix>-` on the others. */
-  readonly prefix: string;
-  readonly dashed: string;
-  readonly colorKey: string;
-}
-
-/** The style keys whose objects write `border-*` shader props, in their fixed order. */
-const BORDER_KEYS: string[] = [
-  'border',
-  'borderTop',
-  'borderRight',
-  'borderBottom',
-  'borderLeft',
-];
-
-const BORDER_GROUP: ShaderGroup = {
-  keys: BORDER_KEYS,
-  prefix: 'border',
-  dashed: 'border-',
-  colorKey: 'border-color',
-};
-
-const SHADOW_GROUP: ShaderGroup = {
-  keys: ['shadow'],
-  prefix: 'shadow',
-  dashed: 'shadow-',
-  colorKey: 'shadow-color',
-};
-
-/** Per shader style key, its group. */
-const SHADER_GROUP_OF: Record<string, ShaderGroup | undefined> = {
-  border: BORDER_GROUP,
-  borderTop: BORDER_GROUP,
-  borderRight: BORDER_GROUP,
-  borderBottom: BORDER_GROUP,
-  borderLeft: BORDER_GROUP,
-  shadow: SHADOW_GROUP,
-};
-
-/** Per shader style key, its bit in a change mask (the keys a state change wrote). */
-const SHADER_BIT: Record<string, number | undefined> = {
-  border: 1,
-  borderTop: 2,
-  borderRight: 4,
-  borderBottom: 8,
-  borderLeft: 16,
-  shadow: 32,
-};
-const BORDER_BITS = 31;
-const SHADOW_BIT = 32;
-
-/** No object of the group names the sub-prop. */
-const NOT_SET = {};
-
-/** Marks a key a state change tracks but has not written yet. */
-const UNWRITTEN = {};
-
-/**
- * A node's base record of its shader props (fix round 5): what the node's
- * non-state writes left, with 1.6's merge rules in the order they happened
- * (the style's keys at creation, `theme`, JSX props, `effects`, direct
- * accessor writes). One per node, made on its first such write, mutated in
- * place afterwards. What the shader shows is this record, then the active
- * states' objects: with no state on it is the record, so a blurred node
- * equals a never-focused one with the same writes (B18).
- */
-interface ShaderBase {
-  /**
-   * Shader keys as 1.6's props bag held them, the later write of a key
-   * winning: every plain prop (`border-color`, `border-gap`, ...), each
-   * group's prefix key (`border`: the last object written, which marks the
-   * group as used), and the vec4 and element keys (`border-w`,
-   * `border-top`, ...) until `vecs` holds them. A key written as undefined
-   * is absent (no `delete`).
-   */
-  readonly raw: Record<string, unknown>;
-  /**
-   * Once a renderer v2 shader exists, per vec4 prop (`border-w`,
-   * `shadow-projection`) its live value: a `border` write sets all four
-   * elements and a side one of them, as 1.6's writes into a shader did.
-   * Folded from `raw` on first use as createShader resolves a bag (the
-   * vec4, then each element given), so the record equals the shader a
-   * never-changed node got from the same bag.
-   */
-  vecs: Record<string, number[] | undefined> | null;
-}
-
-/**
- * Write `v` into `out` as the renderer's toVec4 reads a vec4 prop: four as
- * given; three → [a, b, c, a]; two → [a, b, a, b]; a number everywhere; any
- * other array its first element everywhere (0 when empty).
- */
-function toVec4Into(out: number[], v: unknown, len: number): void {
-  if (isArray(v)) {
-    const m = v.length;
-    for (let i = 0; i < len; i++) {
-      out[i] = (
-        m === len
-          ? v[i]
-          : m === 3
-            ? v[i === 3 ? 0 : i]
-            : m === 2
-              ? v[i & 1]
-              : m > 0
-                ? v[0]
-                : 0
-      ) as number;
-    }
-  } else {
-    for (let i = 0; i < len; i++) {
-      out[i] = v as number;
-    }
-  }
-}
-
-/**
- * The live vec4 `prop` of `base`, folded on first use from the raw keys as
- * createShader resolves a bag: the vec4 (else a fresh shader's), then each
- * element alias given. The raw keys are spent.
- */
-function foldBase(
-  base: ShaderBase,
-  info: ShaderTypeInfo,
-  prop: string,
-): number[] {
-  let vecs = base.vecs;
-  if (vecs === null) {
-    vecs = base.vecs = Object.create(null) as Record<
-      string,
-      number[] | undefined
-    >;
-  }
-  let vec = vecs[prop];
-  if (vec !== undefined) {
-    return vec;
-  }
-  const fresh = info.fresh[prop] as number[];
-  const len = fresh.length;
-  vec = fresh.slice();
-  const raw = base.raw;
-  const given = raw[prop];
-  if (given !== undefined) {
-    toVec4Into(vec, given, len);
-    raw[prop] = undefined;
-  }
-  const elementIndex = info.elementIndex;
-  for (const name in elementIndex) {
-    if (info.familyOf[name] === prop) {
-      const e = raw[name];
-      if (e !== undefined) {
-        vec[elementIndex[name]!] = e as number;
-        raw[name] = undefined;
-      }
-    }
-  }
-  vecs[prop] = vec;
-  return vec;
-}
-
-/**
- * Merge one object's shader keys (`parse`) into the node's base record, as
- * 1.6's write of it merged into the props: the later write of a key wins;
- * into a live vec4 (`info` the shader's type), `border-w` sets all four
- * elements and `border-top` one. A key given as undefined names nothing.
- */
-function baseWrite(
-  node: ElementNode,
-  info: ShaderTypeInfo | null,
-  parse: ShaderParse,
-): void {
-  let base = node._shaderBase;
-  if (base === undefined) {
-    base = node._shaderBase = {
-      raw: Object.create(null) as Record<string, unknown>,
-      vecs: null,
-    };
-  }
-  const keys = parse.keys;
-  const values = parse.values;
-  for (let i = 0; i < keys.length; i++) {
-    const name = keys[i]!;
-    const v = values[i];
-    if (v === undefined) {
-      continue;
-    }
-    const prop = info !== null ? info.familyOf[name] : undefined;
-    if (prop === undefined) {
-      base.raw[name] = v;
-    } else {
-      const vec = foldBase(base, info!, prop);
-      if (name === prop) {
-        toVec4Into(vec, v, vec.length);
-      } else {
-        vec[info!.elementIndex[name]!] = v as number;
-      }
-    }
-  }
-}
-
-// Module scratch for one group write (a write does not nest): the objects
-// to apply, parsed, in order (a state change's objects of the group, at
-// most the five border keys; or the one object of a direct write); a vec4
-// being rebuilt; a bag target's keys and values.
-const groupParses: (ShaderParse | null)[] = [
-  null,
-  null,
-  null,
-  null,
-  null,
-  null,
-];
-const scratchVec: number[] = [0, 0, 0, 0];
-const scratchKeys: string[] = [];
-const scratchValues: unknown[] = [];
-
-/**
- * Write a group's sub-props for the objects `groupParses[start..n)` (parsed,
- * in application order), starting from the node's base record (`base`) or,
- * with `fromHeld`, from what the shader holds (a direct write while states
- * are on: the object over the current display, as 1.6 wrote it).
- *
- * Into a props bag for createShader or the DOM renderer's props (`info`
- * null): 1.6's bag, the later write of a key winning. From the base, the
- * base's keys of the group then the objects' keys, and a key of the group
- * nothing names any more is undefined (B18: createShader and the DOM
- * renderer read an absent one as its default); from the held values, the
- * objects' keys alone.
- *
- * Into a renderer v2 shader's props or, `animated`, an animation target,
- * with `info` the type's: every declared prop of the
- * group. A plain one takes the latest object naming it, else (from the
- * base) the base's value, else a fresh shader's; the colour of a group with
- * no object at all keeps its RGB at alpha 0 (a transition fades it out; the
- * next add starts from transparent). A vec4 family (`border-w` with
- * `border-top`, ...) starts from the base's live vec4 (or the held one) and
- * takes the objects' vec4 and element writes in order, as 1.6's live writes
- * did; it is written as one number when its elements are equal, else
- * element by element (an animation then runs a track per element). Only
- * what differs from `current` (the shader's props) is written, since a
- * facade write repacks even when the value is unchanged. Returns whether
- * anything was written.
- */
-function replayGroup(
-  target: Record<string, unknown>,
-  current: Record<string, unknown> | null,
-  info: ShaderTypeInfo | null,
-  group: ShaderGroup,
-  base: ShaderBase | undefined,
-  start: number,
-  n: number,
-  animated: boolean,
-  fromHeld: boolean,
-): boolean {
-  let wrote = false;
-  if (info === null) {
-    if (fromHeld) {
-      for (let p = start; p < n; p++) {
-        const parse = groupParses[p]!;
-        const keys = parse.keys;
-        const values = parse.values;
-        for (let j = 0; j < keys.length; j++) {
-          const name = keys[j]!;
-          const v = values[j];
-          if (v !== undefined && target[name] !== v) {
-            target[name] = v;
-            wrote = true;
-          }
-        }
-      }
-      return wrote;
-    }
-    const prefix = group.prefix;
-    const dashed = group.dashed;
-    let sc = 0;
-    if (base !== undefined) {
-      const raw = base.raw;
-      for (const name in raw) {
-        const v = raw[name];
-        if (
-          v !== undefined &&
-          (name === prefix || name.lastIndexOf(dashed, 0) === 0)
-        ) {
-          scratchKeys[sc] = name;
-          scratchValues[sc] = v;
-          sc++;
-        }
-      }
-    }
-    for (let p = start; p < n; p++) {
-      const parse = groupParses[p]!;
-      const keys = parse.keys;
-      const values = parse.values;
-      for (let j = 0; j < keys.length; j++) {
-        const name = keys[j]!;
-        let at = 0;
-        while (at < sc && scratchKeys[at] !== name) {
-          at++;
-        }
-        scratchKeys[at] = name;
-        scratchValues[at] = values[j];
-        if (at === sc) {
-          sc++;
-        }
-      }
-    }
-    for (const name in target) {
-      if (
-        target[name] !== undefined &&
-        (name === prefix || name.lastIndexOf(dashed, 0) === 0)
-      ) {
-        let at = 0;
-        while (at < sc && scratchKeys[at] !== name) {
-          at++;
-        }
-        if (at === sc) {
-          target[name] = undefined;
-          wrote = true;
-        }
-      }
-    }
-    for (let i = 0; i < sc; i++) {
-      const name = scratchKeys[i]!;
-      const value = scratchValues[i];
-      if (target[name] !== value) {
-        target[name] = value;
-        wrote = true;
-      }
-    }
-    return wrote;
-  }
-
-  let gi = info.groups[group.prefix];
-  if (gi === undefined) {
-    const plain: string[] = [];
-    const vec4s: string[] = [];
-    const dashed = group.dashed;
-    for (const name in info.fresh) {
-      if (name.lastIndexOf(dashed, 0) !== 0) {
-        continue;
-      }
-      const family = info.familyOf[name];
-      if (family === undefined) {
-        plain.push(name);
-      } else if (family === name) {
-        vec4s.push(name);
-      }
-    }
-    gi = info.groups[group.prefix] = { plain, vec4s };
-  }
-  const held = current!;
-  const raw = base !== undefined ? base.raw : undefined;
-  // No object at all: none active, and none in the base (its prefix key).
-  const noObject =
-    n === start && (raw === undefined || raw[group.prefix] === undefined);
-
-  const plain = gi.plain;
-  for (let i = 0; i < plain.length; i++) {
-    const name = plain[i]!;
-    // The latest object naming it wins (a value of undefined names nothing).
-    let value: unknown = NOT_SET;
-    for (let p = n - 1; p >= start && value === NOT_SET; p--) {
-      const parse = groupParses[p]!;
-      const at = parse.index[name];
-      if (at !== undefined && parse.values[at] !== undefined) {
-        value = parse.values[at];
-      }
-    }
-    if (value === NOT_SET) {
-      if (fromHeld) {
-        continue;
-      }
-      const b = raw !== undefined ? raw[name] : undefined;
-      if (b !== undefined) {
-        value = b;
-      } else if (noObject && name === group.colorKey) {
-        const c = held[name];
-        value = typeof c === 'number' ? (c & 0xffffff00) >>> 0 : 0;
-      } else {
-        value = copyOf(info.fresh[name]);
-      }
-    }
-    // Compared as the facade holds it (an align of 'outside' is 1).
-    const def = info.resolvers[name];
-    const resolved = def !== undefined ? def.resolve!(value, held) : value;
-    if (held[name] !== resolved) {
-      target[name] = value;
-      wrote = true;
-    }
-  }
-
-  const vec4s = gi.vec4s;
-  for (let f = 0; f < vec4s.length; f++) {
-    const prop = vec4s[f]!;
-    const fresh = info.fresh[prop] as number[];
-    const len = fresh.length;
-    let from: number[] = fresh;
-    if (fromHeld) {
-      const h = held[prop];
-      if (isArray(h) && h.length === len) {
-        from = h as number[];
-      }
-    } else if (base !== undefined) {
-      from = foldBase(base, info, prop);
-    }
-    for (let i = 0; i < len; i++) {
-      scratchVec[i] = from[i]!;
-    }
-    // The objects in sequence, as 1.6's live writes: a vec4 write sets every
-    // element, an element write its own.
-    for (let p = start; p < n; p++) {
-      const parse = groupParses[p]!;
-      const keys = parse.keys;
-      const values = parse.values;
-      for (let j = 0; j < keys.length; j++) {
-        const name = keys[j]!;
-        const v = values[j];
-        if (v === undefined || info.familyOf[name] !== prop) {
-          continue;
-        }
-        if (name === prop) {
-          toVec4Into(scratchVec, v, len);
-        } else {
-          scratchVec[info.elementIndex[name]!] = v as number;
-        }
-      }
-    }
-    const was = held[prop];
-    const isVec = isArray(was) && was.length === len;
-    let same = isVec;
-    let uniform = true;
-    let wasUniform = isVec;
-    for (let i = 0; i < len; i++) {
-      const t = scratchVec[i]!;
-      if (t !== scratchVec[0]) {
-        uniform = false;
-      }
-      if (isVec) {
-        const h = (was as number[])[i];
-        if (h !== t) {
-          same = false;
-        }
-        if (h !== (was as number[])[0]) {
-          wasUniform = false;
-        }
-      }
-    }
-    if (same) {
-      continue;
-    }
-    wrote = true;
-    const aliases = info.elements[prop];
-    if (uniform && (wasUniform || !animated)) {
-      // One write; an animation runs its number from the first element.
-      target[prop] = scratchVec[0];
-    } else if (aliases === undefined || !isVec) {
-      target[prop] = scratchVec.slice(0, len);
-    } else {
-      for (let i = 0; i < len; i++) {
-        if ((was as number[])[i] !== scratchVec[i]) {
-          target[aliases[i]!] = scratchVec[i];
-        }
-      }
-    }
-  }
-  return wrote;
-}
-
-/**
- * Recompute and write one group's shader props for `node`: after a state
- * change wrote the group's keys in `mask` (the display is the base record,
- * then the active states' objects of the group in `_undoStyles` order), or
- * for a direct write of one object (`direct`, already merged into the base:
- * the object over the current display, as 1.6 wrote it). Animated when
- * `transition` is true or names a key of `mask`: the changed sub-props make
- * an animation target, as before 1.7 (settings of the first such key).
- *
- * A node without a shader: before render the writes go to the bag
- * createShader reads at render, as 1.6's did (so do a DOM node's, whose
- * shader keeps the bag); on renderer v2 after render, the first object's
- * write creates the shader from a bag and the others are live writes into
- * it, as 1.6's were (N3, N5).
- */
-function writeShaderGroup(
-  node: ElementNode,
-  group: ShaderGroup,
-  mask: number,
-  direct: ShaderParse | null,
-): void {
-  const base = node._shaderBase;
-  let n = 0;
-  let fromHeld = false;
-  const states = node._states;
-  const count = states !== undefined && states.length > 0 ? node._undoCount : 0;
-  if (count > 0) {
-    // The tracked keys of the group whose value comes from a state block
-    // (not the fallback: the base record holds the style's object).
-    const keys = node._undoStyles!;
-    const applied = node._applied!;
-    const bits = node._stateShaderBits;
-    for (let i = 0; i < count; i++) {
-      const key = keys[i]!;
-      const bit = SHADER_BIT[key];
-      if (
-        bit !== undefined &&
-        (bits & bit) !== 0 &&
-        SHADER_GROUP_OF[key] === group
-      ) {
-        const obj = applied[key];
-        if (isObject(obj)) {
-          groupParses[n++] = shaderParse(key, obj);
-        }
-      }
-    }
-  }
-  if (direct !== null) {
-    // A direct write, already in the base record. The object goes over the
-    // current display (it wins for what it names, as 1.6 wrote it), unless
-    // no active state's object of the group is on it and a state change was
-    // the group's last writer (`_stateWroteGroups`): then the display is
-    // the base record, recomputed, so a colour the undo's fade left at
-    // alpha 0 is not kept and the node equals a never-focused one with the
-    // same write. Values the `shader` prop or a write into the shader's
-    // props set are not in the record; over them, 1.6's write.
-    const groupBits = group === BORDER_GROUP ? BORDER_BITS : SHADOW_BIT;
-    const wrote = node._stateWroteGroups;
-    if (n > 0 || (wrote & groupBits) === 0) {
-      groupParses[0] = direct;
-      n = 1;
-      fromHeld = true;
-    }
-    node._stateWroteGroups = wrote & ~groupBits;
-  }
-
-  let start = 0;
-  let shader = node.lng.shader as IRendererShader | null | undefined;
-  let props =
-    shader != null
-      ? (shader.props as Record<string, unknown> | undefined)
-      : undefined;
-  if (props == null) {
-    if (!node.rendered || isDomRendererActive()) {
-      // 1.6's bag: before render, createShader resolves it at render; the
-      // DOM renderer keeps it as the shader's props. (A rendered DOM node
-      // without a shader holds the renderer's shared default: never write
-      // into it.)
-      const target =
-        shader != null && !node.rendered
-          ? (shader as unknown as Record<string, unknown>)
-          : {};
-      if (replayGroup(target, null, null, group, base, 0, n, false, fromHeld)) {
-        node._writeShaderTarget(target);
-      }
-      return;
-    }
-    // Renderer v2, rendered, no shader: the first object creates it, from a
-    // bag of the base and that object (its type as 1.6 chose it); the other
-    // objects are then live writes into it. (A direct write with no state
-    // object is in the base already.)
-    if (n === 0 && direct === null) {
-      return;
-    }
-    const target: Record<string, unknown> = {};
-    replayGroup(
-      target,
-      null,
-      null,
-      group,
-      base,
-      0,
-      n > 0 ? 1 : 0,
-      false,
-      false,
-    );
-    node._writeShaderTarget(target);
-    if (n <= 1) {
-      return;
-    }
-    shader = node.lng.shader as IRendererShader | null | undefined;
-    props =
-      shader != null
-        ? (shader.props as Record<string, unknown> | undefined)
-        : undefined;
-    if (props == null) {
-      return;
-    }
-    start = 1;
-    fromHeld = true;
-  }
-
-  const info = shaderTypeInfo(shader!);
-  const transition = node.transition;
-  let settings: AnimationSettings | true | undefined;
-  if (transition === true) {
-    settings = true;
-  } else if (transition) {
-    const keys = group.keys;
-    for (let i = 0; i < keys.length && settings === undefined; i++) {
-      const key = keys[i]!;
-      if ((mask & SHADER_BIT[key]!) !== 0) {
-        const t = transition[key];
-        if (t) {
-          settings = t;
-        }
-      }
-    }
-  }
-  if (settings !== undefined) {
-    // Animated: the changed sub-props, in a target of their own. (With
-    // `true`, no settings: built and dropped, as before 1.7.)
-    const target: Record<string, unknown> = {};
-    if (
-      replayGroup(target, props, info, group, base, start, n, true, fromHeld)
-    ) {
-      node._writeShaderTarget(target);
-      if (settings !== true) {
-        node.animate({ shaderProps: target }, settings).start();
-      }
-    }
-    return;
-  }
-  if (replayGroup(props, props, info, group, base, start, n, false, fromHeld)) {
-    node._writeShaderTarget(props);
-  }
+  resolve?: unknown;
+  set?: unknown;
 }
 
 /** The gradient shaders the raw accessors made, by accessor key. */
 const gradientShaders = new WeakMap<object, string>();
+
+/** Marks a key a state change tracks but has not written yet. */
+const UNWRITTEN = {};
 
 /**
  * Append the keys of the `$state` block `block` that `keys` does not hold
@@ -1414,14 +567,10 @@ function styleFallback(node: ElementNode, key: string): unknown {
   return value;
 }
 
-/** Whether the last resolveStateValue found its key in an active block (not the fallback). */
-let resolvedFromState = false;
-
 /**
  * The value `key` takes with `states` on: from the block of the state of
  * highest precedence that has it (the later in `order`, then the later
  * added; `order` undefined: the later added), else the base value.
- * `resolvedFromState` tells which.
  */
 function resolveStateValue(
   node: ElementNode,
@@ -1449,10 +598,8 @@ function resolveStateValue(
     }
   }
   if (plan === undefined) {
-    resolvedFromState = false;
     return styleFallback(node, key);
   }
-  resolvedFromState = true;
   // A getter is read now, each time the state is applied (pinned).
   return plan.getters[at] === true ? plan.block[key] : plan.values[at];
 }
@@ -1547,14 +694,6 @@ export interface ElementNode extends RendererNode, FocusNode {
   _undoCount: number;
   /** @internal Per key in `_undoStyles`, the value the last state change wrote. */
   _applied?: Record<string, unknown>;
-  /** @internal The shader props the node's non-state writes left: the display is this, then the active states' objects. */
-  _shaderBase?: ShaderBase;
-  /** @internal Per border/shadow key in `_undoStyles` (SHADER_BIT), whether its value comes from a state block. */
-  _stateShaderBits: number;
-  /** @internal The border/shadow groups (SHADER_BIT) the running state change wrote, for `_applyStates`. */
-  _shaderMask: number;
-  /** @internal The border/shadow groups (SHADER_BIT) a state change wrote last, with no direct write since. */
-  _stateWroteGroups: number;
   _display?: 'flex' | 'block';
   _onLayout?: (this: ElementNode, target: ElementNode) => void;
   _requiresLayout: boolean;
@@ -2050,10 +1189,6 @@ export class ElementNode {
     this._undoStyles = undefined;
     this._undoCount = 0;
     this._applied = undefined;
-    this._shaderBase = undefined;
-    this._stateShaderBits = 0;
-    this._shaderMask = 0;
-    this._stateWroteGroups = 0;
     this._display = undefined;
     this._onLayout = undefined;
     this._requiresLayout = false;
@@ -2096,15 +1231,9 @@ export class ElementNode {
     }
     if (v.rounded) target.radius = v.rounded.radius;
     if (v.borderRadius) target.radius = v.borderRadius;
-    // The border and shadow objects: into the props as before 1.7 (the
-    // object's keys, the later write winning), and into the base record
-    // (fix round 5, N7), as a direct write's are.
-    const info =
-      props != null ? shaderTypeInfo(this.lng.shader as IRendererShader) : null;
     for (const k of EFFECT_SHADER_KEYS) {
       const obj = v[k];
       if (isObject(obj)) {
-        baseWrite(this, info, shaderParse(k, obj));
         parseAndAssignShaderProps(k, obj, target);
       }
     }
@@ -3158,75 +2287,16 @@ export class ElementNode {
     if (this._applied === undefined) {
       this._applied = Object.create(null) as Record<string, unknown>;
     }
-    this._applyStates(n);
+    this._writeStates(n);
   }
 
   /**
-   * Write the state styles (`_writeStates`), then the border and shadow
-   * groups they touched (`_shaderMask`), even when a setter threw: the
-   * keys applied before the throw keep their effect, as before 1.7 (N6). A
-   * thin wrapper on purpose: Chrome 47's Crankshaft never optimises a
-   * function holding a `try`, so neither `_stateChanged` (every path
-   * element of every focus change) nor the loops hold one.
-   */
-  _applyStates(n: number) {
-    // Re-entrant when a setter changes this node's states: the nested
-    // change keeps a mask of its own and gives the outer one back.
-    const outer = this._shaderMask;
-    this._shaderMask = 0;
-    try {
-      this._writeStates(n);
-    } finally {
-      const mask = this._shaderMask;
-      this._shaderMask = outer;
-      if (mask !== 0) {
-        this._writeShaderGroups(mask);
-      }
-    }
-  }
-
-  /**
-   * The groups a state change's `mask` touched, each recomputed once, the
-   * group of the first key written first: a node without a shader gets the
-   * type 1.6's first write chose (N5). A method, not a module function: with
-   * its one call site terser's `reduce_funcs` made a function expression of
-   * it inside `_applyStates`, a closure per press.
-   */
-  _writeShaderGroups(mask: number) {
-    // A state change is the groups' last writer, until a direct write.
-    this._stateWroteGroups |= mask;
-    let shadowFirst = false;
-    if ((mask & BORDER_BITS) !== 0 && (mask & SHADOW_BIT) !== 0) {
-      const keys = this._undoStyles!;
-      const count = this._undoCount;
-      for (let i = 0; i < count; i++) {
-        const bit = SHADER_BIT[keys[i]!];
-        if (bit !== undefined && (mask & bit) !== 0) {
-          shadowFirst = bit === SHADOW_BIT;
-          break;
-        }
-      }
-    }
-    if (shadowFirst) {
-      writeShaderGroup(this, SHADOW_GROUP, mask, null);
-      writeShaderGroup(this, BORDER_GROUP, mask, null);
-      return;
-    }
-    if ((mask & BORDER_BITS) !== 0) {
-      writeShaderGroup(this, BORDER_GROUP, mask, null);
-    }
-    if ((mask & SHADOW_BIT) !== 0) {
-      writeShaderGroup(this, SHADOW_GROUP, mask, null);
-    }
-  }
-
-  /**
-   * The state-style loops of `_stateChanged`, for `n` active states. A
-   * border or shadow key's value goes to `_effects` (the getter) and its
-   * group's bit to `_shaderMask`, written by `_applyStates` once after the
-   * loop: an undo of several objects removes them all before anything is
-   * rebuilt, and one change makes one animation per group.
-   * `_stateShaderBits` records whether the key's value comes from a block.
+   * The state-style loops of `_stateChanged`, for `n` active states: a
+   * method of its own, so that `_stateChanged`, which runs for every path
+   * element of every focus change, stays the short early-return above. Each
+   * key is written through its setter, as before 1.7: a border or shadow
+   * object merges into the shader props, the later write of a sub-prop
+   * winning.
    */
   _writeStates(n: number) {
     const states = this._states!;
@@ -3234,35 +2304,20 @@ export class ElementNode {
     const applied = this._applied!;
     const diff = this.rendered;
     let count = this._undoCount;
-    let mask = 0;
 
     if (n === 0) {
-      // Undo every tracked key, in its order (`transition` too: pinned).
-      // Every border or shadow group is recomputed, whether or not the
-      // fallback equals the last write: with no state on the display is the
-      // base record (B18, N2). A setter that throws leaves the keys after it
-      // for the next change, as before 1.7.
+      // Undo every tracked key, in its order (`transition` too: pinned), to
+      // its base value. A setter that throws leaves the keys after it for
+      // the next change, as before 1.7.
       for (let i = 0; i < count; i++) {
         const key = keys[i]!;
         const value = styleFallback(this, key);
-        const bit = SHADER_BIT[key];
         if (!diff || value !== applied[key]) {
           applied[key] = value;
-          if (bit === undefined) {
-            this[key] = value;
-          } else {
-            (this._effects || (this._effects = {}))[key] = value;
-          }
-        }
-        if (bit !== undefined) {
-          mask |= bit;
-          this._shaderMask = mask;
-          // Per key: a throw later in the loop leaves no stale bit behind.
-          this._stateShaderBits &= ~bit;
+          this[key] = value;
         }
       }
       this._undoCount = 0;
-      this._stateShaderBits = 0;
       return;
     }
 
@@ -3316,33 +2371,12 @@ export class ElementNode {
         break;
       }
     }
-    let bits = this._stateShaderBits;
     for (let i = 0; i < count; i++) {
       const key = keys[i]!;
       const value = resolveStateValue(this, key, states, order);
-      const bit = SHADER_BIT[key];
-      let changed = !diff || value !== applied[key];
-      if (bit !== undefined) {
-        // From a block, or the fallback: then the key adds nothing to the
-        // display (the base record holds the style's object). A flip with
-        // the same value (a block reusing the style's own object) recomputes
-        // the group too (PI).
-        const fromState = resolvedFromState;
-        if (fromState !== ((bits & bit) !== 0)) {
-          bits = fromState ? bits | bit : bits & ~bit;
-          this._stateShaderBits = bits;
-          changed = true;
-        }
-      }
-      if (changed) {
+      if (!diff || value !== applied[key]) {
         applied[key] = value;
-        if (bit === undefined) {
-          this[key] = value;
-        } else {
-          (this._effects || (this._effects = {}))[key] = value;
-          mask |= bit;
-          this._shaderMask = mask;
-        }
+        this[key] = value;
       }
     }
   }
@@ -4366,24 +3400,41 @@ export function createRawShaderAccessor<T>(key: keyof StyleEffects) {
       ) {
         // The gradient shader this accessor made: update it, not a new one,
         // to the props createShader would have built from `value`: a
-        // declared prop `value` does not name takes its default.
-        const info = shaderTypeInfo(shader);
-        if (info === null) {
+        // declared prop `value` does not name takes its default. The type's
+        // declaration is read here, each set: a gradient is set rarely.
+        const type = shader.shaderType as unknown;
+        const defs = isObject(type) ? type.props : undefined;
+        if (!isObject(defs)) {
           // The DOM renderer keeps the given object as the props.
           shader.props = value as IRendererShaderProps;
         } else {
           const props = shader.props as Record<string, unknown>;
-          // Props first, then aliases, each in declaration order (`fresh`
-          // holds them in that order), as createShader applies them.
-          for (const name in info.fresh) {
-            const given = value[name];
-            if (given !== undefined) {
-              // createShader copies an array, unless the prop resolves it.
-              props[name] =
-                info.resolves[name] === true ? given : copyOf(given);
-            } else if (info.alias[name] !== true) {
-              // An alias only writes when given, as in createShader.
-              props[name] = shaderResetValue(info, name, false);
+          // Props first, then aliases, each in declaration order, as
+          // createShader applies them; an alias only writes when given.
+          for (let pass = 0; pass < 2; pass++) {
+            for (const name in defs) {
+              const def = defs[name];
+              // An AdvancedProp has a default (the registry's test).
+              const advanced = isObject(def) && def.default !== undefined;
+              const alias =
+                advanced && (def as AdvancedPropLike).set !== undefined;
+              if (alias !== (pass === 1)) {
+                continue;
+              }
+              const resolves =
+                advanced && (def as AdvancedPropLike).resolve !== undefined;
+              const given = value[name];
+              if (given !== undefined) {
+                // createShader copies an array, unless the prop resolves it.
+                props[name] = resolves ? given : copyOf(given);
+              } else if (!alias) {
+                // What a shader created without it holds: a prop that
+                // resolves its value resolves its default from undefined, a
+                // plain one takes a copy of its default.
+                props[name] = resolves
+                  ? undefined
+                  : copyOf(advanced ? (def as AdvancedPropLike).default : def);
+              }
             }
           }
         }
@@ -4424,65 +3475,56 @@ export function shaderAccessor<T extends Record<string, any> | number>(
       }
       const prev: unknown = effects[key];
       effects[key] = value;
-      if (key !== 'rounded' && typeof value !== 'number') {
-        // A border or shadow object: into the base record (a non-state
-        // write), then over the current display (the object wins for what
-        // it names, as before 1.7). Undefined writes nothing, as before.
-        if (!isObject(value)) {
-          return;
-        }
-        const shader = this.lng.shader as IRendererShader | null | undefined;
-        const info =
-          shader != null && shader.props != null
-            ? shaderTypeInfo(shader)
-            : null;
-        const parse = shaderParse(key, value);
-        baseWrite(this, info, parse);
-        writeShaderGroup(this, SHADER_GROUP_OF[key]!, SHADER_BIT[key]!, parse);
-        return;
-      }
-
-      // The radius (a number written to a border key too, as before 1.7).
+      // The radius (a number written to a border key too), else a border or
+      // shadow object: as before 1.7, its sub-props merge into the shader
+      // props, the later write winning, so a state undo that writes the
+      // style's object back leaves the sub-props it does not name (B18, not
+      // fixed in 1.7); undefined writes nothing.
+      const radius = key === 'rounded' || typeof value === 'number';
       const shader = this.lng.shader as IRendererShader | null | undefined;
       const props = shader != null ? shader.props : undefined;
+      let target: Record<string, unknown>;
+      let animationSettings: AnimationSettings | undefined;
       if (props != null) {
+        target = props as Record<string, unknown>;
+        // With a transition for the key, the sub-props go into a target of
+        // their own, which animates (one of `true` is built and dropped, as
+        // before 1.7).
         const transition = this.transition;
-        if (transition && (transition === true || transition.borderRadius)) {
-          // Animated: in a target of its own; an undo to no radius animates
-          // to the fresh one (the animator makes no track for undefined).
-          const target: Record<string, unknown> = {};
-          target.radius =
-            value === undefined
-              ? shaderResetValue(shaderTypeInfo(shader!), 'radius', true)
-              : value;
-          this._writeShaderTarget(target);
-          const animationSettings =
-            transition === true || transition.borderRadius === true
-              ? undefined
-              : (transition.borderRadius as undefined | AnimationSettings);
-          if (animationSettings) {
-            this.animate({ shaderProps: target }, animationSettings).start();
+        if (transition) {
+          const setting =
+            transition === true
+              ? true
+              : transition[key === 'rounded' ? 'borderRadius' : key];
+          if (setting) {
+            target = {};
+            animationSettings =
+              setting === true ? undefined : (setting as AnimationSettings);
           }
+        }
+      } else {
+        // No shader yet: before render, the props bag createShader reads at
+        // render; after render, the props of a new shader. (A rendered DOM
+        // node without one holds the renderer's shared default: never write
+        // into it.)
+        target =
+          shader != null && !this.rendered
+            ? (shader as unknown as Record<string, unknown>)
+            : {};
+      }
+      if (radius) {
+        // Into the shader's props only when it changed.
+        if (target === props && value === prev) {
           return;
         }
-        // Into the shader's props, when it changed.
-        if (value !== prev) {
-          (props as Record<string, unknown>).radius = value;
-          this._writeShaderTarget(props);
-        }
-        return;
+        target.radius = value;
+      } else if (isObject(value)) {
+        parseAndAssignShaderProps(key, value, target);
       }
-
-      // No shader yet: before render, the props bag createShader reads at
-      // render; after render, the props of a new shader. (A rendered DOM
-      // node without one holds the renderer's shared default: never write
-      // into it.)
-      const target =
-        shader != null && !this.rendered
-          ? (shader as unknown as Record<string, unknown>)
-          : {};
-      target.radius = value;
       this._writeShaderTarget(target);
+      if (animationSettings !== undefined) {
+        this.animate({ shaderProps: target }, animationSettings).start();
+      }
     },
     get(this: ElementNode) {
       return this._effects?.[key];
