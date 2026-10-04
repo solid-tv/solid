@@ -227,6 +227,150 @@ describe('layout queue', () => {
   });
 });
 
+describe('layout queue: more cases', () => {
+  /** Holds the post-mutation runs so a test can run them one at a time. */
+  function holdMicrotasks() {
+    const held: Array<() => void> = [];
+    const saved = globalThis.queueMicrotask;
+    globalThis.queueMicrotask = (fn: () => void) => void held.push(fn);
+    return {
+      held,
+      restore() {
+        globalThis.queueMicrotask = saved;
+      },
+    };
+  }
+
+  it('a deeper container queued while a shallower one runs is laid out in the same run (another sweep)', async () => {
+    const [extra, setExtra] = s.createSignal(false);
+    const passes: string[] = [];
+    let shown = false;
+    let inner!: lng.ElementNode;
+    let last!: lng.ElementNode;
+    const hold = holdMicrotasks();
+    let dispose = () => {};
+    try {
+      dispose = renderer.render(() => (
+        <view
+          display="flex"
+          gap={10}
+          onLayout={() => {
+            passes.push('outer');
+            if (!shown) {
+              shown = true;
+              setExtra(true); // inserts into `inner`, which is deeper
+            }
+          }}
+        >
+          <view
+            ref={inner}
+            display="flex"
+            onLayout={() => void passes.push('inner')}
+          >
+            <view width={50} height={50} />
+            <s.Show when={extra()}>
+              <view width={30} height={50} />
+            </s.Show>
+          </view>
+          <view ref={last} width={40} height={40} />
+        </view>
+      ));
+      // One post-mutation run.
+      hold.held.shift()!();
+      expect(passes).toEqual(['inner', 'outer', 'inner', 'outer']);
+      expect(inner.width).toBe(80);
+      expect(last.x).toBe(90);
+    } finally {
+      hold.restore();
+      for (const fn of hold.held) fn();
+    }
+    await settle();
+    dispose();
+  });
+
+  it('a loaded event on a text removed from its container does not throw, and the container stays laid out', async () => {
+    mockTextMeasure();
+    const [show, setShow] = s.createSignal(true);
+    let t!: lng.ElementNode;
+    let last!: lng.ElementNode;
+    const dispose = renderer.render(() => (
+      <view display="flex" gap={10}>
+        <s.Show when={show()}>
+          <text ref={t}>Hello</text>
+        </s.Show>
+        <view ref={last} width={50} height={50} />
+      </view>
+    ));
+    await settle();
+    expect(last.x).toBe(60);
+    setShow(false);
+    await settle();
+    expect(last.x).toBe(0);
+
+    t.lng.w = 90;
+    expect(() =>
+      emitter(t).emit('loaded', {
+        type: 'text',
+        dimensions: { w: 90, h: 20 },
+      }),
+    ).not.toThrow();
+    await settle();
+    expect(last.x).toBe(0);
+    dispose();
+  });
+
+  it('an onDestroy that throws does not stop later post-mutation runs', async () => {
+    const [show, setShow] = s.createSignal(true);
+    const [more, setMore] = s.createSignal(false);
+    let added!: lng.ElementNode;
+    let last!: lng.ElementNode;
+    const dispose = renderer.render(() => (
+      <view display="flex">
+        <s.Show when={show()}>
+          <view
+            width={50}
+            height={50}
+            onDestroy={() => {
+              throw new Error('onDestroy failed');
+            }}
+          />
+        </s.Show>
+        <s.Show when={more()}>
+          <view ref={added} width={30} height={50} />
+        </s.Show>
+        <view ref={last} width={50} height={50} />
+      </view>
+    ));
+    await settle();
+    expect(last.x).toBe(50);
+
+    const errors: unknown[] = [];
+    const saved = globalThis.queueMicrotask;
+    globalThis.queueMicrotask = (fn: () => void) =>
+      saved(() => {
+        try {
+          fn();
+        } catch (e) {
+          errors.push(e);
+        }
+      });
+    try {
+      setShow(false); // its run throws in the delete flush
+      await settle();
+      expect(errors).toHaveLength(1);
+
+      setMore(true); // a later run lays out
+      await settle();
+      expect(errors).toHaveLength(1);
+      expect(added.x).toBe(0);
+      expect(last.x).toBe(30);
+    } finally {
+      globalThis.queueMicrotask = saved;
+    }
+    dispose();
+  });
+});
+
 describe('post-mutation scheduling', () => {
   it('a mutation runs the post-mutation pass as a microtask, not in the renderer frame; a loaded handler asks for the frame', async () => {
     mockTextMeasure();

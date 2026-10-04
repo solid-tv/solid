@@ -155,6 +155,21 @@ describe('contract: text props reach the renderer node (el.lng)', () => {
     dispose();
   });
 
+  // B11: the margin array counts as in flex ([top, right, bottom, left]).
+  it('contain "both" without a size: the margin array counts too', () => {
+    let t!: lng.ElementNode;
+    const dispose = renderer.render(() => (
+      <view width={800} height={600}>
+        <text ref={t} contain="both" x={100} y={50} margin={[0, 40, 30, 0]}>
+          B
+        </text>
+      </view>
+    ));
+    expect(raw(t).maxWidth).toBe(660);
+    expect(raw(t).maxHeight).toBe(520);
+    dispose();
+  });
+
   // B11: as above for marginBottom (maxHeight was 550).
   it('contain "both" without a size: maxHeight = parent height - y - marginBottom', () => {
     let t!: lng.ElementNode;
