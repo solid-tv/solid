@@ -652,35 +652,52 @@ count tables, and the bundle sizes are in
 
 ## 2026-10-04: B18 removed (user decision)
 
-Branch `1.7-styles` at `249e4bc`, on `1.7` at `9b53edf`. Checkpoint 2 decided
-that B18 (undoing a state's border or shadow should leave the node equal to a
+Branch `1.7-styles` at `837a6d9` (`249e4bc` the removal, `837a6d9` the
+review's fix round 1), on `1.7` at `9b53edf`. Checkpoint 2 decided that B18
+(undoing a state's border or shadow should leave the node equal to a
 never-focused one) goes back to 1.6.4 behaviour and is a known bug again; the
 rest of stream S stays. Removed: the per-node base record and the group replay
 (`ShaderBase`, `baseWrite`, `foldBase`, `replayGroup`, `writeShaderGroup`, the
-`SHADER_BIT` masks, `_applyStates` with its try/finally, the radius-to-fresh
-reset on the animated path, the per-type `ShaderTypeInfo`). A border or shadow
-write merges its cached parse into the shader props, the later write winning,
-and skips a sub-prop the props already hold; a state undo writes the fallback
-object through the same setter, as 1.6 did.
+`SHADER_BIT` masks, `_applyStates` with its try/finally, the per-type
+`ShaderTypeInfo`). A border or shadow write merges its cached parse into the
+shader props, the later write winning, and skips a sub-prop the props already
+hold; a state undo writes the fallback object through the same setter, as 1.6
+did. "1.6.4 behaviour" is what 1.6.4 showed on renderer 1.9, so fix round 1
+restored two results the removal had lost: an animated `borderRadius` undo to
+none animates to 0 (renderer 1.9 made a track for `undefined`, 2.0 makes
+none), and a state change that writes some tracked border-family keys and
+skips others as unchanged writes the family again in tracked order
+(`_rewriteBorderKeys`, no allocation), so a state's own side survives another
+state's `border` write as it did when 1.6 rewrote the whole merged object
+(probes M1, ST2, PH). Only that overlap case pays; a single `$focus` border is
+written once.
 
-- Alloc, framework B/op, Checkpoint 2 series → `bench-noB18` (one 6x run):
-  thumbnail-focus 178 → 171, navdrawer-toggle 1,504 → 1,500, rows-lr-noshift
-  260 → 260, portal-focus-text 310 → 303. The bundle's `_stateChanged`,
-  `_writeStates` and the shader accessor hold no function expression (checked
-  in `bench/dist/C/assets/framework.js`).
+- Alloc, framework B/op, Checkpoint 2 series → `bench-noB18-fix1` (one 6x
+  run; `bench-noB18`, before fix round 1, in parentheses): thumbnail-focus
+  178 → 172 (171), navdrawer-toggle 1,504 → 1,493 (1,500), rows-lr-noshift
+  260 → 260 (260), portal-focus-text 310 → 314 (303). Portal's 314 is sampling
+  noise on a scenario the change does not touch: three more runs
+  (`bench-noB18-fix1-alloc3`) gave 306, 304 and 337 (median 306) for portal
+  and 172, 174 and 172 for thumbnail-focus. The bundle's `_stateChanged`,
+  `_writeStates`, `_rewriteBorderKeys` and the shader accessor hold no
+  function expression (checked in `bench/dist/C/assets/framework.js`).
 - Counts per press, unchanged but for the shader writes: navdrawer-toggle 23
   node writes and 1 shader write, portal-focus-text 6 and 0, rows-lr-noshift 2
   and 0; thumbnail-focus shader writes 6.0 → 5.2 (B 6.2): the `$focus`
   border's `gap` stays 4 after blur (B18) and is not written again on the next
   focus; `align` is (`'outside'` against the facade's resolved 1).
-- Size: `elementNode.ts` minified+gzip 11,277 → 8,631 B (−2,646 B; the
-  Checkpoint 2 figure of 11,268 came from another esbuild build); the bench
-  framework chunk terser+mangled+gzip 22,106 → 19,695 B (−2,411 B). Stream S's
-  +3.9 kB becomes about +1.3 kB by the same measure.
+- Size: `elementNode.ts` minified+gzip 11,268 → 8,744 B (−2,524 B; both
+  sides from a copy of the file with `solid-1.7/node_modules/.bin/esbuild`
+  0.27.7, as the Checkpoint 2 figure was; in place the same build is 8 B
+  larger); the bench framework chunk terser+mangled+gzip 22,106 → 19,802 B
+  (−2,304 B). Stream S's +3.9 kB becomes about +1.4 kB by the same measure.
 - Verification: the 83 reviewer probes of the S rounds against the 1.6.4
-  export: 76 equal; RS4 differs in floating point mid-animation only; W1 and
-  W2 make fewer facade writes with the same result; PG, PH, M1 and ST2 differ
-  by design 3.3.2's diffed writes (a key whose resolved value did not change
-  is not rewritten), described in MIGRATION §2. `npx vitest run` 722 passed,
-  2 skipped (the B18 test is `it.skip('BUG: B18 …')` again), `pnpm test:webgl`
-  60 passed, `pnpm tsc` and `pnpm lint` clean.
+  export: 78 equal; RS4 differs in floating point mid-animation only; PB2 (a
+  focus and a blur one frame apart under a transition) flips with timing on
+  both sides; W1 and W2 make fewer facade writes with the same result; PG
+  differs by design 3.3.2's diffed writes (a direct write to a key a state
+  names survives an unrelated state change), described in MIGRATION §2. The
+  reviewer's RAD probe (animated `borderRadius` undo) ends at `[0, 0, 0, 0]`,
+  as a never-focused node. `npx vitest run` 722 passed, 2 skipped (the B18 test
+  is `it.skip('BUG: B18 …')` again), `pnpm test:webgl` 63 passed, `pnpm tsc`
+  and `pnpm lint` clean.

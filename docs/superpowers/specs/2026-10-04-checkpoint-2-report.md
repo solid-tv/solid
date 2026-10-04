@@ -285,12 +285,14 @@ status line still says "draft until Checkpoint 2".
    - Tell me if you want the narrow version.
    - **Decided: removed** (2026-10-04). B18 is back to 1.6.4 behaviour and a
      known bug (`it.skip('BUG: B18 …')`); the rest of S stays. Saved: the
-     framework chunk 22,106 → 19,695 B gzip (−2.4 kB; §6's +7.9 kB becomes
-     +5.5 kB), `elementNode.ts` minified+gzip 11,277 → 8,631 B (−2.6 kB).
-     Framework B/op unchanged within noise (thumbnail-focus 178 → 171,
-     navdrawer-toggle 1,504 → 1,500, rows-lr-noshift 260 → 260,
-     portal-focus-text 310 → 303); thumbnail-focus shader writes 6.0 → 5.2
-     per press. Details: `docs/perf/log.md`, "B18 removed".
+     framework chunk 22,106 → 19,802 B gzip (−2.3 kB; §6's +7.9 kB becomes
+     +5.6 kB), `elementNode.ts` minified+gzip 11,268 → 8,744 B (−2.5 kB, the
+     review's fix round 1 included).
+     Framework B/op unchanged within noise (thumbnail-focus 178 → 172,
+     navdrawer-toggle 1,504 → 1,493, rows-lr-noshift 260 → 260,
+     portal-focus-text 310 → 306, the median of three runs); thumbnail-focus
+     shader writes 6.0 → 5.2 per press. Details: `docs/perf/log.md`, "B18
+     removed".
 5. **A container destroyed in the same run is still laid out.** 1.6.4 does the
    same, and its `onLayout` still fires on the destroyed node. A one-line fix
    plus test and a MIGRATION entry are drafted. Options: apply as a bug fix, or

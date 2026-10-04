@@ -129,17 +129,6 @@ not reflow its flex parent) changes nothing.
       differ, the undo restores `theme`, then `style`, then `undefined`, as
       before. The first state change after all states were off writes every
       key.
-    - A `border`, border side or `shadow` key is diffed like any other, and
-      its write merges into the shader props. When one key of the border
-      family changes and another one stays, only the changed one is written,
-      and what its write overwrites is not restored: with
-      `$focus: { border: { width: 4 }, borderTop: { width: 8 } }` and
-      `$active: { border: { width: 6 } }`, adding `$active` shows
-      `[6, 6, 6, 6]` (1.6 rewrote the unchanged `borderTop` after the
-      `border`: `[8, 6, 6, 6]`); removing a `$focus` border while an
-      `$active` `borderTop: { width: 8 }` stays on shows the base border
-      without the top (1.6: `[8, 2, 2, 2]`). The unchanged key is written
-      again when its resolved value changes, or when the app writes it.
   - **Gain:** state application allocates nothing per press: none of the
     replaced functions is among the sampled allocation sites. Framework KiB/op
     2.63 → 1.52 (thumbnail-focus) and 14.91 → 7.29 (navdrawer-toggle): the
