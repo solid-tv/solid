@@ -97,6 +97,9 @@ const layoutBuckets: Array<Array<ElementNode | undefined>> = [];
 const layoutBucketSize: number[] = [];
 let layoutMaxDepth = -1; // deepest bucket that may hold a node
 let layoutSweepDepth = -1; // bucket the layout phase is on, -1 outside it
+// A node was queued since the layout phase last ran to its end (one that
+// threw leaves it set, so the entries it left run next time).
+let layoutPending = false;
 
 // Text measurement (design 3.4): a `<text>` whose parent lays out is sized by
 // the renderer's synchronous `measure()` before the parent's flex, not by the
@@ -174,11 +177,64 @@ function runPostMutation() {
     elementDeleteCount = 0;
   }
 
-  // Phase 2: layout
+  // Phase 2: layout. Inline, not a function of its own: terser's default
+  // `reduce_funcs` turns a module function with one call site into a
+  // closure per call (as with every helper on this path).
   if (fontWaitingDue === true) {
-    measureFontWaiting();
+    TextMeasure.measureFontWaiting();
   }
-  runLayoutQueue();
+  if (layoutPending === true || textMeasureCount > 0) {
+    measureQueuedTexts();
+    // Start from the deepest bucket there is, so entries a run that threw
+    // left behind are not stranded.
+    layoutMaxDepth = layoutBuckets.length - 1;
+    let textSweeps = 0;
+    while (layoutMaxDepth >= 0) {
+      let depth = layoutMaxDepth;
+      layoutMaxDepth = -1;
+      for (; depth >= 0; depth--) {
+        layoutSweepDepth = depth;
+        const bucket = layoutBuckets[depth]!;
+        // Read the size every time: a run can queue more at this depth.
+        for (let i = 0; i < layoutBucketSize[depth]!; i++) {
+          const node = bucket[i];
+          bucket[i] = undefined;
+          if (node !== undefined && node._layoutQueued === true) {
+            node.updateLayout();
+          }
+        }
+        layoutBucketSize[depth] = 0;
+      }
+      layoutSweepDepth = -1;
+      // Texts the sweep wrote (flex sizing a text, an onLayout): measured
+      // now, so the container of one that resized runs again in another
+      // sweep.
+      if (textMeasureCount > 0 && textSweeps < MAX_TEXT_SWEEPS) {
+        textSweeps++;
+        measureQueuedTexts();
+      }
+    }
+    if (textMeasureCount > 0) {
+      // Not converging: drop the rest (each is measured again at its next
+      // change), or the run its writes scheduled would start over.
+      for (let i = 0; i < textMeasureCount; i++) {
+        const t = textMeasureQueue[i];
+        textMeasureQueue[i] = undefined;
+        if (t !== undefined) {
+          t._text!.due = false;
+        }
+      }
+      textMeasureCount = 0;
+      if (isDev) {
+        console.warn(
+          '[solid] Text sizes did not settle in ' +
+            MAX_TEXT_SWEEPS +
+            ' layout passes (a layout that changes the size of a text it lays out); the rest waits for its next change.',
+        );
+      }
+    }
+    layoutPending = false;
+  }
 
   // Phase 3: focus.  setFocus() may have evaluated forwardFocus pre-render
   // (when no children existed yet); deferredFocusElement re-runs setFocus
@@ -197,6 +253,7 @@ function runPostMutation() {
 function enqueueLayout(node: ElementNode): void {
   if (node._layoutQueued === true) return;
   node._layoutQueued = true;
+  layoutPending = true;
   // The depth in its tree: a removed node's tree ends at it.
   let depth = 0;
   for (
@@ -228,57 +285,6 @@ function enqueueLayout(node: ElementNode): void {
 function queueLayout(node: ElementNode): void {
   enqueueLayout(node);
   schedulePostMutation();
-}
-
-function runLayoutQueue(): void {
-  measureQueuedTexts();
-  // Start from the deepest bucket there is, so entries a run that threw left
-  // behind are not stranded.
-  layoutMaxDepth = layoutBuckets.length - 1;
-  let textSweeps = 0;
-  while (layoutMaxDepth >= 0) {
-    let depth = layoutMaxDepth;
-    layoutMaxDepth = -1;
-    for (; depth >= 0; depth--) {
-      layoutSweepDepth = depth;
-      const bucket = layoutBuckets[depth]!;
-      // Read the size every time: a run can queue more at this depth.
-      for (let i = 0; i < layoutBucketSize[depth]!; i++) {
-        const node = bucket[i];
-        bucket[i] = undefined;
-        if (node !== undefined && node._layoutQueued === true) {
-          node.updateLayout();
-        }
-      }
-      layoutBucketSize[depth] = 0;
-    }
-    layoutSweepDepth = -1;
-    // Texts the sweep wrote (flex sizing a text, an onLayout): measured now,
-    // so the container of one that resized runs again in another sweep.
-    if (textMeasureCount > 0 && textSweeps < MAX_TEXT_SWEEPS) {
-      textSweeps++;
-      measureQueuedTexts();
-    }
-  }
-  if (textMeasureCount > 0) {
-    // Not converging: drop the rest (each is measured again at its next
-    // change), or the run its writes scheduled would start over.
-    for (let i = 0; i < textMeasureCount; i++) {
-      const t = textMeasureQueue[i];
-      textMeasureQueue[i] = undefined;
-      if (t !== undefined) {
-        t._text!.due = false;
-      }
-    }
-    textMeasureCount = 0;
-    if (isDev) {
-      console.warn(
-        '[solid] Text sizes did not settle in ' +
-          MAX_TEXT_SWEEPS +
-          ' layout passes (a layout that changes the size of a text it lays out); the rest waits for its next change.',
-      );
-    }
-  }
 }
 
 /**
@@ -326,55 +332,6 @@ function fontWaitHeard(): void {
   schedulePostMutationInFrame();
 }
 
-/**
- * Measures the texts that waited for a font (`_waitForFont`): one whose font
- * is there now stops waiting and, if its size changed, queues its parent; one
- * whose font is still missing waits again.
- */
-function measureFontWaiting(): void {
-  fontWaitingDue = false;
-  const n = fontWaiting.length;
-  // A text whose font is still missing is appended again (_waitForFont),
-  // which must not sweep the list under this loop.
-  measuringFontWaiting = true;
-  try {
-    for (let i = 0; i < n; i++) {
-      const t = fontWaiting[i]!;
-      const m = t._text!;
-      if (m.waiting !== true) {
-        continue; // measured meanwhile
-      }
-      // Off first, so a measure() now queues no `loaded` for it.
-      (t.lng as IRendererTextNode).off('loaded', fontWaitHeard);
-      m.waiting = false;
-      if (t.destroyed === true) {
-        continue;
-      }
-      const parent = t._parent;
-      if (
-        parent === undefined ||
-        t._detached === true ||
-        parent._requiresLayout !== true
-      ) {
-        m.w = NaN;
-        continue;
-      }
-      // Waits again (appended past n) while the font is still missing.
-      if (t._measureText() === true) {
-        enqueueLayout(parent);
-      }
-    }
-  } finally {
-    measuringFontWaiting = false;
-  }
-  // Keep the entries appended meanwhile, without allocating.
-  const length = fontWaiting.length;
-  for (let i = n; i < length; i++) {
-    fontWaiting[i - n] = fontWaiting[i]!;
-  }
-  fontWaiting.length = length - n;
-}
-
 /** Drops the texts that no longer wait for a font (destroyed ones). */
 function sweepFontWaiting(): void {
   let kept = 0;
@@ -388,38 +345,26 @@ function sweepFontWaiting(): void {
   fontWaitingSweepAt = kept * 2 > 64 ? kept * 2 : 64;
 }
 
-/** The props a text's layout reads that an animation can change. */
-function animatesTextLayout(props: Partial<AnimateProps>): boolean {
-  return (
-    'fontSize' in props ||
-    'lineHeight' in props ||
-    'letterSpacing' in props ||
-    'maxWidth' in props ||
-    'maxHeight' in props ||
-    'maxLines' in props ||
-    'w' in props ||
-    'h' in props
-  );
-}
-
 /**
  * What Solid knows of a `<text>` it measures (`ElementNode._text`), made the
  * first time: only texts in a container that lays out have one. Its sizes
  * start as doubles, so storing a measured size allocates nothing.
  */
 class TextMeasure {
+  // `declare`d, assigned in the constructor: a class field would be emitted
+  // as a native field that starts undefined (design 3.6.5).
   /** A prop its layout reads was written since it was last measured; queued. */
-  due: boolean;
+  declare due: boolean;
   /** Its font was missing when measured (`_waitForFont`). */
-  waiting: boolean;
+  declare waiting: boolean;
   /** Width and height, as flex reads them, when last measured; NaN before. */
-  w: number;
-  h: number;
+  declare w: number;
+  declare h: number;
   /**
    * Hears every layout (`_listenTextLoaded`): a text Solid animated a layout
    * prop of, and every measured text in DOM builds. For its lifetime.
    */
-  listening: boolean;
+  declare listening: boolean;
 
   constructor() {
     this.due = false;
@@ -428,6 +373,76 @@ class TextMeasure {
     this.h = NaN;
     this.listening = false;
   }
+
+  /**
+   * Measures the texts that waited for a font (`_waitForFont`): one whose
+   * font is there now stops waiting and, if its size changed, queues its
+   * parent; one whose font is still missing waits again. A method, not a
+   * module function: the post-mutation pass is its one caller, and terser's
+   * default `reduce_funcs` turns such a function into a closure per call.
+   * (Its own: the try would keep that pass from being optimized.)
+   */
+  static measureFontWaiting(): void {
+    fontWaitingDue = false;
+    const n = fontWaiting.length;
+    // A text whose font is still missing is appended again (_waitForFont),
+    // which must not sweep the list under this loop.
+    measuringFontWaiting = true;
+    try {
+      for (let i = 0; i < n; i++) {
+        const t = fontWaiting[i]!;
+        const m = t._text!;
+        if (m.waiting !== true) {
+          continue; // measured meanwhile
+        }
+        // Off first, so a measure() now queues no `loaded` for it.
+        (t.lng as IRendererTextNode).off('loaded', fontWaitHeard);
+        m.waiting = false;
+        if (t.destroyed === true) {
+          continue;
+        }
+        const parent = t._parent;
+        if (
+          parent === undefined ||
+          t._detached === true ||
+          parent._requiresLayout !== true
+        ) {
+          m.w = NaN;
+          continue;
+        }
+        // Waits again (appended past n) while the font is still missing.
+        if (t._measureText() === true) {
+          enqueueLayout(parent);
+        }
+      }
+    } finally {
+      measuringFontWaiting = false;
+    }
+    // Keep the entries appended meanwhile, without allocating.
+    const length = fontWaiting.length;
+    for (let i = n; i < length; i++) {
+      fontWaiting[i - n] = fontWaiting[i]!;
+    }
+    fontWaiting.length = length - n;
+  }
+}
+
+/**
+ * The settings of an animation that has none (no `animationSettings` on the
+ * node or in Config): one object, so renderer v2's animateProp, which reuses
+ * its controller for the same settings object, retargets a running one
+ * rather than stopping it and making another per write. Nothing writes it.
+ */
+const NO_ANIMATION_SETTINGS: Readonly<AnimationSettings> = Object.freeze({});
+
+/** onAnimation.stopped for one write, after its duration and delay. */
+function fireAnimationStopped(
+  node: ElementNode,
+  stopped: AnimationEventHandler,
+  name: string,
+  value: number,
+): void {
+  stopped.call(node, name, value);
 }
 
 onFontLoaded(() => {
@@ -470,9 +485,8 @@ const EFFECT_SHADER_KEYS = [
 const parseAndAssignShaderProps = (
   prefix: string,
   obj: Record<string, unknown>,
-  props: Record<string, unknown> = {},
+  props: Record<string, unknown>,
 ) => {
-  if (!obj) return;
   // Parsed once per object (stylePlan.ts): `border` and `border-w`, ...
   const parse = shaderParse(prefix, obj);
   const keys = parse.keys;
@@ -938,11 +952,6 @@ const scratchVec: number[] = [0, 0, 0, 0];
 const scratchKeys: string[] = [];
 const scratchValues: unknown[] = [];
 
-/** replayGroup modes. */
-const INTO_BAG = 0;
-const INTO_PROPS = 1;
-const INTO_ANIMATION = 2;
-
 /**
  * Write a group's sub-props for the objects `groupParses[start..n)` (parsed,
  * in application order), starting from the node's base record (`base`) or,
@@ -956,8 +965,8 @@ const INTO_ANIMATION = 2;
  * renderer read an absent one as its default); from the held values, the
  * objects' keys alone.
  *
- * Into a renderer v2 shader's props (`INTO_PROPS`) or an animation target
- * (`INTO_ANIMATION`) with `info` the type's: every declared prop of the
+ * Into a renderer v2 shader's props or, `animated`, an animation target,
+ * with `info` the type's: every declared prop of the
  * group. A plain one takes the latest object naming it, else (from the
  * base) the base's value, else a fresh shader's; the colour of a group with
  * no object at all keeps its RGB at alpha 0 (a transition fades it out; the
@@ -978,7 +987,7 @@ function replayGroup(
   base: ShaderBase | undefined,
   start: number,
   n: number,
-  mode: number,
+  animated: boolean,
   fromHeld: boolean,
 ): boolean {
   let wrote = false;
@@ -1078,7 +1087,6 @@ function replayGroup(
     gi = info.groups[group.prefix] = { plain, vec4s };
   }
   const held = current!;
-  const animated = mode === INTO_ANIMATION;
   const raw = base !== undefined ? base.raw : undefined;
   // No object at all: none active, and none in the base (its prefix key).
   const noObject =
@@ -1278,9 +1286,7 @@ function writeShaderGroup(
         shader != null && !node.rendered
           ? (shader as unknown as Record<string, unknown>)
           : {};
-      if (
-        replayGroup(target, null, null, group, base, 0, n, INTO_BAG, fromHeld)
-      ) {
+      if (replayGroup(target, null, null, group, base, 0, n, false, fromHeld)) {
         node._writeShaderTarget(target);
       }
       return;
@@ -1301,7 +1307,7 @@ function writeShaderGroup(
       base,
       0,
       n > 0 ? 1 : 0,
-      INTO_BAG,
+      false,
       false,
     );
     node._writeShaderTarget(target);
@@ -1342,17 +1348,7 @@ function writeShaderGroup(
     // `true`, no settings: built and dropped, as before 1.7.)
     const target: Record<string, unknown> = {};
     if (
-      replayGroup(
-        target,
-        props,
-        info,
-        group,
-        base,
-        start,
-        n,
-        INTO_ANIMATION,
-        fromHeld,
-      )
+      replayGroup(target, props, info, group, base, start, n, true, fromHeld)
     ) {
       node._writeShaderTarget(target);
       if (settings !== true) {
@@ -1361,9 +1357,7 @@ function writeShaderGroup(
     }
     return;
   }
-  if (
-    replayGroup(props, props, info, group, base, start, n, INTO_PROPS, fromHeld)
-  ) {
+  if (replayGroup(props, props, info, group, base, start, n, false, fromHeld)) {
     node._writeShaderTarget(props);
   }
 }
@@ -1405,7 +1399,7 @@ function trackKeys(
 }
 
 /** The base value undo restores: theme[key], else style[key] (pinned). */
-function styleFallback(node: ElementNode, key: string, warn = true): unknown {
+function styleFallback(node: ElementNode, key: string): unknown {
   const theme = node._theme as Record<string, unknown> | undefined;
   let value = theme !== undefined ? theme[key] : undefined;
   if (value === undefined) {
@@ -1414,7 +1408,7 @@ function styleFallback(node: ElementNode, key: string, warn = true): unknown {
       value = style[key];
     }
   }
-  if (isDev && warn && value === undefined) {
+  if (isDev && value === undefined) {
     console.warn('fallback style key not found: ', key);
   }
   return value;
@@ -1434,7 +1428,6 @@ function resolveStateValue(
   key: string,
   states: States,
   order: DollarString[] | undefined,
-  warn = true,
 ): unknown {
   let best = -2;
   let plan: BlockPlan | undefined;
@@ -1457,7 +1450,7 @@ function resolveStateValue(
   }
   if (plan === undefined) {
     resolvedFromState = false;
-    return styleFallback(node, key, warn);
+    return styleFallback(node, key);
   }
   resolvedFromState = true;
   // A getter is read now, each time the state is applied (pinned).
@@ -2040,6 +2033,10 @@ export class ElementNode {
     this._flexY = undefined;
     this._flexW = undefined;
     this._flexH = undefined;
+    // Written by flexLayout when it resizes a container: here, so that
+    // write adds no field.
+    this.preFlexwidth = undefined;
+    this.preFlexheight = undefined;
     this._hasRenderedChildren = undefined;
     this._effects = undefined;
     this._fontFamily = undefined;
@@ -2259,7 +2256,14 @@ export class ElementNode {
       index = children.length;
       children.push(node as ElementNode);
     } else {
-      insertAt(children, index, node as ElementNode);
+      // Shifted up by hand: splice allocates, and a module helper with this
+      // one call site would be a closure per call under terser's defaults.
+      let i = children.length;
+      children.push(node as ElementNode);
+      for (; i > index; i--) {
+        children[i] = children[i - 1]!;
+      }
+      children[index] = node as ElementNode;
     }
 
     if (!drawn) {
@@ -2295,7 +2299,18 @@ export class ElementNode {
     const children = this.children;
     const index = lastIndexOf(children, node);
     if (index > -1) {
-      removeAt(children, index);
+      // Shifted down by hand: splice allocates the array of removed items,
+      // and a module helper with this one call site would be a closure per
+      // call under terser's defaults.
+      if (index === 0) {
+        children.shift();
+      } else {
+        const last = children.length - 1;
+        for (let i = index; i < last; i++) {
+          children[i] = children[i + 1]!;
+        }
+        children.pop();
+      }
       if (isElementNode(node)) {
         node._detached = true;
         if (node.onRemove) {
@@ -2377,7 +2392,7 @@ export class ElementNode {
     (this.lng as INode).animateProp(
       name,
       value,
-      animationSettings || this.animationSettings || {},
+      animationSettings || this.animationSettings || NO_ANIMATION_SETTINGS,
     );
     // A text's layout prop: its container follows the animated sizes.
     if (
@@ -2406,7 +2421,8 @@ export class ElementNode {
     }
     if (stopped) {
       const total = (settings?.duration ?? 0) + (settings?.delay ?? 0);
-      setTimeout(() => stopped.call(this, name, value), total);
+      // Its arguments through the timer, not a closure per write.
+      setTimeout(fireAnimationStopped, total, this, stopped, name, value);
     }
   }
 
@@ -2420,9 +2436,21 @@ export class ElementNode {
     }
     const controller = (this.lng as IRendererNode).animate(
       props,
-      animationSettings || this.animationSettings || {},
+      animationSettings || this.animationSettings || NO_ANIMATION_SETTINGS,
     );
-    if (this._type === NodeType.TextNode && animatesTextLayout(props)) {
+    // A prop the text's layout reads (inline: a module function with this
+    // one call site would be a closure per call under terser's defaults).
+    if (
+      this._type === NodeType.TextNode &&
+      ('fontSize' in props ||
+        'lineHeight' in props ||
+        'letterSpacing' in props ||
+        'maxWidth' in props ||
+        'maxHeight' in props ||
+        'maxLines' in props ||
+        'w' in props ||
+        'h' in props)
+    ) {
       // Started now or later, again or not at all: the text hears its
       // layouts from now on (`_listenTextLoaded`).
       this._textLayoutAnimated();
@@ -2695,6 +2723,15 @@ export class ElementNode {
       return;
     }
     m.listening = true;
+    this._hearTextLayouts();
+  }
+
+  /**
+   * @internal The listener `_listenTextLoaded` adds, once per text. A method
+   * of its own: an arrow's `this` is allocated in a context on every call of
+   * the method that holds it, and that one runs on every animated write.
+   */
+  _hearTextLayouts(): void {
     (this.lng as IRendererTextNode).on('loaded', () => {
       if (this._textSizeChanged() === true) {
         enqueueLayout(this._parent!);
@@ -2752,7 +2789,9 @@ export class ElementNode {
       // If onDestroy returns a promise, wait for it to resolve before destroying
       // Useful with animations waitUntilStopped method which returns promise
       if (destroyPromise instanceof Promise) {
-        void destroyPromise.then(() => this._destroy());
+        // Bound here, not an arrow: an arrow's `this` is allocated in a
+        // context on every destroy(), a promise or not.
+        void destroyPromise.then(this._destroy.bind(this));
       } else {
         this._destroy();
       }
@@ -3532,10 +3571,23 @@ export class ElementNode {
     this.onCreate?.(this);
     this.onRender?.(this);
 
-    if (node.onEvent) {
-      for (const [name, handler] of Object.entries(node.onEvent)) {
-        if (typeof node.lng.on === 'function') {
-          node.lng.on(name, (_inode, data) => handler.call(node, node, data));
+    const onEvent = node.onEvent;
+    if (onEvent) {
+      // for-in with an own-property test, as Object.entries (Chrome 54)
+      // reads it: the floor is Chrome 47.
+      for (const name in onEvent) {
+        if (
+          Object.prototype.hasOwnProperty.call(onEvent, name) &&
+          typeof node.lng.on === 'function'
+        ) {
+          const handler = onEvent[name as keyof OnEvent]!;
+          // The listener captures these block-scoped names, not render()'s
+          // `node`: a captured local is allocated in a context on every
+          // call, onEvent or not.
+          const target = node;
+          node.lng.on(name, (_inode, data) =>
+            handler.call(target, target, data),
+          );
         }
       }
     }
@@ -3610,29 +3662,6 @@ function lastIndexOf<T>(list: T[], item: T): number {
     i--;
   }
   return i === 0 ? -1 : i;
-}
-
-/** Removes `list[index]` without allocating (`splice` returns an array). */
-function removeAt<T>(list: T[], index: number): void {
-  if (index === 0) {
-    list.shift();
-    return;
-  }
-  const last = list.length - 1;
-  for (let i = index; i < last; i++) {
-    list[i] = list[i + 1]!;
-  }
-  list.pop();
-}
-
-/** Inserts `item` at `index` without allocating. */
-function insertAt<T>(list: T[], index: number, item: T): void {
-  let i = list.length;
-  list.push(item);
-  for (; i > index; i--) {
-    list[i] = list[i - 1]!;
-  }
-  list[index] = item;
 }
 
 /** The first rendered element in `children` from `from` on: the renderer sibling to draw before. */

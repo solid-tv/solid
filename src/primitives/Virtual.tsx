@@ -95,14 +95,6 @@ function createVirtual<T>(
   // (onLayout): the window shift lays the row out only if nothing else has.
   let layoutPending = false;
 
-  function normalizeDeltaForWindow(delta: number, windowLen: number): number {
-    if (!windowLen) return 0;
-    const half = windowLen / 2;
-    if (delta > half) return delta - windowLen;
-    if (delta < -half) return delta + windowLen;
-    return delta;
-  }
-
   function computeSize(selected: number = 0) {
     if (uniformSize() && cachedScaledSize) {
       return cachedScaledSize;
@@ -440,13 +432,6 @@ function createVirtual<T>(
   }
 
   let lastNavTime = 0;
-  function getAdaptiveDuration(duration: number = 250) {
-    const now = performance.now();
-    const delta = now - lastNavTime;
-    lastNavTime = now;
-    if (delta < duration) return delta;
-    return duration;
-  }
 
   let originalPosition: number | undefined;
 
@@ -490,7 +475,16 @@ function createVirtual<T>(
         (shiftSettings as Record<string, unknown>)[key] =
           settings[key as keyof lng.AnimationSettings];
       }
-      shiftSettings.duration = getAdaptiveDuration(settings?.duration);
+      // The time since the last shift, up to the row's duration (250 by
+      // default). Inline, as the wrap delta below: a helper with one call
+      // site would be a closure per press under terser's default
+      // reduce_funcs.
+      const now = performance.now();
+      const sinceLast = now - lastNavTime;
+      lastNavTime = now;
+      const settingsDuration = settings?.duration;
+      const duration = settingsDuration === undefined ? 250 : settingsDuration;
+      shiftSettings.duration = sinceLast < duration ? sinceLast : duration;
       shiftProps[axis] = targetPosition;
       cachedAnimationController = view
         .animate(shiftProps, shiftSettings)
@@ -523,7 +517,20 @@ function createVirtual<T>(
     const rawDelta = idx - (lastIdx ?? 0);
     const windowLen = elm?.children?.length ?? props.displaySize + bufferSize();
     const wrap = effectiveWrap();
-    const delta = wrap ? normalizeDeltaForWindow(rawDelta, windowLen) : rawDelta;
+    // With wrap, the shorter way round the window.
+    let delta = rawDelta;
+    if (wrap) {
+      if (!windowLen) {
+        delta = 0;
+      } else {
+        const half = windowLen / 2;
+        if (delta > half) {
+          delta -= windowLen;
+        } else if (delta < -half) {
+          delta += windowLen;
+        }
+      }
+    }
 
     const next = s.untrack(cursor) + delta;
     const c = wrap ? utils.mod(next, total) : utils.clamp(next, 0, total - 1);

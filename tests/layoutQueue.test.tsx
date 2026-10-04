@@ -370,6 +370,68 @@ describe('layout queue: more cases', () => {
     }
     dispose();
   });
+  it('an onLayout that throws leaves the containers queued after it to a later run that queues no layout', async () => {
+    const [more, setMore] = s.createSignal(false);
+    let throwOnce = false;
+    let added!: lng.ElementNode;
+    let last!: lng.ElementNode;
+    const dispose = renderer.render(() => (
+      <view display="flex">
+        <view
+          display="flex"
+          flexBoundary="fixed"
+          width={100}
+          height={50}
+          onLayout={() => {
+            if (throwOnce) {
+              throwOnce = false;
+              throw new Error('onLayout failed');
+            }
+          }}
+        >
+          <view width={10} height={10} />
+          <s.Show when={more()}>
+            <view width={10} height={10} />
+          </s.Show>
+        </view>
+        <s.Show when={more()}>
+          <view ref={added} width={30} height={50} />
+        </s.Show>
+        <view ref={last} width={50} height={50} />
+      </view>
+    ));
+    await settle();
+    expect(last.x).toBe(100);
+
+    const errors: unknown[] = [];
+    const saved = globalThis.queueMicrotask;
+    globalThis.queueMicrotask = (fn: () => void) =>
+      saved(() => {
+        try {
+          fn();
+        } catch (e) {
+          errors.push(e);
+        }
+      });
+    try {
+      // Both containers queued: the inner one runs first and throws.
+      throwOnce = true;
+      setMore(true);
+      await settle();
+      expect(errors).toHaveLength(1);
+      expect(last.x).toBe(100);
+
+      // A run for focus alone lays out what the first one left.
+      last.setFocus();
+      await settle();
+      expect(errors).toHaveLength(1);
+      expect(added.x).toBe(100);
+      expect(last.x).toBe(130);
+    } finally {
+      globalThis.queueMicrotask = saved;
+    }
+    dispose();
+  });
 });
 
 describe('post-mutation scheduling', () => {

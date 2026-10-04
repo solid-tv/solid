@@ -2,6 +2,7 @@ import * as v from 'vitest';
 import * as s from 'solid-js';
 import * as lng from '@solidtv/solid';
 import { renderer, waitForUpdate } from './setup.js';
+import States from '../src/core/states.ts';
 
 v.describe('State Specificity', () => {
   v.test('Applies states in the order defined by Config.stateOrder', async () => {
@@ -111,5 +112,54 @@ v.describe('State Specificity', () => {
 
     dispose();
     lng.Config.stateOrder = originalOrder;
+  });
+});
+
+v.describe('States copies a list by index', () => {
+  /** A list whose iterator throws: a spread of it fails. */
+  function noIterator<T extends string[]>(list: T): T {
+    Object.defineProperty(list, Symbol.iterator, {
+      value() {
+        throw new Error('iterated');
+      },
+    });
+    return list;
+  }
+
+  v.test('merge takes an array or another States (forwardStates) without iterating it, in place', () => {
+    const states = new States(() => {}, ['$a', '$b', '$c']);
+    const parent = noIterator(new States(() => {}, ['$x']));
+
+    v.expect(states.merge(parent)).toBe(states);
+    v.expect([...states]).toEqual(['$x']);
+
+    states.merge(noIterator(['$p', '$q'] as lng.DollarString[]));
+    v.expect([...states]).toEqual(['$p', '$q']);
+
+    // A self-merge clears the list, as in 1.6.
+    states.merge(states);
+    v.expect([...states]).toEqual([]);
+
+    states.merge('$s');
+    v.expect([...states]).toEqual(['$s']);
+
+    states.merge({ $t: true, $s: false });
+    v.expect([...states]).toEqual(['$t']);
+
+    states.merge([]);
+    v.expect(states.length).toBe(0);
+  });
+
+  v.test('the constructor takes an array without iterating it', () => {
+    const states = new States(
+      () => {},
+      noIterator(['$a', '$b'] as lng.DollarString[]),
+    );
+    v.expect(states).toBeInstanceOf(States);
+    v.expect([...states]).toEqual(['$a', '$b']);
+    v.expect(new States(() => {}, '$c').slice()).toEqual(['$c']);
+    v.expect(new States(() => {}, { $d: true, $e: false }).slice()).toEqual([
+      '$d',
+    ]);
   });
 });
