@@ -1,7 +1,7 @@
-// Phase 1 contract tests: Row and Column (navigation, wrap, plinko, selected,
+// Contract tests: Row and Column (navigation, wrap, plinko, selected,
 // skipFocus, scroll modes, centerScroll, onSelectedChanged, throttleInput).
 //
-// Pins today's behaviour (arm B) through the public surface only: keys go
+// Pins today's behaviour (1.6.4) through the public surface only: keys go
 // through the focus manager's real keydown listener, and assertions read the
 // focused element, `selected`, callback arguments and final x/y. Numbers are
 // what HEAD produces with fixed-size children; where today's behaviour looks

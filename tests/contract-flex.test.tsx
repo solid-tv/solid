@@ -1,5 +1,5 @@
 /**
- * Phase 1 contract tests: flex layout.
+ * Contract tests: flex layout.
  *
  * Part 1 runs ONE table of flex cases against BOTH engines by calling them
  * directly on ElementNode trees:
@@ -8,8 +8,8 @@
  *     `import.meta.env?.VITE_USE_NEW_FLEX` being truthy — note any non-empty
  *     string, including "false", selects it)
  * Where the engines differ today, a case carries `expectedNew` and a
- * `newDiffers` note. The rewrite keeps one engine; these cases show what each
- * one does.
+ * `newDiffers` note, so the cases show what each engine does and where they
+ * differ.
  *
  * Part 2 pins the end-to-end behaviour through JSX, the renderer and the
  * post-mutation layout queue, on whichever engine elementNode.ts selected.
@@ -57,7 +57,7 @@ interface FlexCase {
   expected: FlexResult;
   /** flexLayout.ts result, when it differs from flex.ts today. */
   expectedNew?: FlexResult;
-  /** Why the engines differ (listed in the Phase 1 report). */
+  /** Why the engines differ. */
   newDiffers?: string;
 }
 

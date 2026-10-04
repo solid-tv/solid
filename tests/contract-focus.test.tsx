@@ -1,5 +1,5 @@
-// Phase 1 contract: focus. Pins the behaviour of arm B (solid 1.6.4 + renderer
-// v2 lockstep) that apps depend on: activeElement, focusPath, setFocus(),
+// Contract tests: focus. Pins the behaviour of solid 1.6.4 (renderer 1.9)
+// that apps depend on: activeElement, focusPath, setFocus(),
 // forwardFocus, skipFocus, autofocus, the focus state, and the order in which
 // onFocus / onBlur / onFocusChanged fire. Behavioural only: handler call
 // order, return values and public props/state, never underscore fields.

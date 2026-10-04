@@ -1,6 +1,6 @@
-// Phase 1 contract tests: Styles (brief "Compatibility contract" -> "Styles").
+// Contract tests: Styles (`style`, combineStyles, transitions).
 //
-// These pin today's behaviour (arm B) through public node props, the public
+// These pin today's behaviour (1.6.4) through public node props, the public
 // `combineStyles` helper and, for transitions, calls to the public
 // `ElementNode.prototype.animate`. Where today's behaviour is odd it is pinned
 // anyway and the comment says so.

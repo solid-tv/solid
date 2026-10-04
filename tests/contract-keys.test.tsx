@@ -1,5 +1,5 @@
-// Phase 1 contract: key handling. Pins the behaviour of arm B (solid 1.6.4 +
-// renderer v2 lockstep): `this` binding, return values, capture → bubble →
+// Contract tests: key handling. Pins the behaviour of solid 1.6.4 (renderer
+// 1.9): `this` binding, return values, capture → bubble →
 // onKeyPress order and arguments, key releases, custom key-map names, hold,
 // and per-element throttleInput. Behavioural only: handler call order,
 // arguments and return values, never underscore fields.
@@ -578,13 +578,13 @@ v.describe('contract: hold', () => {
     },
   );
 
-  // CONTRACT GAP: the brief lists on<Name>Hold and the { userKeyHoldMap,
-  // holdThreshold } options as contract, but arm B (and arm A, 1.6.4) removed
-  // them in 1.5.1; useHold is the replacement. This is the pre-1.5.1
+  // CONTRACT GAP: on<Name>Hold and the { userKeyHoldMap, holdThreshold }
+  // options were part of the key contract until 1.5.1 removed them (1.6.4
+  // has neither); useHold is the replacement. This is the pre-1.5.1
   // behaviour (78f5fde^:src/core/focusManager.ts, handleKeyEvents): a
   // hold-mapped key-down is delayed; past holdThreshold on<Name>Hold fires and
   // on<Key> does not; a release before it fires on<Key> on key-up. Unskip,
-  // and delete the "not dispatched" test above, if the user restores it.
+  // and delete the "not dispatched" test above, if hold maps come back.
   v.it.skip(
     'on<Name>Hold fires once a key is held past holdThreshold; a quicker release is an on<Key> tap',
     async () => {

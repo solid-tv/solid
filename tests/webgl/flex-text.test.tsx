@@ -17,19 +17,18 @@
  * font size is 30 (Config.fontSettings). `settle()` waits until the
  * renderer has no scene update pending for two frames in a row.
  *
- * The numbers are the final positions and sizes on solid 1.6.4 with the
- * renderer v2 lockstep (arm B): "final positions after fonts load must match
- * arm B". They are not derived from a formula, they were read from arm B;
- * the comments show how they add up. Each one is compared with
+ * The numbers are the final positions and sizes, after fonts load, on
+ * solid 1.6.4 with SDF text on renderer 1.9. They are not derived from a
+ * formula, they were read from a run; the comments show how they add up.
+ * Each one is compared with
  * `expect.closeTo(n, 3)`, |actual - expected| < 0.0005: flex.ts sums child
  * sizes in Float32Arrays, so positions carry float32 rounding (109.70999908
- * for 109.71) while text sizes are float64. On main (solid 1.6.4 on
- * renderer 1.9, SDF text) every number is the same.
+ * for 109.71) while text sizes are float64.
  *
  * Only final states are asserted. Intermediate ones (a container before its
  * texts have sizes, the number of frames, `loaded` events and flex
- * passes) are printed with console.info for information: a rewrite may
- * change them. Add `--reporter=verbose` if the reporter hides them.
+ * passes) are printed with console.info for information: a change to
+ * Solid or the renderer may change them. Add `--reporter=verbose` if the reporter hides them.
  */
 import * as v from 'vitest';
 import * as s from 'solid-js';
@@ -572,18 +571,18 @@ v.test('nested flex containers with text', async () => {
 
 // Renderer 1.9 creates a text only for a family that is loaded or loading
 // (Stage.createTextNode throws "No compatible text renderer found" for any
-// other), where renderer v2 lets it wait for a family nothing has asked for
-// yet. So on main the load starts first, as an app's loadFonts call before
-// its first render, and the texts wait for it while it is in flight.
+// other), so the load starts first, as an app's loadFonts call before its
+// first render. The files are Lato's, already fetched, so the font may well
+// arrive before the first frame: only the layout after it is asserted.
 v.test(
-  'text rendered while its font loads lays out when the font arrives',
+  'text rendered after loadFonts() for its family lays out with that font',
   async () => {
     let row!: ElementNode;
     let home!: ElementNode;
     let movies!: ElementNode;
     let shows!: ElementNode;
 
-    // A family still loading: the texts wait for it.
+    // A family whose load has started but not finished.
     const fontLoaded = loadFonts([latoFont('LatoLate')]);
     const dispose = render(() => (
       <view ref={row} display="flex" gap={20} padding={10}>
@@ -600,7 +599,7 @@ v.test(
     ));
     await settle();
     info(
-      'before the font: row',
+      'first settle: row',
       [row.width, row.height],
       'texts',
       [home, movies, shows].map((t) => [t.x, t.width, t.height]),

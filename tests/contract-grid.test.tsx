@@ -1,7 +1,7 @@
-// Phase 1 contract tests: Grid (navigation, looping, selected, scroll,
+// Contract tests: Grid (navigation, looping, selected, scroll,
 // onSelectedChanged).
 //
-// Pins today's behaviour (arm B) through the public surface: keys go through
+// Pins today's behaviour (1.6.4) through the public surface: keys go through
 // the focus manager's real keydown listener; assertions read the focused
 // element, callback arguments and final x/y. Animations are off so y is final.
 import * as v from 'vitest';

@@ -1,8 +1,8 @@
-// Phase 1 contract tests: VirtualGrid (mounted rows per press, window shift,
+// Contract tests: VirtualGrid (mounted rows per press, window shift,
 // selected -> data index mapping, final y, onSelectedChanged, selected,
 // onEndReached, buffer/rows/columns).
 //
-// Pins today's behaviour (arm B) through the public surface: keys go through
+// Pins today's behaviour (1.6.4) through the public surface: keys go through
 // the focus manager's real keydown listener; assertions read the focused
 // element, `selected`, `cursor` (documented as the data index), the data
 // items of the mounted children, callback arguments and final y.
@@ -269,7 +269,7 @@ v.describe('VirtualGrid', () => {
           </VirtualGrid>
         </view>
       ));
-      // The brief describes VirtualGrid's callback as (idx, col, elm); today it
+      // VirtualGrid's callback is sometimes described as (idx, col, elm); it
       // gets four arguments like Row/Column.
       // Fires twice on mount: from the selected effect and from forwardFocus.
       v.expect(calls).toEqual([

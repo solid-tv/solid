@@ -1,7 +1,7 @@
-// Phase 1 contract tests: LazyRow and LazyColumn (upCount, sync, buffer,
+// Contract tests: LazyRow and LazyColumn (upCount, sync, buffer,
 // delay, eagerLoad; items mount progressively as you navigate).
 //
-// Pins today's behaviour (arm B) through the public surface: keys go through
+// Pins today's behaviour (1.6.4) through the public surface: keys go through
 // the focus manager's real keydown listener (so the handler runs inside the
 // focus manager's owner, as in an app); assertions read the mounted child
 // count, the focused element and final x/y. Animations are off.

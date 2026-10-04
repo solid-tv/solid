@@ -1,5 +1,5 @@
-// Phase 1 contract tests: "Types" in the 1.7 brief's Compatibility contract,
-// and the type-only half of "Exports".
+// Contract tests: the public types apps augment, and the type-only export
+// names of every entry point.
 //
 // Type-level only: never executed, not a vitest file. `pnpm tsc` checks it
 // through tests/tsconfig.contract.json. A failure here is a type error.
@@ -132,10 +132,10 @@ export function keyMapAugmentation() {
 // Every type-only export of each entry point today. Importing a name that is
 // gone is a type error. (Runtime names are pinned in publicApi.test.ts.)
 
-// @solidtv/solid: Solid's own types (82). On main (renderer 1.9) six of them,
-// the Shader*Props names and WebGlShader, are re-exported by
-// src/core/shaders.ts from @solidtv/renderer/webgl[/shaders]; on renderer v2
-// they come from the renderer's root (the next list).
+// @solidtv/solid: Solid's own types (82). Six of them, the Shader*Props
+// names and WebGlShader, are re-exported by src/core/shaders.ts from
+// @solidtv/renderer/webgl[/shaders] (the renderer's root does not export
+// them, so they are not in the next list).
 export type {
   AddColorString,
   AnimationEventHandler,
