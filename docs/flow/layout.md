@@ -43,7 +43,7 @@ const RowStyles = {
 </view>;
 ```
 
-When a `<view>` with `display: flex` contains text nodes as children, it automatically sets up a listener for the text to load, sets the width and height of the text elements, and then calls `updateLayout` on the container to recalculate the flex layout.
+When a `<view>` with `display: flex` contains text nodes as children, Solid measures each text with the renderer's `measure()` right after the change, before the next frame, and calls `updateLayout` on the container to recalculate the flex layout from the measured sizes. It does not wait for the text's `loaded` event. A text whose font is not loaded yet waits for the font, then lays out once. Change a text's props on the element (`fontSize`, `text`, a `transition`), not on its renderer node (`el.lng`): Solid is not told about writes made there, and the container keeps the old size.
 
 ### Flex Properties
 
@@ -114,7 +114,7 @@ Note: `alignItems` supports `flexStart`, `flexEnd`, and `center`, but requires t
 
 ## Layout Callbacks
 
-When a container with `display: flex` undergoes layout during initial rendering, `updateLayout` is called to calculate the flex layout. You can use `onLayout` hooks to update the element with after flex has performed it's calculations and all text nodes have been loaded.
+When a container with `display: flex` undergoes layout during initial rendering, `updateLayout` is called to calculate the flex layout. You can use `onLayout` hooks to update the element with after flex has performed it's calculations and its text has been measured.
 
 - **`onLayout`**: Use this callback to update the element after flex calculation.
 

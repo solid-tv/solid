@@ -10,9 +10,9 @@ says otherwise.
 > Checkpoint 1 on 2026-10-03 (decisions 5.1-5.6, the fixes B1-B21 and the demo
 > app's terser `reduce_funcs: false`), as implemented in the streams merged so
 > far: M (exports, renderer-break absorption), F (focus), P (primitives),
-> L (flex), N (nodes) and the renderer's R1, R2 and R4. The styles stream (S)
-> and the text-measurement stream (T) are not merged yet: their entries go
-> where the `<!-- S: pending -->` and `<!-- T: pending -->` markers are. The
+> L (flex), N (nodes), T (text measurement) and the renderer's R1, R2 and R4.
+> The styles stream (S) is not merged yet: its entries go where the
+> `<!-- S: pending -->` markers are. The
 > gains quoted are single 6x runs taken while other work ran (see
 > `docs/perf/log.md`); the Checkpoint 2 series replaces them.
 
@@ -143,13 +143,14 @@ not reflow its flex parent) changes nothing.
   - **Upgrade step:** optionally delete `VITE_USE_NEW_FLEX` from `.env`.
     `docs/flow/layout.md` describes the one engine.
 - **Flex runs on `loaded`, between the renderer's walks (design 3.4.4).**
-  - **What changes:** a text's or autosize node's `loaded` queues its parent's
+  - **What changes:** an autosize node's `loaded` queues its parent's
     layout for the post-mutation pass, run between the renderer's walks of the
     same frame, instead of laying it out synchronously inside the event; a
     `loaded` that leaves the size unchanged lays nothing out. An app
     `onEvent.loaded` handler on such a node now runs before the parent's
     relayout (it ran after). On the DOM renderer the relayout is one microtask
-    after the event.
+    after the event. A text in a layout container is no longer laid out from
+    its `loaded`: Solid measures it (the next entries).
   - **Gain:** flex passes per op 7.0 → 3.0 (text-details-panel), 42.0 → 32.0
     (text-flex-mount-same and -new); frames to the final layout unchanged
     (1.0).
@@ -177,12 +178,117 @@ not reflow its flex parent) changes nothing.
   - **Demo app:** none found (`src/pages/FlexGrow.tsx`'s grow items are plain
     views).
   - **Upgrade step:** none; do not count on two calls.
-- **2.2 Eager layout of flex text under culled ancestors (decision 5.2).**
-  Pending stream T: a flex container's text is laid out at mount even when an
-  ancestor is out of bounds or at alpha 0; visible results identical. The
-  text-measurement entries go here.
-
-<!-- T: pending -->
+- **Text in a layout container is sized by Solid, before the frame (design
+  3.4).**
+  - **What changes:** a `<text>` whose parent has `display="flex"` or an
+    `onLayout` is measured in Solid's post-mutation pass with the renderer's
+    `measure()`. The container's flex and `onLayout` run in that microtask,
+    before the frame, instead of between the frame's walks after `loaded`.
+    Positions on screen are the same, and they are now right in the first
+    frame that shows the change. A change that leaves a text's size unchanged
+    lays nothing out.
+    - **`loaded` for apps.** An `onEvent.loaded` on such a text still fires
+      once per layout, between the walks of the next frame, and now after the
+      container's relayout (an autosize node's handler still runs before it).
+      It fires for the layout `measure()` made, including the first one. On
+      the DOM renderer it fires for every new size, as before.
+    - **Animations keep 1.6's result.** A `transition` on a text's
+      `fontSize`, `lineHeight`, `width` or `height`, and `el.animate()` /
+      `chain()` of a text's layout props, still lay the container out on every
+      animated frame, as 1.6's `loaded` listener did, and the container ends
+      where the final size puts it. That includes a controller from
+      `el.animate()` that the app starts later, after the text laid out
+      again, or starts again after it finished. Animated frames walk twice, as
+      in 1.6. This is not a break.
+    - **Cost after an animation.** A text Solid has animated keeps one
+      `loaded` listener for the rest of its life. Its later changes that Solid
+      measures still cost one walk. But because the text has a listener,
+      renderer v2 allocates the `{ type, dimensions }` payload for each of its
+      later layouts: 2 objects per text change. In production WebGL builds,
+      texts without such an animation allocate nothing; development builds
+      carry a warning listener on every measured text, and the DOM renderer a
+      `loaded` listener on every measured text, so there `loaded` is queued
+      for each layout. The 2-object payload is an accepted exception to the
+      allocation rule: it is rare, since only texts animated through the
+      element are affected.
+    - **Writes that bypass Solid.** Layout props written, or animated, on the
+      renderer node itself (`el.lng.text = …`, `el.lng.fontSize = …`,
+      `el.lng.animate({ fontSize })`) no longer relayout the container. The
+      walk lays the text out again, but Solid is not told. Development builds
+      warn: "A text in a flex container was laid out at a size Solid did not
+      measure: a prop its layout reads was written, or animated, on its
+      renderer node (el.lng)…". This was already true for non-text props on
+      `el.lng`. Exceptions: a text Solid has animated through the element (it
+      keeps its listener for its lifetime), and every measured text on the
+      DOM renderer. On these, `el.lng.*` writes do relayout the container, as
+      in 1.6, and no warning is given.
+  - **Gain:** walks per drawn frame 2.00 → 1.00 (text-details-panel,
+    text-flex-mount-same and -new) and 1.03 → 1.00 (text-virtual-row); text
+    `loaded` events heard 5 → 0, 20 → 0 and 1.9 → 0; flex passes (C before →
+    after) 32.0 → 21.0 (both mounts), 2.3 → 1.9 (virtual-row), 3.0 → 3.0
+    (details panel; arm B 7.0); frames to the final layout 1.0 → 0.0 (mounts,
+    virtual-row: the layout is done in the microtask, before the first
+    frame); framework KiB per op 27.30 → 20.39 (mount-same), 27.02 → 20.56
+    (mount-new), 2.74 → 2.50 (details panel), the per-text `_layoutOnLoad`
+    closures gone. page-mount and page-swap are unchanged: their texts sit in
+    plain views. Time is rough, from a run under heavy load: C/B 1.14 → 0.98
+    (details panel), 0.81 → 0.65 (mount-new).
+  - **Demo app:** none found. There is no text `loaded` handler, no
+    `el.lng.<text prop>` write, and no `el.lng` animation of a text in
+    `solid-demo-app-1.7/src`. Solid's own `primitives/Marquee.tsx` (the demo's
+    `components/ContentBlock.tsx` uses it) has an `onEvent.loaded` on a text
+    in an `onLayout` view; it keeps working on both renderers, because the
+    listener hears `measure()`'s layout and every later size.
+  - **Upgrade step:** write or animate text props on the element
+    (`el.fontSize`, a `transition`, `el.animate()`), not on `el.lng`.
+- **2.2 Eager layout of text under hidden or out-of-bounds ancestors (decision
+  5.2).**
+  - **What changes:** text in a layout container is measured at mount and on
+    every change, even when an ancestor has alpha 0 or is outside the bounds
+    margin. Such containers have their final size before they are shown, and
+    showing them costs one walk. Before 1.7 they stayed unlaid until visited.
+    - **Fonts.** A text whose font is not loaded waits, then lays out once. If
+      the font comes through `loadFonts()`, text under culled ancestors is
+      laid out when the font loads. A font loaded with `renderer.loadFont()`
+      directly still lays out culled text only when it is shown, as in 1.6.
+    - **Cost.** One text layout per such text, plus pressure on the
+      renderer's text layout cache (`textLayoutCacheSize`, 250 entries by
+      default): a page whose texts in layout containers outnumber the cache
+      thrashes it. Whether to change the size is an open decision, measured
+      in `docs/perf/log.md` (stream T, open item).
+  - **Gain:** none; this is the cost decision 5.2 accepted. text-flex-mount-new
+    and -same make 40 text layouts per op instead of 20 (the 20 culled tiles'
+    texts are laid out at mount, all cache misses in -new); text-flex-mount-new
+    renderer allocation 49.78 → 131.95 KiB/op, a noisy figure (145.01 on an
+    earlier base).
+  - **Demo app:**
+    - `pages/LeftNavWrapper.tsx:116-133`, the debug widget column with
+      `hidden={!showWidgets()}`: its `lastKey()` text is measured on every key
+      while hidden. That is a cache hit after the first time.
+    - `index.tsx:236`, `KeepAliveRoute` browse: flex texts on the kept-alive
+      page are measured while it is hidden.
+    - `components/NavDrawer/NavDrawer.tsx`: NavButton texts at alpha 0 are not
+      in a layout container, so nothing changes there.
+  - **Upgrade step:** none.
+- **DOM renderer: `measure()` and `destroyed`.**
+  - **What changes:**
+    - `DOMText.measure()` sizes a text synchronously with
+      `getBoundingClientRect`, while `document.fonts.check` reports its font
+      loaded. A text in a flex container on the DOM renderer is laid out in
+      the post-mutation microtask, not after the DOM renderer's timer or
+      `fonts.ready`.
+    - A web font that loads after its text was measured (the check is true
+      for a family no font face names yet, so the text took the fallback
+      font's size) still relays out the container when the DOM renderer
+      measures again, as in 1.6.
+    - `loaded` on a DOM text fires whenever its size differs from the last one
+      it told; a `contain` change re-measures a flex text.
+    - `el.destroyed` on the DOM renderer now returns a boolean; it was
+      `undefined`. As in renderer v2, it is true for a destroyed node and for
+      every node under it.
+  - **Gain:** none; the DOM renderer is not the performance target. Each
+    measured text costs a synchronous `getBoundingClientRect` (a reflow).
+  - **Demo app:** none. **Upgrade step:** none.
 
 ### Primitives
 
@@ -214,11 +320,13 @@ not reflow its flex parent) changes nothing.
     `Preserve`/`KeepAlive` root finishing its load and resizing that flex
     root; also a texture or text loading on an element an app removed
     itself), its old parent's flex layout and `onLayout` ran. Now the old
-    parent is not queued. Its layout result is the same, since the removed
-    element is no longer among its children; only its `onLayout` (and what
-    chains from it, such as a Row's scroll or a Marquee's clip width) runs
-    less often. A removed element still keeps its `parent`, and keys and
-    events from a removed subtree still bubble through it, as in 1.6.
+    parent is not queued, and a removed `<text>` is out of the tree for
+    measuring too: a change to it does not lay out its old parent. Its layout
+    result is the same, since the removed element is no longer among its
+    children; only its `onLayout` (and what chains from it, such as a Row's
+    scroll or a Marquee's clip width) runs less often. A removed element still
+    keeps its `parent`, and keys and events from a removed subtree still
+    bubble through it, as in 1.6.
   - **Demo app:** none found (`onLayout` users lay out live children).
   - **Upgrade step:** none.
 - **Prop accessors and `TextNode` fields (design 3.6.5, 3.6.6): no
@@ -257,8 +365,8 @@ not reflow its flex parent) changes nothing.
 - **Renderer API additions: `TextNode.measure()`, a text-keyed layout cache,
   `Node.insertBefore` (R1, R2, R4).** None of them changes what an app does.
   - `TextNode.measure()` (R1) lays a text out before the walk and returns
-    `false` until the font's description has arrived. Solid uses it in stream
-    T (pending).
+    `false` until the font's description has arrived. Solid uses it to size a
+    text in a layout container (Layout and flex, above).
   - The text-keyed `LayoutCache` (R2) changes only speed: widths and lines are
     bit-identical (a layout hit 0.386-0.427 µs / 845 B → 0.016-0.017 µs / 0 B
     for a title; description 0.767-0.833 µs / 1121 B → 0.016-0.018 µs / 0 B).
