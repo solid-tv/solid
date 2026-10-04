@@ -344,3 +344,187 @@ Arm C ran on renderer `faf4b9f` (arm B's renderer) for these entries.
   2026-10-03 baseline.
 - Kept. Earlier by-owner B splits from worktree runs (framework 0.00,
   renderer 0.00) are not valid; re-measure them in the Checkpoint 2 series.
+
+### 2026-10-03: Stream T (flex text measured with `TextNode.measure()`)
+
+Arm C ran on renderer `renderer-v2-solid` as linked (R1 and R2 merged). "C
+before → after" is the worktree at `6552a03` (post-N) and at the T commit.
+Runs `bench-T-before` and `bench-T-after`: arms B,C, count, alloc and time, 1
+run at 6x. The after run ran under heavier load than the before run (arm B
+itself was 2-4x slower), so only C/B within one run says anything about time.
+
+- **T1, Solid measures flex text with `TextNode.measure()` before the frame
+  (`bcf31d2`).**
+  - What changed:
+    - A `<text>` whose parent lays out (`display="flex"` or an `onLayout`)
+      is measured in the post-mutation pass, before the parent's flex and
+      before the frame. No persistent `loaded` listener; the parent is queued
+      only when the measured size changed.
+    - Texts that flex sized (`flexGrow`, `flexShrink`, `minWidth`) are
+      measured again after each sweep, capped at 16 sweeps.
+    - A text whose font is missing waits on one shared listener and on
+      `loadFonts()`'s promise, then lays out once.
+    - Text under culled or alpha-0 ancestors is laid out at mount (decision
+      5.2).
+    - Per-text state is one `TextMeasure` record, made when a text is first
+      queued or measured.
+  - Scenarios: text-details-panel, text-flex-mount-same, text-flex-mount-new,
+    text-virtual-row, page-mount, page-swap.
+  - Count mode, per op, C before → after (arm B in brackets):
+
+    | scenario             | flex passes        | walks / drawn frame | `loaded` text emitted / heard | text layout calls | layout cache hit rate | frames to final layout | node writes\*      |
+    | -------------------- | ------------------ | ------------------- | ----------------------------- | ----------------- | --------------------- | ---------------------- | ------------------ |
+    | text-details-panel   | 3.0 → 3.0 [7.0]    | 2.00 → 1.00 [2.00]  | 5/5 → 0/0 [5/5]               | 7.0 → 7.0         | 1.00 → 1.00           | 1.0 → 1.0              | 10.0 → 15.0 [54.4] |
+    | text-flex-mount-same | 32.0 → 21.0 [42.0] | 2.00 → 1.00         | 20/20 → 0/0                   | 20 → 40           | 1.00 → 1.00           | 1.0 → 0.0              | 21.0 → 82.0 [91.0] |
+    | text-flex-mount-new  | 32.0 → 21.0 [42.0] | 2.00 → 1.00         | 20/20 → 0/0                   | 20 → 40           | 0.00 → 0.00           | 1.0 → 0.0              | 21.0 → 82.0 [91.0] |
+    | text-virtual-row     | 2.3 → 1.9 [4.2]    | 1.03 → 1.00 [1.03]  | 1.9/1.9 → 0/0                 | 1.9 → 1.9         | 1.00 → 1.00           | 1.0 → 0.0              | 14.7 → 15.5 [29.7] |
+    | page-mount           | 4.0 → 4.0          | 1.00 → 1.00         | 0/0 → 0/0                     | 31.5 → 31.5       | 1.00 → 1.00           | 1.0 → 1.0              | 74.0 → 74.0        |
+    | page-swap            | 8.0 → 8.0          | 1.00 → 1.00         | 0/0 → 0/0                     | 63.0 → 63.0       | 1.00 → 1.00           | 1.0 → 1.0              | 149.0 → 149.0      |
+    - Targets: walks 1, `loaded` heard 0, flex passes 21 for a mount and 3 for
+      the details panel (target 4): met.
+    - Text layouts double in the mounts (20 → 40): the 20 culled tiles' texts
+      are now laid out at mount (5.2), all cache misses in -new.
+    - Frames to final layout 0.0: the final layout is in place before the
+      op's first frame, computed in the microtask.
+    - \*Node writes rose because they are now all counted, not because more
+      are made. The probe skips writes made with renderer code on the stack,
+      and before T1 the flex that a `loaded` triggered ran inside the frame
+      (stream L's footnote). Arm B shows the same from the other side: 91
+      writes, 70 of them in frames. Details panel: 15.0 is L1's comparable
+      figure.
+    - page-mount and page-swap do not exercise the change: their tile texts
+      sit in plain views, so Solid measures none of the 287 texts.
+
+  - Allocation, KiB/op, C before → after:
+
+    | scenario             | total           | framework       | renderer        | user            |
+    | -------------------- | --------------- | --------------- | --------------- | --------------- |
+    | text-details-panel   | 8.35 → 8.57     | 2.74 → 2.50     | 3.69 → 4.12     | 0 → 0           |
+    | text-flex-mount-same | 77.97 → 69.21   | 27.30 → 20.39   | 15.44 → 13.26   | 17.33 → 17.64   |
+    | text-flex-mount-new  | 112.05 → 188.07 | 27.02 → 20.56   | 49.78 → 131.95  | 17.33 → 17.64   |
+    | text-virtual-row     | 27.92 → 31.41   | 3.74 → 3.37     | 21.57 → 25.43   | 0 → 0           |
+    | page-mount           | 339.07 → 319.46 | 103.04 → 101.89 | 98.38 → 78.79   | 71.73 → 72.76   |
+    | page-swap            | 670.63 → 672.42 | 197.18 → 197.51 | 201.21 → 200.26 | 141.11 → 143.29 |
+    - Framework: the per-text `_layoutOnLoad` closures are gone, -6.9 KiB/op
+      on each mount, and the `_layoutOnLoad` site (7,040 B/op) left the top 5.
+    - text-flex-mount-new renderer is up because the culled tiles' texts are
+      laid out at mount, every one a miss (5.2). The figure is noisy: the same
+      code measured 145.01 KiB at `969b7d8` and 49.78 at `6552a03`. The other
+      renderer movements are sampling noise at 1 run; in the details panel
+      the top renderer sites are the walk's `emit` and the visit's transform
+      IIFE, not text.
+
+  - Time, ms per op, B / C: rough.
+
+    | scenario             | C/B before | C/B after | before B / C   | after B / C     |
+    | -------------------- | ---------- | --------- | -------------- | --------------- |
+    | text-details-panel   | 1.14       | 0.98      | 0.248 / 0.283  | 1.116 / 1.095   |
+    | text-flex-mount-new  | 0.81       | 0.65      | 1.797 / 1.456  | 3.448 / 2.250   |
+    | text-flex-mount-same | 0.88       | 0.80      | 0.778 / 0.688  | 1.870 / 1.492   |
+    | text-virtual-row     | 0.90       | 0.74      | 0.432 / 0.387  | 1.172 / 0.870   |
+    | page-mount           | 1.06       | 0.94      | 5.032 / 5.341  | 7.248 / 6.808   |
+    | page-swap            | 0.93       | 0.86      | 10.056 / 9.340 | 12.118 / 10.455 |
+    - text-details-panel's frame part went from C/B 0.80 to 0.32: the second
+      walk is gone. The tail grew, because the measure moved into the
+      microtask.
+
+  - **Kept.**
+
+- **T1 variant, dropped: measurement state in four `ElementNode` fields.**
+  - V8 boxes double fields at construction, about 32 B on every node and every
+    view. page-mount framework + user +9.4 KiB/op, page-swap +23.4 KiB/op
+    (`bench-T-after-fields-partial`): framework 108.12 and user 76.04, and
+    211.74 and 149.97, against 101.89 and 197.51 with the record.
+  - Replaced by the per-text `TextMeasure` record before the commit.
+- **T1 fix round 1 (`f2c8bf8`, `f298320`, `9d8716a`).**
+  - What changed:
+    - DOM `loaded` against the last size told.
+    - A text's layout transition or `animate()` relays out its container
+      (1.6's result), through one shared listener.
+    - Queue throw-safety; dropping the remaining texts at the sweep cap (it
+      had started over in a microtask loop that hung the page).
+    - `contain` marks a text dirty.
+    - A DOM late re-measure listener; a sweep of the font-waiting list.
+  - Scenarios: the six above, arm C, count and alloc (`bench-T-fix1`).
+  - Counts identical to `bcf31d2`: flex passes 3.0 / 21.0 / 21.0 / 1.9 / 4.0 /
+    8.0, walks 1.00 everywhere, `loaded` 0 / 0, text layouts 7 / 40 / 40 / 1.9
+    / 31.5 / 63. Framework KiB/op 2.49 / 21.09 / 20.55 / 3.37 / 102.92 /
+    196.05 (details panel, mount-same, mount-new, virtual-row, page-mount,
+    page-swap), within noise of `bcf31d2`. No scenario animates a text's
+    layout props, so the new path costs nothing here.
+  - Deferred to the renderer: two `loaded` events for one text, the first
+    with stale dimensions, when it is measured in two post-mutation runs
+    before one frame (renderer proposal P5).
+  - **Kept.**
+- **T1 fix round 2 (`f51c63c`, `44a15a3`).**
+  - What changed: no sweep of the font-waiting list while it is being
+    measured; a text Solid animated through the element keeps one `loaded`
+    listener for its lifetime (the module list and the controller tracking
+    are gone); DOM `destroyed` is true for the descendants of a destroyed
+    node.
+  - Scenarios: the six above, arm C, count mode (`bench-T-fix2`). Counts
+    unchanged from round 1; no scenario animates a text's layout props.
+  - Accepted allocation: because of that listener, renderer v2's
+    `TextNodes.lay()` allocates the `loaded` payload (2 objects) on each later
+    layout of such a text. That is per text change, with no extra walk, and
+    only for texts animated through the element. Production WebGL builds do
+    not allocate it for any other text; development builds, which carry a
+    warning listener on every measured text, and the DOM renderer, which
+    carries a `loaded` listener on every measured text, queue `loaded` for
+    each layout.
+  - **Kept.**
+- **T1 fix round 3 (`5a47510`).** Tests only: the font-waiting cases moved to
+  `tests/fontWaiting.test.ts`, each in a fresh module instance. No measured
+  change.
+
+#### Open item: layout cache size (`textLayoutCacheSize`), for the user
+
+Eager measuring (5.2) is kept. The default (250) is unchanged in code and in
+the docs; nothing here sets a new value.
+
+- **Experiment, not committed.** `PageTile`'s view gets a no-op `onLayout`, so
+  every tile text (title and meta) is measured: 283 texts per page. Count
+  mode, 1 run at 6x. Arm B, which has no eager measuring, makes 31.5
+  (page-mount) and 63.0 (page-swap) text layouts per op at hit rate 1.00 and
+  0.270 / 0.266 ms per op. Arm C makes 141.5 and 283.0 layouts per op, the
+  approved cost of 5.2, at:
+
+  | `textLayoutCacheSize` | run                                    | page-mount hit rate | page-swap hit rate | page-mount layout ms/op | page-swap layout ms/op |
+  | --------------------- | -------------------------------------- | ------------------- | ------------------ | ----------------------- | ---------------------- |
+  | 250 (default)         | `bench-T-pagetiles-measured`           | 0.00                | 0.01               | 2.350                   | 5.043                  |
+  | 512                   | `bench-T-pagetiles-measured-cache512`  | 1.00                | 0.01               | 0.266                   | 5.131                  |
+  | 1024                  | `bench-T-pagetiles-measured-cache1024` | 1.00                | 1.00               | 0.134                   | 0.217                  |
+
+  Layout ms are from the count build, which is instrumented.
+
+- **Why.** A page measures 283 strings, more than 250. An LRU scanned in a
+  cycle longer than its size never hits, whatever its size. At 512 one page
+  fits, so remounting the same page hits, but swapping between two pages
+  cycles 566 distinct strings and thrashes as at 250. At 1024 both fit. A
+  cache helps an app that cycles between screens only when it holds every
+  string of the screens it cycles through.
+- **Memory for a full cache**, estimated from
+  `docs/perf/text-flex-alternatives.md` (about 1.5 kB per title layout and
+  about 12.6 kB per description layout; not measured in this stream):
+
+  | entries | all title-like (about 1.5 kB) | all description-like (about 12.6 kB) |
+  | ------- | ----------------------------- | ------------------------------------ |
+  | 250     | 0.37 MB                       | 3.1 MB                               |
+  | 512     | 0.75 MB                       | 6.3 MB                               |
+  | 1024    | 1.5 MB                        | 12.6 MB                              |
+
+  The bench pages' texts are all title-like (titles and one-line meta), so
+  283 entries are about 0.42 MB. A details page adds a few descriptions, about
+  12.6 kB each.
+
+- **Options raised, none taken.**
+  - Raise the size when the app sets none. Solid could do it in
+    `createRenderer` (`lightningInit.ts`) with no renderer change, or the
+    renderer's default could change.
+  - Measure only texts whose layout container is visible or in the margin.
+    This needs a visibility read from the renderer, gives back part of 5.2
+    (including the fix for a container whose visibility depends on its own
+    text, `docs/perf/text-flex-alternatives.md` section 1.3), and keeps the
+    second walk on scroll.
+  - Renderer proposal P6: size the cache in bytes, or make it scan-resistant.
+- Numbers are desktop Node/V8, from single runs; TV hardware was not measured.
