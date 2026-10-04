@@ -277,10 +277,12 @@ v.describe('shader-prop writes', () => {
   );
 
   v.it(
-    'a sub-prop that border and a border side both set is always written, as before',
+    'a sub-prop two border objects name takes the later one in the replay order (border, then the sides)',
     () => {
-      // border-color is written by `border` and by `borderTop`: diffing it
-      // against one accessor's previous object alone would skip this write.
+      // Fix round 4: the border objects are replayed in the style's key
+      // order (then `border`, `borderTop`, ...), not in the order they were
+      // written, so border-color comes from `borderTop` while it names one
+      // (a write that drops it goes back to `border`'s, B18).
       const { node, dispose } = mount({
         width: 100,
         height: 100,
@@ -288,8 +290,12 @@ v.describe('shader-prop writes', () => {
       });
       node.borderTop = { width: 4, color: GREEN };
       v.expect(shaderProps(node)['border-color']).toBe(GREEN);
-      node.border = { width: 3, color: RED };
+      node.borderTop = { width: 4 };
       v.expect(shaderProps(node)['border-color']).toBe(RED);
+      node.border = { width: 3, color: BLUE };
+      v.expect(shaderProps(node)['border-color']).toBe(BLUE);
+      v.expect(shaderProps(node)['border-w']).toBe(3);
+      v.expect(shaderProps(node)['border-top']).toBe(4);
       dispose();
     },
   );
