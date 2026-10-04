@@ -1314,6 +1314,42 @@ v.test(
   },
 );
 
+// Post-round-5 fix 2, B: a state change nested in a state key's setter keeps
+// the outer change's group mask.
+v.test(
+  'RE1: a state key setter that adds another state mid-change does not lose the border written before it',
+  async () => {
+    const { changed, never, dispose } = await pair({
+      width: 100,
+      height: 100,
+      border: { width: 2, color: RED },
+      $focus: {
+        border: { width: 4, color: BLUE },
+        myKick: 1,
+      } as NodeStyles['$focus'],
+      $active: { alpha: 0.9 },
+    });
+    let kicked = false;
+    Object.defineProperty(changed, 'myKick', {
+      configurable: true,
+      get: () => undefined,
+      set(v: unknown) {
+        if (v === 1 && !kicked) {
+          kicked = true;
+          changed.states.add('$active');
+        }
+      },
+    });
+    changed.states.add('$focus');
+    never.states.add('$active');
+    never.states.add('$focus');
+    v.expect([...changed.states]).toEqual(['$focus', '$active']);
+    v.expect(borderOf(changed)).toEqual([BLUE, [4, 4, 4, 4]]);
+    v.expect(declaredProps(changed)).toEqual(declaredProps(never));
+    dispose();
+  },
+);
+
 v.test(
   'a style listing a side before border: focus and blur agree with a never-focused node',
   async () => {

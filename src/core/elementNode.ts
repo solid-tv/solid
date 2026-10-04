@@ -2510,11 +2510,15 @@ export class ElementNode {
    * element of every focus change) nor the loops hold one.
    */
   _applyStates(n: number) {
+    // Re-entrant when a setter changes this node's states: the nested
+    // change keeps a mask of its own and gives the outer one back.
+    const outer = this._shaderMask;
     this._shaderMask = 0;
     try {
       this._writeStates(n);
     } finally {
       const mask = this._shaderMask;
+      this._shaderMask = outer;
       if (mask !== 0) {
         this._writeShaderGroups(mask);
       }
