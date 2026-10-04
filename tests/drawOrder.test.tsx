@@ -7,6 +7,7 @@
 import * as v from 'vitest';
 import * as s from 'solid-js';
 import { ElementNode, TextNode } from '@solidtv/solid';
+import { scrollRow } from '@solidtv/solid/primitives';
 import nodeOpts from '../src/solidOpts.js';
 import { renderer } from './setup.js';
 
@@ -328,4 +329,24 @@ v.describe('child list', () => {
       dispose();
     },
   );
+
+  // A Row that is itself a removed root, with focus still in it, takes its
+  // first scroll: its parent is gone (removeChild clears it).
+  v.test('a removed Row scrolls without its parent', () => {
+    let host!: ElementNode;
+    let row!: ElementNode;
+    const dispose = renderer.render(() => (
+      <view ref={host} width={1920} height={300}>
+        <view ref={row} display="flex" width={1920} height={100}>
+          <view width={500} height={100} />
+          <view width={500} height={100} />
+          <view width={500} height={100} />
+        </view>
+      </view>
+    ));
+    host.removeChild(row);
+    v.expect(row.parent).toBeUndefined();
+    v.expect(() => scrollRow(1, row, undefined, 0)).not.toThrow();
+    dispose();
+  });
 });
