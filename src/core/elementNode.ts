@@ -485,9 +485,8 @@ const EFFECT_SHADER_KEYS = [
 const parseAndAssignShaderProps = (
   prefix: string,
   obj: Record<string, unknown>,
-  props: Record<string, unknown> = {},
+  props: Record<string, unknown>,
 ) => {
-  if (!obj) return;
   // Parsed once per object (stylePlan.ts): `border` and `border-w`, ...
   const parse = shaderParse(prefix, obj);
   const keys = parse.keys;
@@ -953,11 +952,6 @@ const scratchVec: number[] = [0, 0, 0, 0];
 const scratchKeys: string[] = [];
 const scratchValues: unknown[] = [];
 
-/** replayGroup modes. */
-const INTO_BAG = 0;
-const INTO_PROPS = 1;
-const INTO_ANIMATION = 2;
-
 /**
  * Write a group's sub-props for the objects `groupParses[start..n)` (parsed,
  * in application order), starting from the node's base record (`base`) or,
@@ -971,8 +965,8 @@ const INTO_ANIMATION = 2;
  * renderer read an absent one as its default); from the held values, the
  * objects' keys alone.
  *
- * Into a renderer v2 shader's props (`INTO_PROPS`) or an animation target
- * (`INTO_ANIMATION`) with `info` the type's: every declared prop of the
+ * Into a renderer v2 shader's props or, `animated`, an animation target,
+ * with `info` the type's: every declared prop of the
  * group. A plain one takes the latest object naming it, else (from the
  * base) the base's value, else a fresh shader's; the colour of a group with
  * no object at all keeps its RGB at alpha 0 (a transition fades it out; the
@@ -993,7 +987,7 @@ function replayGroup(
   base: ShaderBase | undefined,
   start: number,
   n: number,
-  mode: number,
+  animated: boolean,
   fromHeld: boolean,
 ): boolean {
   let wrote = false;
@@ -1093,7 +1087,6 @@ function replayGroup(
     gi = info.groups[group.prefix] = { plain, vec4s };
   }
   const held = current!;
-  const animated = mode === INTO_ANIMATION;
   const raw = base !== undefined ? base.raw : undefined;
   // No object at all: none active, and none in the base (its prefix key).
   const noObject =
@@ -1293,9 +1286,7 @@ function writeShaderGroup(
         shader != null && !node.rendered
           ? (shader as unknown as Record<string, unknown>)
           : {};
-      if (
-        replayGroup(target, null, null, group, base, 0, n, INTO_BAG, fromHeld)
-      ) {
+      if (replayGroup(target, null, null, group, base, 0, n, false, fromHeld)) {
         node._writeShaderTarget(target);
       }
       return;
@@ -1316,7 +1307,7 @@ function writeShaderGroup(
       base,
       0,
       n > 0 ? 1 : 0,
-      INTO_BAG,
+      false,
       false,
     );
     node._writeShaderTarget(target);
@@ -1357,17 +1348,7 @@ function writeShaderGroup(
     // `true`, no settings: built and dropped, as before 1.7.)
     const target: Record<string, unknown> = {};
     if (
-      replayGroup(
-        target,
-        props,
-        info,
-        group,
-        base,
-        start,
-        n,
-        INTO_ANIMATION,
-        fromHeld,
-      )
+      replayGroup(target, props, info, group, base, start, n, true, fromHeld)
     ) {
       node._writeShaderTarget(target);
       if (settings !== true) {
@@ -1376,9 +1357,7 @@ function writeShaderGroup(
     }
     return;
   }
-  if (
-    replayGroup(props, props, info, group, base, start, n, INTO_PROPS, fromHeld)
-  ) {
+  if (replayGroup(props, props, info, group, base, start, n, false, fromHeld)) {
     node._writeShaderTarget(props);
   }
 }
@@ -1420,7 +1399,7 @@ function trackKeys(
 }
 
 /** The base value undo restores: theme[key], else style[key] (pinned). */
-function styleFallback(node: ElementNode, key: string, warn = true): unknown {
+function styleFallback(node: ElementNode, key: string): unknown {
   const theme = node._theme as Record<string, unknown> | undefined;
   let value = theme !== undefined ? theme[key] : undefined;
   if (value === undefined) {
@@ -1429,7 +1408,7 @@ function styleFallback(node: ElementNode, key: string, warn = true): unknown {
       value = style[key];
     }
   }
-  if (isDev && warn && value === undefined) {
+  if (isDev && value === undefined) {
     console.warn('fallback style key not found: ', key);
   }
   return value;
@@ -1449,7 +1428,6 @@ function resolveStateValue(
   key: string,
   states: States,
   order: DollarString[] | undefined,
-  warn = true,
 ): unknown {
   let best = -2;
   let plan: BlockPlan | undefined;
@@ -1472,7 +1450,7 @@ function resolveStateValue(
   }
   if (plan === undefined) {
     resolvedFromState = false;
-    return styleFallback(node, key, warn);
+    return styleFallback(node, key);
   }
   resolvedFromState = true;
   // A getter is read now, each time the state is applied (pinned).
