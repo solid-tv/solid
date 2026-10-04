@@ -7,7 +7,8 @@
  *   pnpm test:webgl
  */
 import * as v from 'vitest';
-import type { ElementNode, NodeStyles } from '@solidtv/solid';
+import { ElementNode, type NodeStyles } from '@solidtv/solid';
+import type { IAnimationController } from '@solidtv/renderer';
 import {
   LinearGradient,
   Rounded,
@@ -48,6 +49,27 @@ async function pair(style: NodeStyles) {
   await settle();
   return { changed, never, dispose };
 }
+
+/** Records the animations Solid starts, to wait for them to end. */
+function watchAnimations() {
+  const spy = v.vi.spyOn(ElementNode.prototype, 'animate');
+  return {
+    /** Wait until every animation started so far has stopped. */
+    async done() {
+      for (const r of spy.mock.results) {
+        await (r.value as IAnimationController).waitUntilStopped();
+      }
+    },
+    restore: () => spy.mockRestore(),
+  };
+}
+
+const wait = (ms: number) =>
+  new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+/** The alpha byte and the RGB of a 0xRRGGBBAA colour. */
+const alphaOf = (c: unknown) => (c as number) & 0xff;
+const rgbOf = (c: unknown) => ((c as number) >>> 8) & 0xffffff;
 
 /** Every declared prop of a node's shader, as the shader resolved it. */
 function declaredProps(node: ElementNode): Record<string, unknown> {
@@ -186,6 +208,7 @@ v.test(
   async () => {
     // border-w and border-align resolve their value: reset to undefined they
     // would make no animation track and keep the focus values.
+    const anims = watchAnimations();
     const { changed, never, dispose } = await pair({
       width: 100,
       height: 100,
@@ -194,11 +217,183 @@ v.test(
       $focus: { border: { color: BLUE, width: 6, align: 'center' } },
     });
     changed.states.add('$focus');
-    await settle();
+    await anims.done();
     v.expect(shaderOf(changed).props['border-w']).toEqual([6, 6, 6, 6]);
     changed.states.remove('$focus');
-    await settle();
+    await anims.done();
     v.expect(declaredProps(changed)).toEqual(declaredProps(never));
+    anims.restore();
+    dispose();
+  },
+);
+
+v.test(
+  'a shadow with no colour over none shows again on every add (the removal left it transparent)',
+  async () => {
+    const { changed, dispose } = await pair({
+      width: 100,
+      height: 100,
+      $focus: { shadow: { blur: 24, spread: 4 } },
+    });
+    changed.states.add('$focus');
+    v.expect(shaderOf(changed).props['shadow-color']).toBe(0x000000ff);
+    changed.states.remove('$focus');
+    v.expect(alphaOf(shaderOf(changed).props['shadow-color'])).toBe(0);
+    changed.states.add('$focus');
+    v.expect(shaderOf(changed).props['shadow-color']).toBe(0x000000ff);
+    v.expect(shaderOf(changed).props['shadow-projection']).toEqual([
+      0, 0, 24, 4,
+    ]);
+    dispose();
+  },
+);
+
+v.test(
+  'B18: a border side only $focus names (top) returns to the base width after blur',
+  async () => {
+    const { changed, never, dispose } = await pair({
+      width: 100,
+      height: 100,
+      border: { width: 2, color: RED },
+      $focus: { border: { width: 2, color: BLUE, top: 6 } },
+    });
+    changed.states.add('$focus');
+    v.expect(shaderOf(changed).props['border-w']).toEqual([6, 2, 2, 2]);
+    changed.states.remove('$focus');
+    v.expect(declaredProps(changed)).toEqual(declaredProps(never));
+    v.expect(shaderOf(changed).props['border-w']).toEqual([2, 2, 2, 2]);
+    dispose();
+  },
+);
+
+v.test(
+  'B18: a shadow element only $focus names returns to the shared projection after blur',
+  async () => {
+    const P = [0, 4, 10, 2];
+    const { changed, never, dispose } = await pair({
+      width: 100,
+      height: 100,
+      shadow: { color: SHADOW, projection: P },
+      $focus: { shadow: { color: SHADOW, projection: P, blur: 30 } },
+    });
+    changed.states.add('$focus');
+    v.expect(shaderOf(changed).props['shadow-projection']).toEqual([
+      0, 4, 30, 2,
+    ]);
+    changed.states.remove('$focus');
+    v.expect(declaredProps(changed)).toEqual(declaredProps(never));
+    v.expect(shaderOf(changed).props['shadow-projection']).toEqual(P);
+    dispose();
+  },
+);
+
+v.test(
+  'B18: a $focus borderTop over a base border returns to the base width after blur',
+  async () => {
+    const { changed, never, dispose } = await pair({
+      width: 100,
+      height: 100,
+      border: { width: 2, color: RED },
+      $focus: { borderTop: { width: 6 } },
+    });
+    changed.states.add('$focus');
+    v.expect(shaderOf(changed).props['border-w']).toEqual([6, 2, 2, 2]);
+    v.expect(shaderOf(changed).props['border-color']).toBe(RED);
+    changed.states.remove('$focus');
+    v.expect(declaredProps(changed)).toEqual(declaredProps(never));
+    dispose();
+  },
+);
+
+v.test(
+  'a border removed with a transition fades out (RGB kept, alpha and width down) and comes back from transparent',
+  async () => {
+    const anims = watchAnimations();
+    const { changed, never, dispose } = await pair({
+      width: 100,
+      height: 100,
+      transition: { border: { duration: 400, easing: 'linear' } },
+      $focus: { border: { color: BLUE, width: 6 } },
+    });
+    // The first focus makes the shader (no animation: there was none).
+    changed.states.add('$focus');
+    v.expect(shaderOf(changed).props['border-w']).toEqual([6, 6, 6, 6]);
+
+    changed.states.remove('$focus');
+    await wait(150);
+    const color = shaderOf(changed).props['border-color'];
+    const w = (shaderOf(changed).props['border-w'] as number[])[0]!;
+    v.expect(rgbOf(color)).toBe(rgbOf(BLUE));
+    v.expect(alphaOf(color)).toBeGreaterThan(0);
+    v.expect(alphaOf(color)).toBeLessThan(0xff);
+    v.expect(w).toBeGreaterThan(0);
+    v.expect(w).toBeLessThan(6);
+    await anims.done();
+    // Draws as a never-focused node, which has no shader: no border.
+    v.expect(shaderOf(never)).toBeNull();
+    v.expect(shaderOf(changed).props['border-w']).toEqual([0, 0, 0, 0]);
+    v.expect(alphaOf(shaderOf(changed).props['border-color'])).toBe(0);
+
+    changed.states.add('$focus');
+    await wait(150);
+    const back = shaderOf(changed).props['border-color'];
+    v.expect(rgbOf(back)).toBe(rgbOf(BLUE));
+    v.expect(alphaOf(back)).toBeGreaterThan(0);
+    v.expect(alphaOf(back)).toBeLessThan(0xff);
+    await anims.done();
+    v.expect(shaderOf(changed).props['border-color']).toBe(BLUE);
+    v.expect(shaderOf(changed).props['border-w']).toEqual([6, 6, 6, 6]);
+    anims.restore();
+    dispose();
+  },
+);
+
+v.test(
+  'an animated undo of borderRadius shrinks the radius and ends as a never-focused node',
+  async () => {
+    const anims = watchAnimations();
+    const { changed, never, dispose } = await pair({
+      width: 100,
+      height: 100,
+      border: { width: 2, color: RED },
+      transition: { borderRadius: { duration: 400, easing: 'linear' } },
+      $focus: { borderRadius: 20 },
+    });
+    changed.states.add('$focus');
+    await anims.done();
+    v.expect(shaderOf(changed).props.radius).toEqual([20, 20, 20, 20]);
+    changed.states.remove('$focus');
+    await wait(150);
+    const r = (shaderOf(changed).props.radius as number[])[0]!;
+    v.expect(r).toBeGreaterThan(0);
+    v.expect(r).toBeLessThan(20);
+    await anims.done();
+    v.expect(declaredProps(changed)).toEqual(declaredProps(never));
+    anims.restore();
+    dispose();
+  },
+);
+
+v.test(
+  'an animated undo of a shadow projection ends as a never-focused node',
+  async () => {
+    const anims = watchAnimations();
+    const { changed, never, dispose } = await pair({
+      width: 100,
+      height: 100,
+      shadow: { color: SHADOW, y: 4 },
+      transition: { shadow: { duration: 60 } },
+      $focus: { shadow: { color: SHADOW, projection: [3, 6, 30, 3] } },
+    });
+    changed.states.add('$focus');
+    await anims.done();
+    v.expect(shaderOf(changed).props['shadow-projection']).toEqual([
+      3, 6, 30, 3,
+    ]);
+    changed.states.remove('$focus');
+    await anims.done();
+    v.expect(declaredProps(changed)).toEqual(declaredProps(never));
+    anims.restore();
     dispose();
   },
 );
