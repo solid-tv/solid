@@ -599,11 +599,14 @@ v.describe('contract: $state blocks inside style apply and undo', () => {
     },
   );
 
-  // B18 (fixed in 1.7): undo wrote the base border object back, but kept the
-  // border sub-props only the $focus border named (border-gap,
-  // border-align), so a blurred node kept the focus gap.
-  v.it(
-    'B18: undo of a $focus border resets the border sub-props the base border does not name',
+  // BUG: B18. The undo writes the base border object back, but a border
+  // write merges its sub-props into the shader props, so the ones only the
+  // $focus border named (border-gap, border-align) stay: a blurred node keeps
+  // the focus gap. A blurred node must equal a never-focused one. Not fixed
+  // in 1.7 (user decision at Checkpoint 2: the fix needed a per-node record
+  // of every border and shadow write).
+  v.it.skip(
+    'BUG: B18: undo of a $focus border resets the border sub-props the base border does not name',
     () => {
       const Thumb: lng.NodeStyles = {
         width: 100,

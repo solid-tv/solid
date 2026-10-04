@@ -28,8 +28,6 @@ export interface ShaderParse {
   /** The prefix itself (`border` for every side), then one per object key. */
   readonly keys: string[];
   readonly values: unknown[];
-  /** The position of each key (an object without a prototype). */
-  readonly index: Record<string, number | undefined>;
   /** False when the object has a getter: parsed again on each write. */
   readonly cached: boolean;
 }
@@ -155,6 +153,7 @@ export function shaderParse(
   const prefix = side !== undefined ? 'border' : key;
   const keys: string[] = [prefix];
   const values: unknown[] = [obj];
+  // The position of each shader key, to merge `width` and `w`.
   const index = Object.create(null) as Record<string, number | undefined>;
   index[prefix] = 0;
   let cached = true;
@@ -179,7 +178,7 @@ export function shaderParse(
       values.push(obj[name]);
     }
   }
-  parse = { keys, values, index, cached };
+  parse = { keys, values, cached };
   if (cached && cache !== undefined) {
     cache.set(obj, parse);
   }

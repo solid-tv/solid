@@ -264,45 +264,11 @@ v.describe('shader-prop writes', () => {
     },
   );
 
-  v.it('a border removed by undo resets every sub-prop it set', () => {
-    const { node, dispose } = mount({
-      width: 100,
-      height: 100,
-      borderRadius: 8,
-      $focus: { border: { width: 4, color: BLUE, gap: 2 } },
-    });
-    node.states.add('$focus');
-    v.expect(shaderProps(node)['border-w']).toBe(4);
-    node.states.remove('$focus');
-    v.expect(shaderProps(node)).toEqual({ radius: 8 });
-    dispose();
-  });
-
   v.it(
-    'after a reset, the sub-props the new object keeps unchanged are not written again',
-    () => {
-      const { node, dispose } = mount({
-        width: 100,
-        height: 100,
-        border: { width: 2, color: RED },
-        $focus: { border: { width: 2, color: RED, gap: 4 } },
-      });
-      const props = shaderProps(node);
-      const counts = countWrites(props, ['border-w', 'border-color']);
-      node.states.add('$focus');
-      v.expect(props['border-gap']).toBe(4);
-      node.states.remove('$focus');
-      v.expect(props['border-gap']).toBeUndefined();
-      v.expect(counts).toEqual({ 'border-w': 0, 'border-color': 0 });
-      dispose();
-    },
-  );
-
-  v.it(
-    'a sub-prop that border and a border side both set is always written, as before',
+    'a sub-prop that border and a border side both set takes the later write, as in 1.6',
     () => {
       // border-color is written by `border` and by `borderTop`: the later
-      // direct write wins (1.6; fix round 5, D2), whatever the object.
+      // direct write wins, whatever the object (D2).
       const { node, dispose } = mount({
         width: 100,
         height: 100,
@@ -318,10 +284,10 @@ v.describe('shader-prop writes', () => {
   );
 
   v.it(
-    'a direct border write while a state is on persists after the state is removed (fix round 5)',
+    'a direct border write while a state is on is replaced by the undo, which writes the style object back, as in 1.6',
     () => {
-      // The write goes to the node's base record; the undo recomputes the
-      // display from it (1.6 restored the style's object over it).
+      // The undo writes the key's fallback (the style's border) when it
+      // differs from the value the state wrote (D5).
       const { node, dispose } = mount({
         width: 100,
         height: 100,
@@ -330,35 +296,14 @@ v.describe('shader-prop writes', () => {
       });
       node.states.add('$focus');
       v.expect(shaderProps(node)['border-color']).toBe(BLUE);
-      node.borderTop = { width: 8, color: GREEN };
-      v.expect(shaderProps(node)['border-top']).toBe(8);
+      node.border = { width: 6, color: GREEN };
+      v.expect(shaderProps(node)['border-w']).toBe(6);
       v.expect(shaderProps(node)['border-color']).toBe(GREEN);
-      node.states.remove('$focus');
-      v.expect(shaderProps(node)['border-w']).toBe(2);
-      v.expect(shaderProps(node)['border-top']).toBe(8);
-      v.expect(shaderProps(node)['border-color']).toBe(GREEN);
-      // The getter still gives the style's object, as before 1.7.
-      v.expect(node.border).toBe(node.style.border);
-      dispose();
-    },
-  );
-
-  v.it(
-    'an effects border is part of the base: the undo of a $focus border restores it (fix round 5, N7)',
-    () => {
-      const { node, dispose } = mount({
-        width: 100,
-        height: 100,
-        effects: { border: { width: 2, color: RED } },
-        $focus: { border: { width: 4, color: BLUE } },
-      });
-      v.expect(shaderProps(node)['border-w']).toBe(2);
-      node.states.add('$focus');
-      v.expect(shaderProps(node)['border-w']).toBe(4);
-      v.expect(shaderProps(node)['border-color']).toBe(BLUE);
       node.states.remove('$focus');
       v.expect(shaderProps(node)['border-w']).toBe(2);
       v.expect(shaderProps(node)['border-color']).toBe(RED);
+      // The getter gives the style's object, as before 1.7.
+      v.expect(node.border).toBe(node.style.border);
       dispose();
     },
   );

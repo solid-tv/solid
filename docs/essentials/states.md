@@ -64,7 +64,6 @@ Note: states always use the values in the style object. If you have a button wit
 - A state change writes only the keys whose value changed. A key a state sets resolves to the value from the active state of highest precedence that sets it, else `theme[key]`, else `style[key]`, else `undefined`, and it is written only when that differs from the value the last state change wrote. Adding a second state does not restart the first state's `transition`. A value you wrote to such a key stays through a later state change that leaves the key's value unchanged, and through an undo that resolves to the same value.
 - Setting `states` to an equal list does nothing: a reactive `states` that re-runs with the same states writes nothing.
 - A `$state` block is read once, the first time it is used, and cached by object identity. Changing it afterwards (`style.$focus.color = x`) is not seen; assign a new object instead. A getter in a block (`get color() { ... }`) is read each time a state change applies the block.
-- A `border` or `shadow` in a state is undone against everything written to the element outside states (the style, `theme`, JSX props, `effects` and direct writes), not only `theme` and `style`: the element shows its own border or shadow again. See [Border and borderRadius](./effects.md).
 
 ## The `theme` Property
 
