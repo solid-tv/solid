@@ -684,6 +684,38 @@ v.describe('contract: transition', () => {
   );
 
   v.it(
+    'a state change writes only the keys whose value changed: a second state does not restart the first state transition',
+    () => {
+      // 1.7 (design 3.3.2): each key is written only when its resolved value
+      // differs from the one the last state change wrote. Before, adding
+      // $active re-wrote $focus's scale and restarted its animation.
+      const settings = { duration: 10 };
+      let node!: lng.ElementNode;
+      const dispose = renderer.render(() => (
+        <view
+          ref={node}
+          style={{
+            scale: 1,
+            alpha: 1,
+            transition: { scale: settings, alpha: settings },
+            $focus: { scale: 1.1 },
+            $active: { alpha: 0.5 },
+          }}
+        />
+      ));
+      node.states.add('$focus');
+      v.expect(animate.mock.calls).toEqual([[{ scale: 1.1 }, settings]]);
+      node.states.add('$active');
+      v.expect(animate.mock.calls.slice(1)).toEqual([
+        [{ alpha: 0.5 }, settings],
+      ]);
+      node.states.remove('$active');
+      v.expect(animate.mock.calls.slice(2)).toEqual([[{ alpha: 1 }, settings]]);
+      dispose();
+    },
+  );
+
+  v.it(
     'a transition inside a $focus block is set before the block is applied, so the block animates',
     async () => {
       const settings = { duration: 10 };

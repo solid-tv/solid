@@ -23,6 +23,11 @@ const bare = (name: string) => name as lng.DollarString;
 /** The states on a node, as a plain array. */
 const statesOf = (node: lng.ElementNode) => [...node.states];
 
+/** The props of a node's shader (the DOM renderer keeps them as given). */
+const shaderProps = (node: lng.ElementNode) =>
+  (node.lng as unknown as { shader: { props: Record<string, unknown> } }).shader
+    .props;
+
 const tick = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
 
 // Undoing a key with no base value logs a dev warning ("fallback style key
@@ -263,6 +268,39 @@ v.describe('contract: state keys with and without $', () => {
       node.states.add(bare('focus'));
       v.expect(statesOf(node)).toEqual(['$focus']);
       v.expect(node.color).toBe(WHITE);
+      dispose();
+    },
+  );
+
+  v.it(
+    'setting states to an unchanged value changes nothing (styles are not re-applied), in every form',
+    () => {
+      // 1.7 (design 3.3.3): `set states` compares before it merges. Before,
+      // an equal list re-applied every state style.
+      let node!: lng.ElementNode;
+      const [states, setStates] = s.createSignal<lng.DollarString[]>([
+        '$focus',
+      ]);
+      const dispose = renderer.render(() => (
+        <view
+          ref={node}
+          states={states()}
+          style={{ color: RED, $focus: { color: BLUE } }}
+        />
+      ));
+      v.expect(node.color).toBe(BLUE);
+      node.color = WHITE;
+      setStates(['$focus']);
+      v.expect(node.color).toBe(WHITE);
+      node.states = '$focus';
+      node.states = { $focus: true, $active: false };
+      // Its own list: an equal list. (Before 1.7 this one emptied the list.)
+      const own = node.states;
+      node.states = own;
+      v.expect(statesOf(node)).toEqual(['$focus']);
+      v.expect(node.color).toBe(WHITE);
+      setStates([]);
+      v.expect(node.color).toBe(RED);
       dispose();
     },
   );
@@ -557,6 +595,37 @@ v.describe('contract: $state blocks inside style apply and undo', () => {
       v.expect(node.color).toBe(WHITE);
       node.states.remove('$focus');
       v.expect(node.color).toBe(RED);
+      dispose();
+    },
+  );
+
+  // B18 (fixed in 1.7): undo wrote the base border object back, but kept the
+  // border sub-props only the $focus border named (border-gap,
+  // border-align), so a blurred node kept the focus gap.
+  v.it(
+    'B18: undo of a $focus border resets the border sub-props the base border does not name',
+    () => {
+      const Thumb: lng.NodeStyles = {
+        width: 100,
+        height: 100,
+        borderRadius: 16,
+        border: { width: 0, color: 0x00000000 },
+        $focus: { border: { color: BLUE, width: 6, gap: 4, align: 'outside' } },
+      };
+      let focused!: lng.ElementNode;
+      let never!: lng.ElementNode;
+      const dispose = renderer.render(() => (
+        <view>
+          <view ref={focused} style={Thumb} />
+          <view ref={never} style={Thumb} />
+        </view>
+      ));
+      focused.states.add('$focus');
+      v.expect(shaderProps(focused)['border-gap']).toBe(4);
+      v.expect(shaderProps(focused)['border-w']).toBe(6);
+      focused.states.remove('$focus');
+      v.expect(shaderProps(focused)).toEqual(shaderProps(never));
+      v.expect(focused.border).toBe(Thumb.border);
       dispose();
     },
   );
