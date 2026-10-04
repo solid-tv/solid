@@ -1420,9 +1420,23 @@ export class DOMNode extends EventEmitter implements IRendererNode {
     updateNodeData(this);
   }
 
-  /** Renderer v2's `Node.destroyed`. */
+  /**
+   * Renderer v2's `Node.destroyed`: this node, or an ancestor, was
+   * destroyed (v2 destroys the subtree; here the descendants of a destroyed
+   * node stay in elMap, so the parent chain is read).
+   */
   get destroyed(): boolean {
-    return !elMap.has(this);
+    if (!elMap.has(this)) {
+      return true;
+    }
+    let node = this.props.parent;
+    while (node instanceof DOMNode) {
+      if (!elMap.has(node)) {
+        return true;
+      }
+      node = node.props.parent;
+    }
+    return false;
   }
 
   destroy(): void {

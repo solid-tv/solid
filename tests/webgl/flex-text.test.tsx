@@ -1045,3 +1045,64 @@ v.test(
     dispose();
   },
 );
+
+/** A row of two 'After' texts, the first animated. */
+async function animatedRow() {
+  let t!: ElementNode;
+  let after!: ElementNode;
+  const dispose = render(() => (
+    <view display="flex" gap={10}>
+      <text ref={t}>After</text>
+      <text ref={after}>After</text>
+    </view>
+  ));
+  await settle();
+  expectBox(after, 79.51, 0, 69.51, LINE_30);
+  return { t, after, dispose };
+}
+
+/** Waits for a 150 ms animation to end, then for the layout to settle. */
+async function animationOver() {
+  // settle() does not wait for an animation (it requests no frame).
+  await new Promise((r) => setTimeout(r, 400));
+  await settle();
+}
+
+const ANIMATION = { duration: 150, easing: 'linear' };
+
+v.test(
+  'el.animate() of a text layout prop, started again after it finished, moves the sibling again',
+  async () => {
+    const { t, after, dispose } = await animatedRow();
+    const a = t.animate({ fontSize: 60 }, ANIMATION);
+    a.start();
+    await animationOver();
+    expectBox(t, 0, 0, 139.02, 86.4);
+    expectBox(after, 149.02, 0, 69.51, LINE_30);
+
+    t.fontSize = 30;
+    await settle();
+    expectBox(after, 79.51, 0, 69.51, LINE_30);
+
+    a.start(); // 30 -> 60 again
+    await animationOver();
+    expectBox(t, 0, 0, 139.02, 86.4);
+    expectBox(after, 149.02, 0, 69.51, LINE_30);
+    dispose();
+  },
+);
+
+v.test(
+  'el.animate() of a text layout prop, started after the text laid out again, moves the sibling',
+  async () => {
+    const { t, after, dispose } = await animatedRow();
+    const b = t.animate({ fontSize: 60 }, ANIMATION);
+    t.text = 'Afte';
+    await settle();
+    b.start();
+    await animationOver();
+    v.expect(t.width).toBeGreaterThan(100);
+    v.expect(after.x).toBeCloseTo(t.width + 10, 3);
+    dispose();
+  },
+);
