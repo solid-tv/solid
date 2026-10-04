@@ -80,6 +80,8 @@ export interface IRendererNodeShaded extends EventEmitter {
   ) => lng.IAnimationController;
   get absX(): number;
   get absY(): number;
+  /** Renderer v2's `Node.insertBefore` (draw order follows Solid's children). */
+  insertBefore(child: IRendererNode, before: IRendererNode | null): void;
 }
 
 /** Based on {@link lng.INodeProps} */
