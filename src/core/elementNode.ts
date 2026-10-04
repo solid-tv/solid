@@ -890,6 +890,9 @@ export class ElementNode {
     const prevParent = node.parent;
     // The renderer node of a rendered element is placed among its siblings
     // in `children` order (B19: renderer v2 draws siblings in that order).
+    // The renderer keeps siblings sorted by zIndex: when the anchor's zIndex
+    // is not the child's, it takes the nearest sorted place instead, so
+    // among equal-zIndex siblings its order can then differ from `children`.
     const drawn = this.rendered && isElementNode(node) && node.rendered;
     // A move within this node: the renderer sibling it was drawn before, so
     // a move that leaves it there costs the renderer nothing.
