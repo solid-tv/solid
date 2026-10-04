@@ -2723,6 +2723,15 @@ export class ElementNode {
       return;
     }
     m.listening = true;
+    this._hearTextLayouts();
+  }
+
+  /**
+   * @internal The listener `_listenTextLoaded` adds, once per text. A method
+   * of its own: an arrow's `this` is allocated in a context on every call of
+   * the method that holds it, and that one runs on every animated write.
+   */
+  _hearTextLayouts(): void {
     (this.lng as IRendererTextNode).on('loaded', () => {
       if (this._textSizeChanged() === true) {
         enqueueLayout(this._parent!);
@@ -2780,7 +2789,9 @@ export class ElementNode {
       // If onDestroy returns a promise, wait for it to resolve before destroying
       // Useful with animations waitUntilStopped method which returns promise
       if (destroyPromise instanceof Promise) {
-        void destroyPromise.then(() => this._destroy());
+        // Bound here, not an arrow: an arrow's `this` is allocated in a
+        // context on every destroy(), a promise or not.
+        void destroyPromise.then(this._destroy.bind(this));
       } else {
         this._destroy();
       }
@@ -3570,7 +3581,13 @@ export class ElementNode {
           typeof node.lng.on === 'function'
         ) {
           const handler = onEvent[name as keyof OnEvent]!;
-          node.lng.on(name, (_inode, data) => handler.call(node, node, data));
+          // The listener captures these block-scoped names, not render()'s
+          // `node`: a captured local is allocated in a context on every
+          // call, onEvent or not.
+          const target = node;
+          node.lng.on(name, (_inode, data) =>
+            handler.call(target, target, data),
+          );
         }
       }
     }
