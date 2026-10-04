@@ -22,7 +22,7 @@ const Button = {
 };
 ```
 
-When `Button` is focused via the [useFocusManager](/primitives/useFocusManager.md), the `$focus` state will be added to the button, causing the focus styles to be applied. And when focus is removed, the original styles on the element will be set.
+When `Button` is focused via the [useFocusManager](/primitives/useFocusManager.md), the `$focus` state will be added to the button, causing the focus styles to be applied. And when focus is removed, each key the state set goes back to its original value: `theme`'s, else the style object's.
 
 > Be sure to set defaults on the original styles if applying a new style via state. Example: clipping: false, focus: { clipping: true }
 
@@ -58,6 +58,13 @@ createEffect(() => {
 ```
 
 Note: states always use the values in the style object. If you have a button with a base color, and a disabled and focus state which both change the color, the value applied to the button will be determined from the style object. You won't be able to set the color of the button on the JSX `<Button color={???}>` because as the states change, we need to determine which color to apply. If you need this functionality, you should pass in the color to the style object.
+
+## How a state change is applied
+
+- A state change writes only the keys whose value changed. A key a state sets resolves to the value from the active state of highest precedence that sets it, else `theme[key]`, else `style[key]`, else `undefined`, and it is written only when that differs from the value the last state change wrote. Adding a second state does not restart the first state's `transition`. A value you wrote to such a key stays through a later state change that leaves the key's value unchanged, and through an undo that resolves to the same value.
+- Setting `states` to an equal list does nothing: a reactive `states` that re-runs with the same states writes nothing.
+- A `$state` block is read once, the first time it is used, and cached by object identity. Changing it afterwards (`style.$focus.color = x`) is not seen; assign a new object instead. A getter in a block (`get color() { ... }`) is read each time a state change applies the block.
+- A `border` or `shadow` in a state is undone against everything written to the element outside states (the style, `theme`, JSX props, `effects` and direct writes), not only `theme` and `style`: the element shows its own border or shadow again. See [Border and borderRadius](./effects.md).
 
 ## The `theme` Property
 
