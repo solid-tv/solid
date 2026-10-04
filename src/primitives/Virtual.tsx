@@ -165,6 +165,8 @@ function createVirtual<T>(
     }
 
     const length = props.displaySize + bufferSize();
+    // Items mounted: `length`, or fewer for none/center with wrap (below).
+    let windowLength = length;
     let start = prev.start;
     let selected = prev.selected;
     let atStart = prev.atStart;
@@ -359,14 +361,17 @@ function createVirtual<T>(
         start = prev.start;
         if (effectiveWrap()) {
           // A modular window, as in the other wrap modes: keep the cursor in
-          // slots 1 .. length - 2, so an item is mounted on each side of it
-          // across the end of the data. Outside the window (a jump), the
-          // cursor goes to slot 1.
+          // slots 1 .. windowLength - 2, so an item is mounted on each side
+          // of it across the end of the data. Outside the window (a jump),
+          // the cursor goes to slot 1. With fewer items than `length` the
+          // window holds each item once (a longer one would mount an item
+          // twice).
+          windowLength = total < length ? total : length;
           const slot = utils.mod(c - start, total);
-          if (slot < 1 || slot >= length) {
+          if (slot < 1 || slot >= windowLength) {
             start = utils.mod(c - 1, total);
-          } else if (slot > length - 2) {
-            start = utils.mod(c + 2 - length, total);
+          } else if (slot > windowLength - 2) {
+            start = utils.mod(c + 2 - windowLength, total);
           }
           selected = utils.mod(c - start, total);
         } else {
@@ -386,12 +391,12 @@ function createVirtual<T>(
     if (start !== prev.start || newSlice.length === 0) {
       const all = items();
       if (effectiveWrap()) {
-        newSlice = new Array<T>(length);
-        for (let i = 0; i < length; i++) {
+        newSlice = new Array<T>(windowLength);
+        for (let i = 0; i < windowLength; i++) {
           newSlice[i] = all[utils.mod(start + i, total)] as T;
         }
       } else {
-        newSlice = all.slice(start, start + length) as T[];
+        newSlice = all.slice(start, start + windowLength) as T[];
       }
     }
 
