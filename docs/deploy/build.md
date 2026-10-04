@@ -2,7 +2,7 @@
 
 ## Minifying with terser
 
-Build with terser, and turn off its `reduce_funcs` option:
+Build with terser, and turn off its `reduce_funcs` option. Vite does not bundle terser, so install it first (`npm i -D terser`):
 
 ```js
 // vite.config.js
@@ -24,7 +24,7 @@ export default defineConfig({
 
 ### Why
 
-With terser's defaults, `@solidtv/renderer` 2.0's scene walk allocates for every node it visits. Terser inlines a single-use helper of the walk, the one that computes a node's world transform, into `ScenePass.visit` as an immediately-invoked function (`!function (s, id, parent) {…}(s, id, parent)`). The function is created again for each dirty node the walk visits, on every frame.
+With terser's defaults, `@solidtv/renderer` 2.0's scene walk allocates for every node it visits. Terser inlines a single-use helper of the walk, the one that computes a node's world transform, into `ScenePass.visit` as an immediately-invoked function (`!function (s, id, parent) {…}(s, id, parent)`). The function is created again for each node the walk visits, on every frame that walks the scene.
 
 Set `reduce_funcs: false` and the walk keeps calling the helper. The renderer's allocations for one key press, measured in the SolidTV benchmark (`docs/perf`, allocation mode, every allocation sampled), fall:
 
@@ -33,6 +33,6 @@ Set `reduce_funcs: false` and the walk keeps calling the helper. The renderer's 
 | `rows-ud-auto` (move focus between rows) | 56.7 KiB                                        | 3.4 KiB                    |
 | `virtual-grid`                           | 67.7 KiB                                        | 8.6 KiB                    |
 
-SolidTV's own allocations per press are the same in both builds. Each figure is one run, and the bundle-size difference was not measured.
+SolidTV's own allocations per press change little (2.4 → 2.1 KiB and 12.5 → 11.0 KiB), since terser inlines fewer of Solid's helpers too. Each figure is one run, and the bundle-size difference was not measured.
 
 The measurements are in [`docs/perf/results/2026-10-03/profiles.md`](../perf/results/2026-10-03/profiles.md), section "Terser inlining in the renderer's walk".
