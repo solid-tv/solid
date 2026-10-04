@@ -14,23 +14,23 @@ npm run bench -- --scenarios smoke --runs 1 --quick   # harness smoke test
 node bench/run.mjs --summarize docs/perf/results/2026-10-03   # rebuild summary.md only
 ```
 
-| Option               | Default                    | Meaning                                                                                           |
-| -------------------- | -------------------------- | ------------------------------------------------------------------------------------------------- |
-| `--arms`             | `A,B,C`                    | Arms to run, interleaved within each run set (A, B, C, A, B, C, …)                                |
-| `--scenarios`        | every scenario but `smoke` | Scenario ids (`bench/src/scenarios`)                                                              |
-| `--runs`             | 3                          | Page loads per scenario, arm and mode                                                             |
-| `--modes`            | `time,alloc,profile,count` | Measurement modes; each is its own page load                                                      |
-| `--throttle`         | 6                          | CDP `Emulation.setCPUThrottlingRate`                                                              |
-| `--quick`            | off                        | At most 5 warmup and 10 measured ops: for checking the harness, not for numbers                   |
-| `--skip-build`       | off                        | Use the existing `bench/dist`                                                                     |
-| `--out`              | `docs/perf/results/<date>` | Result directory                                                                                  |
-| `--gpu`              | `metal` on macOS           | `metal`, `swiftshader` or `default` (ANGLE's choice)                                              |
-| `--flex`             | `new`                      | `new`: `src/core/flexLayout.ts`, as the demo app; `old`: `src/core/flex.ts` (labelled `-flexold`) |
-| `--no-chunks`        | off                        | Single-chunk build (labelled `-nochunks`): to check that chunking does not move timings           |
-| `--alloc-interval`   | 1                          | Heap sampling interval in bytes (1: every allocation)                                             |
-| `--profile-interval` | 50                         | CPU profiler sampling interval in µs                                                              |
-| `--save-profiles`    | off                        | Also write each profile run's raw CPU profile as `<result>.cpuprofile` (DevTools format)          |
-| `--idle-timeout`     | 10000                      | ms to wait for an op to settle before marking it `timedOut`                                       |
+| Option               | Default                    | Meaning                                                                                                                                                              |
+| -------------------- | -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--arms`             | `A,B,C`                    | Arms to run, interleaved within each run set (A, B, C, A, B, C, …)                                                                                                   |
+| `--scenarios`        | every scenario but `smoke` | Scenario ids (`bench/src/scenarios`)                                                                                                                                 |
+| `--runs`             | 3                          | Page loads per scenario, arm and mode                                                                                                                                |
+| `--modes`            | `time,alloc,profile,count` | Measurement modes; each is its own page load                                                                                                                         |
+| `--throttle`         | 6                          | CDP `Emulation.setCPUThrottlingRate`                                                                                                                                 |
+| `--quick`            | off                        | At most 5 warmup and 10 measured ops: for checking the harness, not for numbers                                                                                      |
+| `--skip-build`       | off                        | Use the existing `bench/dist`. Count mode reads `dist/<arm>-count`, which only a count-mode run builds: after a source change, run count without `--skip-build` once |
+| `--out`              | `docs/perf/results/<date>` | Result directory                                                                                                                                                     |
+| `--gpu`              | `metal` on macOS           | `metal`, `swiftshader` or `default` (ANGLE's choice)                                                                                                                 |
+| `--flex`             | `new`                      | `new`: `src/core/flexLayout.ts`, as the demo app; `old`: `src/core/flex.ts` (labelled `-flexold`)                                                                    |
+| `--no-chunks`        | off                        | Single-chunk build (labelled `-nochunks`): to check that chunking does not move timings                                                                              |
+| `--alloc-interval`   | 1                          | Heap sampling interval in bytes (1: every allocation)                                                                                                                |
+| `--profile-interval` | 50                         | CPU profiler sampling interval in µs                                                                                                                                 |
+| `--save-profiles`    | off                        | Also write each profile run's raw CPU profile as `<result>.cpuprofile` (DevTools format)                                                                             |
+| `--idle-timeout`     | 10000                      | ms to wait for an op to settle before marking it `timedOut`                                                                                                          |
 
 Each run writes `<out>/<scenario>.<arm>.<mode>.<run>.json` (every op's raw
 record plus the run's statistics and environment), and the runner then

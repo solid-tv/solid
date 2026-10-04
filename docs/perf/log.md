@@ -638,3 +638,14 @@ manager, `States` `merge`/`add`/species construction), not S's.
   - **Kept** (correctness: the undo equals a never-focused node, each case
     checked against the 1.6 export; the differences from 1.6 are listed in
     `MIGRATION-1.7.md`, B18).
+
+## 2026-10-04: Checkpoint 2 series
+
+Branch `1.7` at `8886583`, renderer `6392ce4`. Time for A, B, C in one
+interleaved series (3 runs, 6x); alloc and count for C (count for B re-run
+alongside); profiles for C on four scenarios. Results:
+`docs/perf/results/2026-10-04/summary.md`, demo `#/benchmark` (A 0.52 / B 0.57
+/ C 0.48 ms press mean) and `docs/perf/results/routes-2026-10-04.md`. The
+per-scenario comparison against the design §6 targets, the allocation and
+count tables, and the bundle sizes are in
+`docs/superpowers/specs/2026-10-04-checkpoint-2-report.md`.
