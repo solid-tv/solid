@@ -956,17 +956,22 @@ function writeShaderGroup(
     }
   }
   if (direct !== null) {
-    // A direct write, already in the base record. With an active state's
-    // object of the group on the display, the object goes over the current
-    // display (it wins for what it names, as 1.6 wrote it). With none, the
-    // display is the base record, recomputed: a colour the undo's fade left
-    // at alpha 0 is not kept, so the node equals a never-focused one with
-    // the same write.
-    if (n > 0) {
+    // A direct write, already in the base record. The object goes over the
+    // current display (it wins for what it names, as 1.6 wrote it), unless
+    // no active state's object of the group is on it and a state change was
+    // the group's last writer (`_stateWroteGroups`): then the display is
+    // the base record, recomputed, so a colour the undo's fade left at
+    // alpha 0 is not kept and the node equals a never-focused one with the
+    // same write. Values the `shader` prop or a write into the shader's
+    // props set are not in the record; over them, 1.6's write.
+    const groupBits = group === BORDER_GROUP ? BORDER_BITS : SHADOW_BIT;
+    const wrote = node._stateWroteGroups;
+    if (n > 0 || (wrote & groupBits) === 0) {
       groupParses[0] = direct;
       n = 1;
       fromHeld = true;
     }
+    node._stateWroteGroups = wrote & ~groupBits;
   }
 
   let start = 0;
@@ -1314,6 +1319,8 @@ export interface ElementNode extends RendererNode, FocusNode {
   _stateShaderBits: number;
   /** @internal The border/shadow groups (SHADER_BIT) the running state change wrote, for `_applyStates`. */
   _shaderMask: number;
+  /** @internal The border/shadow groups (SHADER_BIT) a state change wrote last, with no direct write since. */
+  _stateWroteGroups: number;
   _display?: 'flex' | 'block';
   _onLayout?: (this: ElementNode, target: ElementNode) => void;
   _requiresLayout: boolean;
@@ -1803,6 +1810,7 @@ export class ElementNode {
     this._shaderBase = undefined;
     this._stateShaderBits = 0;
     this._shaderMask = 0;
+    this._stateWroteGroups = 0;
     this._display = undefined;
     this._onLayout = undefined;
     this._requiresLayout = false;
@@ -2521,6 +2529,8 @@ export class ElementNode {
    * it inside `_applyStates`, a closure per press.
    */
   _writeShaderGroups(mask: number) {
+    // A state change is the groups' last writer, until a direct write.
+    this._stateWroteGroups |= mask;
     let shadowFirst = false;
     if ((mask & BORDER_BITS) !== 0 && (mask & SHADOW_BIT) !== 0) {
       const keys = this._undoStyles!;

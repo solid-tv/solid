@@ -1180,6 +1180,140 @@ v.test(
   },
 );
 
+// Post-round-5 fix 2, A: a direct write recomputes from the base record only
+// when a state change was the group's last writer; otherwise it goes over
+// what the shader holds, as 1.6 wrote it. Values set through the `shader`
+// prop, written into the shader's props, or mid-animation are not in the
+// record and must be kept.
+
+const nextFrame = () =>
+  new Promise<void>((resolve) => {
+    requestAnimationFrame(() => resolve());
+  });
+
+v.test(
+  'RS1: a direct borderTop over border props set through the shader prop keeps them',
+  async () => {
+    let a!: ElementNode;
+    const dispose = render(() => (
+      <view>
+        <view
+          ref={a}
+          width={100}
+          height={100}
+          color={0xffffffff}
+          shader={
+            [
+              'roundedWithBorder',
+              { 'border-w': 3, 'border-color': GREEN, radius: 10 },
+            ] as never
+          }
+        />
+      </view>
+    ));
+    await settle();
+    v.expect(borderOf(a)).toEqual([GREEN, [3, 3, 3, 3]]);
+    a.borderTop = { width: 6 };
+    v.expect(borderOf(a)).toEqual([GREEN, [6, 3, 3, 3]]);
+    v.expect(shaderOf(a).props.radius).toEqual([10, 10, 10, 10]);
+    dispose();
+  },
+);
+
+v.test(
+  'RS2: a shader set after render replaces the base border; a direct borderTop sits on it',
+  async () => {
+    const { changed, dispose } = await pair({
+      width: 100,
+      height: 100,
+      border: { width: 2, color: RED },
+    });
+    changed.shader = [
+      'roundedWithBorder',
+      { 'border-w': 3, 'border-color': GREEN },
+    ] as never;
+    v.expect(borderOf(changed)).toEqual([GREEN, [3, 3, 3, 3]]);
+    changed.borderTop = { width: 6 };
+    v.expect(borderOf(changed)).toEqual([GREEN, [6, 3, 3, 3]]);
+    dispose();
+  },
+);
+
+v.test(
+  'RS3: a direct shadow over shadow props set through the shader prop keeps its colour and projection',
+  async () => {
+    let a!: ElementNode;
+    const dispose = render(() => (
+      <view>
+        <view
+          ref={a}
+          width={100}
+          height={100}
+          color={0xffffffff}
+          shader={
+            [
+              'roundedWithShadow',
+              { 'shadow-color': GREEN, 'shadow-projection': [3, 3, 10, 5] },
+            ] as never
+          }
+        />
+      </view>
+    ));
+    await settle();
+    a.shadow = { blur: 20 } as NodeStyles['shadow'];
+    v.expect(shaderOf(a).props['shadow-color']).toBe(GREEN);
+    v.expect(shaderOf(a).props['shadow-projection']).toEqual([3, 3, 20, 5]);
+    dispose();
+  },
+);
+
+v.test(
+  'RS4: a direct borderTop during a direct border animation changes the top alone, mid-flight',
+  async () => {
+    const anims = watchAnimations();
+    const { changed, dispose } = await pair({
+      width: 100,
+      height: 100,
+      border: { width: 2, color: RED },
+      transition: { border: { duration: 120, easing: 'linear' } },
+    });
+    changed.border = { width: 8, color: BLUE };
+    await nextFrame();
+    await nextFrame();
+    const midW = (shaderOf(changed).props['border-w'] as number[]).slice();
+    const midColor = shaderOf(changed).props['border-color'];
+    changed.borderTop = { width: 3 };
+    const after = shaderOf(changed).props['border-w'] as number[];
+    v.expect(after[0]).toBe(3);
+    v.expect(after.slice(1)).toEqual(midW.slice(1));
+    v.expect(shaderOf(changed).props['border-color']).toBe(midColor);
+    await anims.done();
+    await settle();
+    if (midW[1]! < 8) {
+      // The animation was still running: its last frame writes the vec4.
+      v.expect(shaderOf(changed).props['border-w']).toEqual([8, 8, 8, 8]);
+    }
+    anims.restore();
+    dispose();
+  },
+);
+
+v.test(
+  'RS5: a sub-prop written straight into the shader props survives a direct borderTop',
+  async () => {
+    const { changed, dispose } = await pair({
+      width: 100,
+      height: 100,
+      border: { width: 2, color: RED },
+    });
+    shaderOf(changed).props['border-gap'] = 4;
+    changed.borderTop = { width: 6 };
+    v.expect(shaderOf(changed).props['border-gap']).toBe(4);
+    v.expect(borderOf(changed)).toEqual([RED, [6, 2, 2, 2]]);
+    dispose();
+  },
+);
+
 v.test(
   'a style listing a side before border: focus and blur agree with a never-focused node',
   async () => {
