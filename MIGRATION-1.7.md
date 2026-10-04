@@ -268,9 +268,16 @@ not reflow its flex parent) changes nothing.
     `onLayout` is measured in Solid's post-mutation pass with the renderer's
     `measure()`. The container's flex and `onLayout` run in that microtask,
     before the frame, instead of between the frame's walks after `loaded`.
-    Positions on screen are the same, and they are now right in the first
-    frame that shows the change. A change that leaves a text's size unchanged
-    lays nothing out.
+    Final positions are the same, and they are now right in the first frame
+    that shows the change. A change that leaves a text's size unchanged lays
+    nothing out.
+    - **Reads right after mount see the laid-out values.** Code that reads a
+      flex-derived position or size in the same task as the mount (an
+      `onFocus` that fires at mount, an effect, a `ref` callback after
+      `render`) now gets the container's laid-out value. Before 1.7 the flex
+      waited for the text's `loaded` in a later frame, so such a read got the
+      pre-layout value (often 0). Code that positions something from that
+      read now places it where it intended.
     - **`loaded` for apps.** An `onEvent.loaded` on such a text still fires
       once per layout, between the walks of the next frame, and now after the
       container's relayout (an autosize node's handler still runs before it).
@@ -317,7 +324,13 @@ not reflow its flex parent) changes nothing.
     closures gone. page-mount and page-swap are unchanged: their texts sit in
     plain views. Time is rough, from a run under heavy load: C/B 1.14 → 0.98
     (details panel), 0.81 → 0.65 (mount-new).
-  - **Demo app:** none found. There is no text `loaded` handler, no
+  - **Demo app:** `pages/Flex.tsx:37`, `pages/FlexSize.tsx:42` and
+    `pages/FlexGrow.tsx:40` set the page Column's `y` from the focused Row's
+    `this.y` in its `onFocus`, which fires at mount: 1.6 read 0 there, so the
+    focused row sat 82.5 px below the intended 150; it now sits at 150 and the
+    whole page is 82.5 px higher. (`FlexColumn.tsx:46` and
+    `FlexColumnSize.tsx:50` have the same line but focus a row at y 0, so
+    nothing moves.) Otherwise none: there is no text `loaded` handler, no
     `el.lng.<text prop>` write, and no `el.lng` animation of a text in
     `solid-demo-app-1.7/src`. Solid's own `primitives/Marquee.tsx` (the demo's
     `components/ContentBlock.tsx` uses it) has an `onEvent.loaded` on a text
@@ -351,6 +364,9 @@ not reflow its flex parent) changes nothing.
       while hidden. That is a cache hit after the first time.
     - `index.tsx:236`, `KeepAliveRoute` browse: flex texts on the kept-alive
       page are measured while it is hidden.
+    - `components/ContentBlock.tsx` on `#/examples/tmdb`: the hero
+      description under the alpha-0 content block is measured (w 894 instead
+      of 0) before the block is shown.
     - `components/NavDrawer/NavDrawer.tsx`: NavButton texts at alpha 0 are not
       in a layout container, so nothing changes there.
   - **Upgrade step:** none.

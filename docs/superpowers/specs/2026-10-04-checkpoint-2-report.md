@@ -153,13 +153,28 @@ tiles' texts are now laid out at mount (they were deferred until visible).
 - **Checks.**
   - `check-routes`: 53/53 routes render with no errors.
   - A held Enter fires `onHold` at ≈ 1000 ms on A, B and C.
-  - Focus paths: 52/53 identical B vs C. The 53rd was a real unapproved change
-    (keys from a removed focused subtree no longer bubbled), fixed in Solid as
-    N3.
-  - Positions: 92/106 route-phases identical. The 14 differences are B6/B7
-    (approved centring fixes) and timing read-outs.
-  - A re-run on the final code is running now. Its result is in the reply
-    that carries this report.
+  - First run (Solid 6552a03): focus paths 52/53 identical B vs C. The 53rd
+    was a real unapproved change (keys from a removed focused subtree no
+    longer bubbled), fixed in Solid as N3.
+  - **Re-run on the final code (8886583):**
+    - Focus paths: **53/53 identical**.
+    - Every position difference is one of:
+      - B6 / B7 (approved centring fixes: complexflex −10 px, image-performance
+        status −20 px);
+      - 2.2 eager layout: the hidden debug panel in `LeftNavWrapper`, and the
+        hero description under ContentBlock's alpha-0 block, are now measured
+        while hidden — invisible;
+      - timing read-outs;
+      - a mount-time race in `#/examples/tmdb` that shows on both arms;
+      - one new, visible change (next point).
+    - **`#/flex`, `#/flexsize`, `#/flexgrow` sit 82.5 px higher.**
+      - Their Row's `onFocus` sets the page Column's `y` from `this.y` at mount.
+        Text is now sized before the frame, so that read gets the laid-out `y`.
+        1.6 read 0, because flex waited for the text's `loaded`.
+      - The focused row now sits at y 150, where the code intends; on 1.6 it sat
+        82.5 px lower.
+      - Added to MIGRATION (text-sizing entry: "reads right after mount see the
+        laid-out values"). See §8.9.
 - **`#/benchmark`**, median of 3 at 6x, ms:
 
   | Metric         | A    | B     | C    |
@@ -289,6 +304,14 @@ status line still says "draft until Checkpoint 2".
 8. **Bundle growth (§6).** Accept +7.9 kB gzip for the CPU and allocation wins,
    or ask me to trim. Candidates: item 4, item 3, and S's dead-code-free but
    large replay path.
+9. **Layout reads at mount (§5).**
+   - Code that reads a flex-derived position in the same task as the mount now
+     gets the laid-out value, not 0. In the demo, three Flex pages move up
+     82.5 px to where their code intends.
+   - It follows from the approved text sizing before the frame (T1, design
+     3.4). Restoring 1.6's value would mean delaying flex again.
+   - I listed it in MIGRATION as a behaviour change. Confirm that is
+     acceptable.
 
 ## 9. Renderer: commits with measured gains (`v2-solid-integration`)
 
