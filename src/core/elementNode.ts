@@ -342,6 +342,12 @@ export interface ElementNode extends RendererNode, FocusNode {
   _style?: Styles;
   /** @internal text-only props written to an element that is not a `<text>` (B20) */
   _textProps?: Record<string, unknown>;
+  /**
+   * @internal removed from its parent's children and not inserted since. Its
+   * `parent` link stays (1.6: keys and events still bubble through it), but
+   * it does not lay out that parent.
+   */
+  _detached: boolean;
   _theme?: Styles;
   _lastAnyKeyPressTime?: number;
   _type: 'element' | 'textNode';
@@ -841,6 +847,7 @@ export class ElementNode {
     this._focusGen = 0;
     this._layoutQueued = false;
     this._textProps = undefined;
+    this._detached = false;
   }
 
   get effects(): StyleEffects | undefined {
@@ -977,6 +984,9 @@ export class ElementNode {
   ) {
     const children = this.children;
     const prevParent = node.parent;
+    // Removed earlier (its parent link stays, as in 1.6): it is in no child
+    // list, so there is nothing to take it out of.
+    const detached = isElementNode(node) && node._detached;
     // The renderer node of a rendered element is placed among its siblings
     // in `children` order (B19: renderer v2 draws siblings in that order).
     // The renderer keeps siblings sorted by zIndex: when the anchor's zIndex
@@ -990,17 +1000,21 @@ export class ElementNode {
     // adjacent items asks for this (insertNode(parent, y, nextSibling(x))).
     if (beforeNode === node) {
       beforeNode =
-        prevParent === this
+        prevParent === this && !detached
           ? children[lastIndexOf(children, node) + 1]
           : undefined;
     }
     // A node in a parent (this one too) is taken out first, then inserted
     // before `beforeNode`, or appended.
-    if (prevParent !== undefined) {
+    if (prevParent !== undefined && !detached) {
       if (drawn && prevParent === this) {
         drawnBefore = nextDrawn(children, lastIndexOf(children, node) + 1);
       }
       prevParent.removeChild(node);
+    }
+    // In a child list again (removeChild above marked it detached).
+    if (isElementNode(node)) {
+      node._detached = false;
     }
 
     // We're inserting a node thats been rendered into a node that hasn't been
@@ -1028,7 +1042,7 @@ export class ElementNode {
     // renderer write is skipped.
     (node as ElementNode)._parent = this;
     const next = nextDrawn(children, index + 1);
-    if (prevParent !== this || next !== drawnBefore) {
+    if (prevParent !== this || detached || next !== drawnBefore) {
       (this.lng as INode).insertBefore(
         (node as ElementNode).lng as INode,
         next === null ? null : (next.lng as INode),
@@ -1054,11 +1068,12 @@ export class ElementNode {
     const index = lastIndexOf(children, node);
     if (index > -1) {
       removeAt(children, index);
-      if (isElementNode(node) && node.onRemove) {
-        node.onRemove.call(node, node);
+      if (isElementNode(node)) {
+        node._detached = true;
+        if (node.onRemove) {
+          node.onRemove.call(node, node);
+        }
       }
-      // Out of the tree: a re-insert finds no parent to remove it from.
-      node.parent = undefined;
 
       if (this.requiresLayout()) {
         queueLayout(this);
