@@ -79,7 +79,11 @@ export default class States extends Array<DollarString> {
   }
 
   merge(newStates: NodeStates) {
-    if (isArray(newStates)) {
+    if (newStates === this) {
+      // As 1.6 (length = 0, then a spread of the emptied list): a self-merge
+      // clears the list.
+      this.length = 0;
+    } else if (isArray(newStates)) {
       // Copied by index, then cut to length: a spread ran the iterator
       // protocol over the list (with forwardStates, the parent's States).
       const n = newStates.length;

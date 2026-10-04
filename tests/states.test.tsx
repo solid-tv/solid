@@ -136,8 +136,9 @@ v.describe('States copies a list by index', () => {
     states.merge(noIterator(['$p', '$q'] as lng.DollarString[]));
     v.expect([...states]).toEqual(['$p', '$q']);
 
+    // A self-merge clears the list, as in 1.6.
     states.merge(states);
-    v.expect([...states]).toEqual(['$p', '$q']);
+    v.expect([...states]).toEqual([]);
 
     states.merge('$s');
     v.expect([...states]).toEqual(['$s']);
