@@ -2597,6 +2597,8 @@ export class ElementNode {
         if (bit !== undefined) {
           mask |= bit;
           this._shaderMask = mask;
+          // Per key: a throw later in the loop leaves no stale bit behind.
+          this._stateShaderBits &= ~bit;
         }
       }
       this._undoCount = 0;

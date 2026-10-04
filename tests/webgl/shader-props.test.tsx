@@ -1350,6 +1350,44 @@ v.test(
   },
 );
 
+// Post-round-5 fix 2, C: the undo clears a key's source bit as it goes, so a
+// setter that throws later in the undo leaves no stale bit.
+v.test(
+  'ST1: after a throw during the undo, a state reusing the style border object still applies it',
+  async () => {
+    const ring = { width: 2, color: RED };
+    let throwOnUndo = false;
+    const { changed, never, dispose } = await pair({
+      width: 100,
+      height: 100,
+      border: ring,
+      borderTop: { width: 6 },
+      $focus: { border: ring, myThrow: 1 } as NodeStyles['$focus'],
+      $hover: { border: ring },
+    });
+    Object.defineProperty(changed, 'myThrow', {
+      configurable: true,
+      get: () => undefined,
+      set(v: unknown) {
+        if (throwOnUndo && v === undefined) {
+          throwOnUndo = false;
+          throw new Error('boom');
+        }
+      },
+    });
+    changed.states.add('$focus');
+    v.expect(borderOf(changed)).toEqual([RED, [2, 2, 2, 2]]);
+    throwOnUndo = true;
+    v.expect(() => changed.states.remove('$focus')).toThrow('boom');
+    v.expect(borderOf(changed)).toEqual([RED, [6, 2, 2, 2]]);
+    changed.states.add('$hover');
+    never.states.add('$hover');
+    v.expect(declaredProps(changed)).toEqual(declaredProps(never));
+    v.expect(borderOf(changed)).toEqual([RED, [2, 2, 2, 2]]);
+    dispose();
+  },
+);
+
 v.test(
   'a style listing a side before border: focus and blur agree with a never-focused node',
   async () => {
