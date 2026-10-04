@@ -363,4 +363,62 @@ v.describe('child list', () => {
     v.expect(() => scrollRow(1, row, undefined, 0)).not.toThrow();
     dispose();
   });
+
+  // N3: a removed node keeps its parent link, but must not lay out its old
+  // parent: not on a load, not when its own layout changes its size.
+  v.test("a removed node's load does not lay out its old parent", async () => {
+    let count = 0;
+    let row!: ElementNode;
+    let auto!: ElementNode;
+    const dispose = renderer.render(() => (
+      <view ref={row} display="flex" onLayout={() => void count++}>
+        <view ref={auto} autosize width={50} height={50} />
+        <view width={20} height={20} />
+      </view>
+    ));
+    await tick();
+    const before = count;
+    row.removeChild(auto);
+    await tick();
+    const afterRemove = count;
+    v.expect(afterRemove).toBeGreaterThan(before);
+
+    auto.lng.w = 120;
+    (auto.lng as unknown as { emit: (e: string, d: unknown) => void }).emit(
+      'loaded',
+      { type: 'texture', dimensions: { w: 120, h: 50 } },
+    );
+    await tick();
+    v.expect(count).toBe(afterRemove);
+    dispose();
+  });
+
+  v.test(
+    "a removed container's resize does not lay out its old parent",
+    async () => {
+      let count = 0;
+      let outer!: ElementNode;
+      let inner!: ElementNode;
+      let item!: ElementNode;
+      const dispose = renderer.render(() => (
+        <view ref={outer} display="flex" onLayout={() => void count++}>
+          <view ref={inner} display="flex" height={20}>
+            <view ref={item} width={20} height={20} />
+          </view>
+          <view width={10} height={10} />
+        </view>
+      ));
+      await tick();
+      outer.removeChild(inner);
+      await tick();
+      const afterRemove = count;
+
+      item.width = 70;
+      inner.updateLayout();
+      await tick();
+      v.expect(inner.width).toBe(70);
+      v.expect(count).toBe(afterRemove);
+      dispose();
+    },
+  );
 });
