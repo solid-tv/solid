@@ -1,0 +1,14 @@
+{
+  // Type-checks the type-level contract tests (`pnpm tsc` runs it after the
+  // root build). Same compiler options as the root, but no emit and only the
+  // contract file: the other tests are not type-clean.
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "composite": false,
+    "incremental": false,
+    "declaration": false,
+    "sourceMap": false,
+    "noEmit": true
+  },
+  "include": ["../vite-env.d.ts", "contract-types.tsx"]
+}
