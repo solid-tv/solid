@@ -345,20 +345,6 @@ function sweepFontWaiting(): void {
   fontWaitingSweepAt = kept * 2 > 64 ? kept * 2 : 64;
 }
 
-/** The props a text's layout reads that an animation can change. */
-function animatesTextLayout(props: Partial<AnimateProps>): boolean {
-  return (
-    'fontSize' in props ||
-    'lineHeight' in props ||
-    'letterSpacing' in props ||
-    'maxWidth' in props ||
-    'maxHeight' in props ||
-    'maxLines' in props ||
-    'w' in props ||
-    'h' in props
-  );
-}
-
 /**
  * What Solid knows of a `<text>` it measures (`ElementNode._text`), made the
  * first time: only texts in a container that lays out have one. Its sizes
@@ -2268,7 +2254,14 @@ export class ElementNode {
       index = children.length;
       children.push(node as ElementNode);
     } else {
-      insertAt(children, index, node as ElementNode);
+      // Shifted up by hand: splice allocates, and a module helper with this
+      // one call site would be a closure per call under terser's defaults.
+      let i = children.length;
+      children.push(node as ElementNode);
+      for (; i > index; i--) {
+        children[i] = children[i - 1]!;
+      }
+      children[index] = node as ElementNode;
     }
 
     if (!drawn) {
@@ -2304,7 +2297,18 @@ export class ElementNode {
     const children = this.children;
     const index = lastIndexOf(children, node);
     if (index > -1) {
-      removeAt(children, index);
+      // Shifted down by hand: splice allocates the array of removed items,
+      // and a module helper with this one call site would be a closure per
+      // call under terser's defaults.
+      if (index === 0) {
+        children.shift();
+      } else {
+        const last = children.length - 1;
+        for (let i = index; i < last; i++) {
+          children[i] = children[i + 1]!;
+        }
+        children.pop();
+      }
       if (isElementNode(node)) {
         node._detached = true;
         if (node.onRemove) {
@@ -2431,7 +2435,19 @@ export class ElementNode {
       props,
       animationSettings || this.animationSettings || {},
     );
-    if (this._type === NodeType.TextNode && animatesTextLayout(props)) {
+    // A prop the text's layout reads (inline: a module function with this
+    // one call site would be a closure per call under terser's defaults).
+    if (
+      this._type === NodeType.TextNode &&
+      ('fontSize' in props ||
+        'lineHeight' in props ||
+        'letterSpacing' in props ||
+        'maxWidth' in props ||
+        'maxHeight' in props ||
+        'maxLines' in props ||
+        'w' in props ||
+        'h' in props)
+    ) {
       // Started now or later, again or not at all: the text hears its
       // layouts from now on (`_listenTextLoaded`).
       this._textLayoutAnimated();
@@ -3619,29 +3635,6 @@ function lastIndexOf<T>(list: T[], item: T): number {
     i--;
   }
   return i === 0 ? -1 : i;
-}
-
-/** Removes `list[index]` without allocating (`splice` returns an array). */
-function removeAt<T>(list: T[], index: number): void {
-  if (index === 0) {
-    list.shift();
-    return;
-  }
-  const last = list.length - 1;
-  for (let i = index; i < last; i++) {
-    list[i] = list[i + 1]!;
-  }
-  list.pop();
-}
-
-/** Inserts `item` at `index` without allocating. */
-function insertAt<T>(list: T[], index: number, item: T): void {
-  let i = list.length;
-  list.push(item);
-  for (; i > index; i--) {
-    list[i] = list[i - 1]!;
-  }
-  list[index] = item;
 }
 
 /** The first rendered element in `children` from `from` on: the renderer sibling to draw before. */
