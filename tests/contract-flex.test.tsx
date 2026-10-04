@@ -1420,6 +1420,53 @@ describe('contract: flex through the renderer', () => {
     dispose();
   });
 
+  it('flexGrow: the container calls onLayout once per layout, after its grown flex children are laid out', async () => {
+    const seen: unknown[] = [];
+    let last!: lng.ElementNode;
+    const dispose = renderer.render(() => (
+      <view
+        display="flex"
+        width={400}
+        height={100}
+        onLayout={() => void seen.push(last.x)}
+      >
+        <view width={100} height={50} />
+        <view display="flex" flexGrow={1} justifyContent="spaceBetween">
+          <view width={20} height={20} />
+          <view ref={last} width={20} height={20} />
+        </view>
+      </view>
+    ));
+    await waitForUpdate();
+    // Until 1.7 it was called twice per layout, first before the children
+    // were laid out again (last.x 0), then after (280).
+    expect(seen).toEqual([280]);
+    dispose();
+  });
+
+  it('flexGrow: a grown child that fits its content resizes when laid out again, so the container runs once more before its one onLayout', async () => {
+    const seen: unknown[] = [];
+    let fit!: lng.ElementNode;
+    let last!: lng.ElementNode;
+    const dispose = renderer.render(() => (
+      <view
+        display="flex"
+        width={400}
+        height={100}
+        onLayout={() => void seen.push([fit.width, last.x])}
+      >
+        <view width={100} height={50} />
+        <view ref={fit} display="flex" flexGrow={1}>
+          <view width={20} height={20} />
+          <view ref={last} width={20} height={20} />
+        </view>
+      </view>
+    ));
+    await waitForUpdate();
+    expect(seen).toEqual([[300, 20]]);
+    dispose();
+  });
+
   it('transition: a node moved by one layout and back by the next, before its animation advances, is sent back', async () => {
     const [w, setW] = s.createSignal(50);
     const [transition, setTransition] = s.createSignal<

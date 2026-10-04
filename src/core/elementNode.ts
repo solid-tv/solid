@@ -16,7 +16,7 @@ import {
   type DollarString,
 } from './intrinsicTypes.js';
 import States, { type NodeStates } from './states.js';
-import calculateFlex from './flexLayout.js';
+import calculateFlex, { getArrayValue } from './flexLayout.js';
 import {
   log,
   isArray,
@@ -93,9 +93,7 @@ export function enqueueDelete(node: ElementNode, n: number): void {
   if (node._queueDelete === undefined) {
     node._queueDelete = n;
     elementDeleteQueue[elementDeleteCount++] = node;
-    if (elementDeleteCount === 1) {
-      schedulePostMutation();
-    }
+    schedulePostMutation();
   } else {
     node._queueDelete += n;
   }
@@ -127,15 +125,18 @@ function runPostMutation() {
   postMutationInFrame = false;
 
   // Phase 1: delete-flush (the count is read every time: a destroy can
-  // queue more)
+  // queue more). An entry is cleared before its destroy, so one whose
+  // onDestroy threw is not retried and the next run carries on after it.
   if (elementDeleteCount > 0) {
     for (let i = 0; i < elementDeleteCount; i++) {
-      const el = elementDeleteQueue[i]!;
+      const el = elementDeleteQueue[i];
       elementDeleteQueue[i] = undefined;
-      if ((el._queueDelete ?? 0) < 0) {
+      if (el === undefined) continue;
+      const queued = el._queueDelete ?? 0;
+      el._queueDelete = undefined;
+      if (queued < 0) {
         el.destroy();
       }
-      el._queueDelete = undefined;
     }
     elementDeleteCount = 0;
   }
@@ -1481,24 +1482,12 @@ export class ElementNode {
       return;
     }
 
-    const flexChanged = isFlex && calculateFlex(this);
-    const onLayout = this._onLayout;
-    const onLayoutChanged =
-      onLayout !== undefined &&
-      isFunction(onLayout) &&
-      onLayout.call(this, this);
+    let flexChanged = isFlex && calculateFlex(this);
 
-    // A container whose size changed queues its parent (one with nothing to
-    // lay out would do nothing).
-    const parent = this.parent;
-    if ((flexChanged || onLayoutChanged) && parent && parent._requiresLayout) {
-      queueLayout(parent);
-    }
-
-    if (this._containsFlexGrow === true) {
+    if (isFlex && this._containsFlexGrow === true) {
       // This pass grew or shrank its children: lay out the flex ones again,
       // directly, so they do not queue this container back through their
-      // own size. Run this container again only if one of them resized.
+      // own size. If one of them resized, lay this container out once more.
       let childResized = false;
       for (let i = 0; i < numChildren; i++) {
         const c = children[i]!;
@@ -1510,11 +1499,24 @@ export class ElementNode {
           }
         }
       }
-      if (childResized) {
-        queueLayout(this);
-      } else {
-        this._containsFlexGrow = null;
+      if (childResized && calculateFlex(this)) {
+        flexChanged = true;
       }
+      this._containsFlexGrow = null;
+    }
+
+    // One onLayout, after the final layout (the children's included).
+    const onLayout = this._onLayout;
+    const onLayoutChanged =
+      onLayout !== undefined &&
+      isFunction(onLayout) &&
+      onLayout.call(this, this);
+
+    // A container whose size changed queues its parent (one with nothing to
+    // lay out would do nothing).
+    const parent = this.parent;
+    if ((flexChanged || onLayoutChanged) && parent && parent._requiresLayout) {
+      queueLayout(parent);
     }
   }
 
@@ -1723,15 +1725,20 @@ export class ElementNode {
           textProps.maxLines = textProps.maxLines ?? 99;
         }
 
-        // B11: margins live on the ElementNode, not in the renderer props.
+        // B11: margins live on the ElementNode, not in the renderer props;
+        // resolved as flex resolves them (a side, else the margin array).
         if (!textProps.maxWidth) {
           textProps.maxWidth =
-            parentWidth - textProps.x! - (node.marginRight || 0);
+            parentWidth -
+            textProps.x! -
+            (node.marginRight || getArrayValue(node.margin, 1));
         }
 
         if (textProps.contain === 'both' && !textProps.maxHeight) {
           textProps.maxHeight =
-            parentHeight - textProps.y! - (node.marginBottom || 0);
+            parentHeight -
+            textProps.y! -
+            (node.marginBottom || getArrayValue(node.margin, 2));
         } else if (textProps.maxLines === 1 && !textProps.maxHeight) {
           // B12: a lineHeight at or below 3 multiplies the font size.
           const lineHeight = textProps.lineHeight;
