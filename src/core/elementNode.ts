@@ -351,18 +351,20 @@ function sweepFontWaiting(): void {
  * start as doubles, so storing a measured size allocates nothing.
  */
 class TextMeasure {
+  // `declare`d, assigned in the constructor: a class field would be emitted
+  // as a native field that starts undefined (design 3.6.5).
   /** A prop its layout reads was written since it was last measured; queued. */
-  due: boolean;
+  declare due: boolean;
   /** Its font was missing when measured (`_waitForFont`). */
-  waiting: boolean;
+  declare waiting: boolean;
   /** Width and height, as flex reads them, when last measured; NaN before. */
-  w: number;
-  h: number;
+  declare w: number;
+  declare h: number;
   /**
    * Hears every layout (`_listenTextLoaded`): a text Solid animated a layout
    * prop of, and every measured text in DOM builds. For its lifetime.
    */
-  listening: boolean;
+  declare listening: boolean;
 
   constructor() {
     this.due = false;
