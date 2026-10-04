@@ -336,6 +336,7 @@ export function writeSummary(dir) {
     coi: new Set(),
     clock: [],
     flex: new Set(),
+    sources: new Map(), // arm -> Set of "solid …, renderer …"
   };
   const failed = [];
   for (const r of results) {
@@ -357,6 +358,14 @@ export function writeSummary(dir) {
       meta.coi.add(r.env.crossOriginIsolated);
       meta.clock.push(r.env.clockResolutionUs);
     }
+    if (r.source !== undefined) {
+      if (!meta.sources.has(r.arm)) {
+        meta.sources.set(r.arm, new Set());
+      }
+      meta.sources
+        .get(r.arm)
+        .add(`solid ${r.source.solid}, renderer ${r.source.renderer}`);
+    }
     meta.throttle.add(r.throttle);
     meta.flex.add(r.flex);
     meta.load.push(r.loadAvg);
@@ -372,6 +381,9 @@ export function writeSummary(dir) {
   L.push(`- CPU throttling: ${[...meta.throttle].join(', ')}x`);
   L.push(`- GPU: ${[...meta.gpu].join('; ')}`);
   L.push(`- Flex: ${[...meta.flex].join(', ')}`);
+  for (const a of [...meta.sources.keys()].sort(ARM_ORDER)) {
+    L.push(`- Arm ${a}: ${[...meta.sources.get(a)].join('; ')}`);
+  }
   L.push(`- Chromium: ${[...meta.chrome].join(', ')}`);
   L.push(
     `- crossOriginIsolated: ${[...meta.coi].join(', ')}; clock resolution ${fmt(Math.max(...meta.clock), 1)} µs at worst`,
@@ -465,7 +477,7 @@ export function writeSummary(dir) {
   L.push('## Ratios (medians over runs)');
   L.push('');
   L.push(
-    'A/C: the pinned 1.6.4 release on renderer 1.9.3 over the working tree on its installed renderer. While `src/` is 1.6.4 and the two renderers match, A and C are the same code and A/C is the in-session noise floor.',
+    "A/C: arm A's value over arm C's (above 1: C is faster or allocates less). The arms' Solid and renderer are listed above: when they are the same code, A/C is the in-session noise floor.",
   );
   L.push('');
   L.push(
@@ -544,7 +556,7 @@ export function writeSummary(dir) {
   L.push('## Counts per op (instrumented build; its timings are not reported)');
   L.push('');
   L.push(
-    "`node writes` and `shader writes` are setter calls on renderer nodes and on shader `props` made by app code (Solid and the scenario). A write made while renderer code is on the stack (a renderer frame, `createNode`/`createTextNode`/`createShader`/`animate`, another setter, a texture's event dispatch) is not counted; the app's listeners that the renderer calls (`loaded`, `idle`) are app code. `in frames`: the part of those writes made during a renderer frame (Solid's flex on `loaded`). Creation is counted on its own, the same way on both majors: `created` nodes and their `creation props` (keys with a defined value in the bag passed to `createNode`/`createTextNode`; renderer v2 applies the bag through its setters, v1 in its constructor). `loaded`: emitted / heard by a listener (v1 emits on every text layout and texture load, v2 queues one only for a node with a listener).",
+    "`node writes` and `shader writes` are setter calls on renderer nodes and on shader `props` made by app code (Solid and the scenario). A write made while renderer code is on the stack (a renderer frame, `createNode`/`createTextNode`/`createShader`/`animate`, another setter, a texture's event dispatch) is not counted; the app's listeners that the renderer calls (`loaded`, `idle`) are app code. `in frames`: the part of those writes made during a renderer frame (Solid's flex on `loaded`). Creation is counted on its own, never as writes: `created` nodes and their `creation props` (keys with a defined value in the bag passed to `createNode`/`createTextNode`; renderer 1.x applies the bag in its constructor, 2.x through its setters). `loaded`: emitted / heard by a listener (renderer 1.x emits on every text layout and texture load, 2.x queues one only for a node with a listener).",
   );
   L.push('');
   L.push(

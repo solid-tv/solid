@@ -253,7 +253,7 @@ function armSource(arm) {
     (git(solidRoot, 'status', '--porcelain', '--', 'src') ?? '') !== '';
   return {
     solid: `${git(solidRoot, 'rev-parse', '--short', 'HEAD')}${dirty ? '+dirty' : ''}`,
-    renderer: `installed ${ARMS.C.rendererVersion} (${ARMS.C.renderer})`,
+    renderer: `installed ${ARMS.C.rendererVersion}`,
   };
 }
 

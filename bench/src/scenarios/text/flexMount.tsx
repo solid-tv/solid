@@ -1,4 +1,4 @@
-// Brief scenario: a Row of 20 flex tiles, each a flex column with a title and
+// Scenario: a Row of 20 flex tiles, each a flex column with a title and
 // a subtitle, at mount.
 import { Row } from '@solidtv/solid/primitives';
 import { createSignal, For, Show } from 'solid-js';

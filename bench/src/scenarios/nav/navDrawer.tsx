@@ -1,4 +1,4 @@
-// Brief scenario: a NavDrawer-style toggle: `states` add and remove on 10
+// Scenario: a NavDrawer-style toggle: `states` add and remove on 10
 // children with `forwardStates`, and a width transition.
 //
 // Modelled on solid-demo-app's LeftNavWrapper + components/NavDrawer: Left

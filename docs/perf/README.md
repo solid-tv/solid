@@ -70,8 +70,8 @@ marked `+dirty` when `src/` has uncommitted changes).
 
 While `src/` is unchanged from 1.6.4, **A and C run the same Solid code**, so
 A/C (the ratios in the summary) is the in-session noise floor, plus whatever
-differs between the two renderer versions: check `source.renderer` in the
-results when the installed renderer is not 1.9.3. After a change to `src/`,
+differs between the two renderer versions (the summary lists each arm's
+Solid and renderer; today's lockfile installs 1.9.0). After a change to `src/`,
 A/C is the change's effect (above 1: C is faster or allocates less).
 
 **Flex.** solid-demo-app sets `VITE_USE_NEW_FLEX=true`, so apps run
