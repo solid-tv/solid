@@ -35,36 +35,6 @@ let shrinkFactor = new Float64Array(0);
 let orderKey = new Float64Array(0);
 let lineStart = new Float64Array(0);
 
-/**
- * Grows the scratch arrays to hold `n` children (`n > capacity`). Called
- * only on that cold branch: terser's default `reduce_funcs` turns a function
- * with one call site into a closure per call, so a capacity test in here
- * would make one per pass.
- */
-function growScratch(n: number): void {
-  let c = capacity * 2;
-  if (c < n) {
-    c = n < 16 ? 16 : n;
-  }
-  capacity = c;
-  childIndex = new Int32Array(c);
-  order = new Int32Array(c);
-  flags = new Uint8Array(c);
-  mainSize = new Float64Array(c);
-  mainRead = new Float64Array(c);
-  ownSize = new Float64Array(c);
-  marginStart = new Float64Array(c);
-  marginEnd = new Float64Array(c);
-  totalMain = new Float64Array(c);
-  crossSize = new Float64Array(c);
-  marginCrossStart = new Float64Array(c);
-  marginCrossEnd = new Float64Array(c);
-  growFactor = new Float64Array(c);
-  shrinkFactor = new Float64Array(c);
-  orderKey = new Float64Array(c);
-  lineStart = new Float64Array(c);
-}
-
 /** A `padding`/`margin` side from a number or a 2-4 value array. */
 export function getArrayValue(
   val: number | number[] | undefined,
@@ -278,8 +248,33 @@ function layout(node: ElementNode): boolean {
   const wrapping = flexWrap === 'wrap' || isWrapReverse;
   const align = node.alignItems || (flexWrap ? 'flexStart' : undefined);
 
+  // Scratch for numChildren slots. Written out here, not a helper: terser's
+  // default `reduce_funcs` makes a function with one call site a closure
+  // created per call, and one created in this cold branch is no better: in
+  // Chrome 141 the function holding it (Maglev) then boxes this pass's
+  // doubles (virtual-grid: 2 to 5.5 KiB per press).
   if (numChildren > capacity) {
-    growScratch(numChildren);
+    let c = capacity * 2;
+    if (c < numChildren) {
+      c = numChildren < 16 ? 16 : numChildren;
+    }
+    capacity = c;
+    childIndex = new Int32Array(c);
+    order = new Int32Array(c);
+    flags = new Uint8Array(c);
+    mainSize = new Float64Array(c);
+    mainRead = new Float64Array(c);
+    ownSize = new Float64Array(c);
+    marginStart = new Float64Array(c);
+    marginEnd = new Float64Array(c);
+    totalMain = new Float64Array(c);
+    crossSize = new Float64Array(c);
+    marginCrossStart = new Float64Array(c);
+    marginCrossEnd = new Float64Array(c);
+    growFactor = new Float64Array(c);
+    shrinkFactor = new Float64Array(c);
+    orderKey = new Float64Array(c);
+    lineStart = new Float64Array(c);
   }
 
   let n = 0;
