@@ -117,7 +117,8 @@ function setSize(c: ElementNode, isWidth: boolean, v: number): void {
  * Writes a size the engine computed, unless `current` (read from the node)
  * is already `v` and, with a transition on it (`current` is then the
  * animated value), `v` is also what this engine last wrote. Returns whether
- * it wrote. `v` is only boxed on the write path.
+ * it wrote. Callers test `current !== v || c.transition` first, so the
+ * common no-write case passes no doubles to a call.
  */
 function writeSize(
   c: ElementNode,
@@ -458,7 +459,6 @@ function layout(node: ElementNode): boolean {
         }
       }
       sizeWork = true;
-      node._containsFlexGrow = node._containsFlexGrow ? null : true;
     } else if (availableSpace < 0 && totalFlexShrink > 0) {
       // Flex Shrink Phase
       let totalScaledShrinkFactor = 0;
@@ -491,12 +491,14 @@ function layout(node: ElementNode): boolean {
           }
         }
       }
-      node._containsFlexGrow = node._containsFlexGrow ? null : true;
-    } else if (node._containsFlexGrow) {
-      node._containsFlexGrow = null;
     }
   }
 
+  // Whether this pass changed a child's size: updateLayout then lays the
+  // flex ones out again (`_containsFlexGrow`). A relayout that changes none
+  // asks for nothing, so a grown child that sizes itself to its content is
+  // not shrunk and regrown on every relayout.
+  let resized = false;
   if (sizeWork) {
     for (let p = 0; p < n; p++) {
       const k = order[p]!;
@@ -505,20 +507,44 @@ function layout(node: ElementNode): boolean {
         continue;
       }
       const c = children[childIndex[k]!] as ElementNode;
+      const read = mainRead[k]!;
       if ((flag & GROWN) !== 0) {
         const size = mainSize[k]!;
-        writeSize(c, isRow, mainRead[k]!, size);
-        c._flexBase = ownSize[k];
-        c._flexGrown = size;
+        if (
+          (size !== read || c.transition) &&
+          writeSize(c, isRow, read, size)
+        ) {
+          resized = true;
+        }
+        const own = ownSize[k]!;
+        if (c._flexBase !== own) c._flexBase = own;
+        if (c._flexGrown !== size) c._flexGrown = size;
       } else if ((flag & SHRUNK) !== 0) {
-        writeSize(c, isRow, mainRead[k]!, mainSize[k]!);
+        const size = mainSize[k]!;
+        if (
+          (size !== read || c.transition) &&
+          writeSize(c, isRow, read, size)
+        ) {
+          resized = true;
+        }
         if ((flag & FROM_RECORD) !== 0) c._flexGrown = undefined;
       } else {
         // B8: grown by an earlier pass, not by this one: back to its own size.
-        writeSize(c, isRow, mainRead[k]!, ownSize[k]!);
+        const size = ownSize[k]!;
+        if (
+          (size !== read || c.transition) &&
+          writeSize(c, isRow, read, size)
+        ) {
+          resized = true;
+        }
         c._flexGrown = undefined;
       }
     }
+  }
+  if (resized) {
+    node._containsFlexGrow = true;
+  } else if (node._containsFlexGrow) {
+    node._containsFlexGrow = null;
   }
 
   let totalItemSize = 0;
@@ -543,7 +569,10 @@ function layout(node: ElementNode): boolean {
       if (size > maxHeight) maxHeight = size;
     }
     const newHeight = maxHeight || nodeHeight;
-    if (writeSize(node, false, nodeHeight, newHeight)) {
+    if (
+      (newHeight !== nodeHeight || node.transition) &&
+      writeSize(node, false, nodeHeight, newHeight)
+    ) {
       containerUpdated = true;
       containerCrossSize = newHeight;
     }
@@ -661,13 +690,19 @@ function layout(node: ElementNode): boolean {
     const finalCrossSize = line + lineSize + paddingCrossEnd;
     if (isRow) {
       const height = node.height;
-      if (writeSize(node, false, height, finalCrossSize)) {
+      if (
+        (height !== finalCrossSize || node.transition) &&
+        writeSize(node, false, height, finalCrossSize)
+      ) {
         node.preFlexheight = height;
         containerUpdated = true;
       }
     } else {
       const width = node.width;
-      if (writeSize(node, true, width, finalCrossSize)) {
+      if (
+        (width !== finalCrossSize || node.transition) &&
+        writeSize(node, true, width, finalCrossSize)
+      ) {
         node.preFlexwidth = width;
         containerUpdated = true;
       }
@@ -679,7 +714,11 @@ function layout(node: ElementNode): boolean {
     if (calculatedSize < minSize) {
       calculatedSize = minSize;
     }
-    if (writeSize(node, isRow, nodeMain || 0, calculatedSize)) {
+    const current = nodeMain || 0;
+    if (
+      (calculatedSize !== current || node.transition) &&
+      writeSize(node, isRow, current, calculatedSize)
+    ) {
       if (isRow) {
         node.preFlexwidth = containerSize;
       } else {

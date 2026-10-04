@@ -1485,7 +1485,7 @@ export class ElementNode {
     let flexChanged = isFlex && calculateFlex(this);
 
     if (isFlex && this._containsFlexGrow === true) {
-      // This pass grew or shrank its children: lay out the flex ones again,
+      // This pass changed its children's sizes: lay out the flex ones again,
       // directly, so they do not queue this container back through their
       // own size. If one of them resized, lay this container out once more.
       let childResized = false;

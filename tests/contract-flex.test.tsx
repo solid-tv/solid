@@ -1467,6 +1467,51 @@ describe('contract: flex through the renderer', () => {
     dispose();
   });
 
+  it('flexGrow: relaying out a container whose grown child fits its content writes nothing and lays the child out no more', async () => {
+    let outer!: lng.ElementNode;
+    let fit!: lng.ElementNode;
+    let fitPasses = 0;
+    const dispose = renderer.render(() => (
+      <view ref={outer} display="flex" width={400} height={100}>
+        <view width={100} height={50} />
+        <view
+          ref={fit}
+          display="flex"
+          flexGrow={1}
+          onLayout={() => void fitPasses++}
+        >
+          <view width={20} height={20} />
+          <view width={20} height={20} />
+        </view>
+      </view>
+    ));
+    await waitForUpdate();
+    expect(fit.width).toBe(300);
+
+    const widths: number[] = [];
+    const desc = Object.getOwnPropertyDescriptor(
+      Object.getPrototypeOf(fit),
+      'w',
+    )!;
+    Object.defineProperty(fit, 'w', {
+      configurable: true,
+      get: desc.get,
+      set(v: number) {
+        widths.push(v);
+        desc.set!.call(this, v);
+      },
+    });
+    fitPasses = 0;
+    outer.updateLayout();
+    outer.updateLayout();
+    // Nothing changed: no write and no pass of the child (it used to be
+    // shrunk to its content and grown back each time: 40, 300, 40, 300).
+    expect(widths).toEqual([]);
+    expect(fitPasses).toBe(0);
+    expect(fit.width).toBe(300);
+    dispose();
+  });
+
   it('transition: a node moved by one layout and back by the next, before its animation advances, is sent back', async () => {
     const [w, setW] = s.createSignal(50);
     const [transition, setTransition] = s.createSignal<
@@ -1533,6 +1578,103 @@ describe('contract: flex through the renderer', () => {
       { w: 190 },
       { w: 50 },
     ]);
+    dispose();
+  });
+
+  it('onLayout: called once after the first flex pass, with this = node and (node) as the only argument, after children are placed', async () => {
+    const calls: Array<{ self: unknown; args: unknown[]; secondX: unknown }> =
+      [];
+    let row!: lng.ElementNode;
+    let second!: lng.ElementNode;
+    const dispose = renderer.render(() => (
+      <view
+        ref={row}
+        display="flex"
+        gap={10}
+        onLayout={function (this: lng.ElementNode, ...args: unknown[]) {
+          calls.push({ self: this, args, secondX: second.x });
+        }}
+      >
+        <view width={50} height={50} />
+        <view ref={second} width={60} height={40} />
+      </view>
+    ));
+    await waitForUpdate();
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.self).toBe(row);
+    expect(calls[0]!.args).toEqual([row]);
+    expect(calls[0]!.secondX).toBe(60);
+    dispose();
+  });
+
+  it('onLayout: fires again when a child is added or removed, and on updateLayout() (synchronously)', async () => {
+    const [show, setShow] = s.createSignal(true);
+    let count = 0;
+    let row!: lng.ElementNode;
+    let last!: lng.ElementNode;
+    const dispose = renderer.render(() => (
+      <view ref={row} display="flex" onLayout={() => void count++}>
+        <s.Show when={show()}>
+          <view width={50} height={50} />
+        </s.Show>
+        <view ref={last} width={60} height={40} />
+      </view>
+    ));
+    await waitForUpdate();
+    expect(count).toBe(1);
+    expect(last.x).toBe(50);
+
+    setShow(false);
+    await waitForUpdate();
+    expect(count).toBe(2);
+    expect(last.x).toBe(0);
+    expect(row.width).toBe(60);
+
+    row.updateLayout();
+    expect(count).toBe(3);
+    dispose();
+  });
+
+  it('onLayout: fires on a non-flex view with children; never on a view without children', async () => {
+    let withKids = 0;
+    let withoutKids = 0;
+    const dispose = renderer.render(() => (
+      <view>
+        <view onLayout={() => void withKids++}>
+          <view width={10} height={10} />
+        </view>
+        <view onLayout={() => void withoutKids++} />
+      </view>
+    ));
+    await waitForUpdate();
+    expect(withKids).toBe(1);
+    expect(withoutKids).toBe(0);
+    dispose();
+  });
+
+  it('onLayout: a truthy return value queues the parent layout; a falsy one does not', async () => {
+    let parentCount = 0;
+    let returnValue = false;
+    let child!: lng.ElementNode;
+    const dispose = renderer.render(() => (
+      <view display="flex" onLayout={() => void parentCount++}>
+        <view ref={child} width={50} height={50} onLayout={() => returnValue}>
+          <view width={10} height={10} />
+        </view>
+      </view>
+    ));
+    await waitForUpdate();
+    const afterRender = parentCount;
+    expect(afterRender).toBeGreaterThanOrEqual(1);
+
+    child.updateLayout();
+    await waitForUpdate();
+    expect(parentCount).toBe(afterRender);
+
+    returnValue = true;
+    child.updateLayout();
+    await waitForUpdate();
+    expect(parentCount).toBe(afterRender + 1);
     dispose();
   });
 
