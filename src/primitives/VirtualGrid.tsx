@@ -103,9 +103,16 @@ export function VirtualGrid<T>(props: VirtualGridProps<T>): s.JSX.Element {
   const onUp = onVerticalNav(-1);
   const onDown = onVerticalNav(1);
 
+  // B15: set by applySelected for the call that applies an initial
+  // `selected`. The app gets lastIdx === idx there (as Row and Column report
+  // a mount selection); internally there is no previous selection, so the
+  // scroll to that row runs.
+  let forceRowScroll = false;
+
   const onSelectedChanged: lngp.OnSelectedChanged = function (_idx, elm, active, _lastIdx,) {
     let idx = _idx;
-    let lastIdx = _lastIdx;
+    let lastIdx = forceRowScroll ? undefined : _lastIdx;
+    forceRowScroll = false;
     const perRow = itemsPerRow();
     const newRowIndex = Math.floor(idx / perRow);
     const prevRowIndex = Math.floor((lastIdx || 0) / perRow);
@@ -155,16 +162,26 @@ export function VirtualGrid<T>(props: VirtualGridProps<T>): s.JSX.Element {
 
   const chainedOnSelectedChanged = lngp.chainFunctions(props.onSelectedChanged, onSelectedChanged)!;
 
+  // B15: an initial `selected` has not been applied (scrolled to) yet. It
+  // stays pending through runs that find no child (items still loading, or
+  // waiting for onEndReached) and is cleared by the run that applies it.
+  let initialSelectedPending = s.untrack(() => props.selected != null);
+
+  function applySelected(active: lng.ElementNode, lastSelected: number) {
+    const idx = viewRef.selected;
+    if (initialSelectedPending) {
+      initialSelectedPending = false;
+      forceRowScroll = true;
+      lastSelected = idx;
+    }
+    chainedOnSelectedChanged.call(viewRef, idx, viewRef, active, lastSelected);
+    // Not consumed when the app's handler returned true and stopped the chain.
+    forceRowScroll = false;
+  }
+
   let cachedSelected: number | undefined;
-  let selectedRunBefore = false;
   const updateSelected = ([selected, _items]: [number?, any?]) => {
-    if (!viewRef) return;
-    // B15: the first run (mount) has no previous selection. Given the child
-    // index the node got at mount, onSelectedChanged saw no row change and
-    // skipped the scroll to an initial `selected` row.
-    const firstRun = !selectedRunBefore;
-    selectedRunBefore = true;
-    if (selected == null) return;
+    if (!viewRef || selected == null) return;
 
     if (cachedSelected !== undefined) {
       selected = cachedSelected;
@@ -179,7 +196,7 @@ export function VirtualGrid<T>(props: VirtualGridProps<T>): s.JSX.Element {
 
     const item = items()[selected];
     let active = viewRef.children.find(x => x.item === item);
-    const lastSelected = firstRun ? undefined : viewRef.selected;
+    const lastSelected = viewRef.selected;
 
     if (active instanceof lng.ElementNode) {
       viewRef.selected = viewRef.children.indexOf(active);
@@ -187,7 +204,7 @@ export function VirtualGrid<T>(props: VirtualGridProps<T>): s.JSX.Element {
         // force focus as scrollToIndex is manually called
         active.setFocus();
       }
-      chainedOnSelectedChanged.call(viewRef, viewRef.selected, viewRef, active, lastSelected);
+      applySelected(active, lastSelected);
     } else {
       setCursor(selected);
       setSlice(items().slice(start(), end()));
@@ -200,7 +217,7 @@ export function VirtualGrid<T>(props: VirtualGridProps<T>): s.JSX.Element {
           if (lng.hasFocus(viewRef)) {
             active.setFocus();
           }
-          chainedOnSelectedChanged.call(viewRef, viewRef.selected, viewRef, active, lastSelected);
+          applySelected(active, lastSelected);
         }
       });
     }

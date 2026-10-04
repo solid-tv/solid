@@ -520,6 +520,124 @@ v.describe('VirtualGrid', () => {
     },
   );
 
+  for (const autofocus of [true, false]) {
+    v.it(
+      `B15: an initial selected applied when the items arrive after mount scrolls to its row (${autofocus ? 'autofocus' : 'focused later'})`,
+      async () => {
+        let grid!: lng.ElementNode;
+        const [items, setItems] = s.createSignal<number[]>([]);
+        dispose = await mount(() => (
+          <view width={1920} height={1080}>
+            <VirtualGrid
+              ref={grid}
+              autofocus={autofocus}
+              y={40}
+              width={700}
+              columns={3}
+              rows={2}
+              buffer={1}
+              each={items()}
+              selected={10}
+            >
+              {(item) => <Cell item={item()} />}
+            </VirtualGrid>
+          </view>
+        ));
+        setItems(range(20));
+        await flush();
+        if (!autofocus) {
+          grid.setFocus();
+          await flush();
+        }
+        // As with the items present at mount (and as in 1.6): g10's row at
+        // the grid's start. A mount run that found no child used to use up
+        // the initial scroll, leaving y at 40.
+        v.expect([focusedId(), grid.cursor, grid.selected, grid.y]).toEqual([
+          'g10',
+          10,
+          4,
+          -60,
+        ]);
+      },
+    );
+  }
+
+  v.it(
+    'B15: an initial selected past the end (onEndReached) scrolls to its row once the items arrive',
+    async () => {
+      let grid!: lng.ElementNode;
+      const [items, setItems] = s.createSignal(range(20));
+      const onEndReached = v.vi.fn();
+      dispose = await mount(() => (
+        <view width={1920} height={1080}>
+          <VirtualGrid
+            ref={grid}
+            autofocus
+            y={40}
+            width={700}
+            columns={3}
+            rows={2}
+            buffer={1}
+            each={items()}
+            selected={25}
+            onEndReached={onEndReached}
+          >
+            {(item) => <Cell item={item()} />}
+          </VirtualGrid>
+        </view>
+      ));
+      v.expect(onEndReached).toHaveBeenCalledTimes(1);
+      setItems(range(30));
+      await flush();
+      // Window 21-29: g25 is child 4, in its second row.
+      v.expect([focusedId(), grid.cursor, grid.selected, grid.y]).toEqual([
+        'g25',
+        25,
+        4,
+        -60,
+      ]);
+    },
+  );
+
+  for (const selected of [10, 0]) {
+    v.it(
+      `B15: the mount call of onSelectedChanged for selected={${selected}} reports lastIdx === idx, as Row and Column do`,
+      async () => {
+        const calls: unknown[][] = [];
+        dispose = await mount(() => (
+          <view width={1920} height={1080}>
+            <VirtualGrid
+              autofocus
+              y={40}
+              width={700}
+              columns={3}
+              rows={2}
+              buffer={1}
+              each={range(20)}
+              selected={selected}
+              onSelectedChanged={(idx, _g, active, lastIdx) =>
+                calls.push([idx, active?.id, lastIdx])
+              }
+            >
+              {(item) => <Cell item={item()} />}
+            </VirtualGrid>
+          </view>
+        ));
+        // Three calls on an autofocus mount with `selected` (forwardFocus and
+        // the selected effect), each with lastIdx === idx. B15 (1.7): for
+        // selected={10} they were child 10 / item 16 (see the B15 test
+        // above); selected={0} is unchanged.
+        const idx = selected === 10 ? 4 : 0;
+        const id = `g${selected}`;
+        v.expect(calls).toEqual([
+          [idx, id, idx],
+          [idx, id, idx],
+          [idx, id, idx],
+        ]);
+      },
+    );
+  }
+
   // B15 (fixed in 1.7): after selected 10 -> 1, g1 was focused with y still
   // -60, so the top row was drawn 60px above the grid's start. updateSelected
   // read lastSelected from the node after the reactive `selected` prop had
