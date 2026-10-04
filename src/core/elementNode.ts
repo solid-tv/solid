@@ -160,8 +160,13 @@ function runPostMutation() {
 function enqueueLayout(node: ElementNode): void {
   if (node._layoutQueued === true) return;
   node._layoutQueued = true;
+  // The depth in its tree: a removed node's tree ends at it.
   let depth = 0;
-  for (let p = node.parent; p !== undefined && p !== null; p = p.parent) {
+  for (
+    let n: ElementNode = node, p = n.parent;
+    n._detached !== true && p !== undefined && p !== null;
+    n = p, p = n.parent
+  ) {
     depth++;
   }
   while (layoutBuckets.length <= depth) {
@@ -1274,7 +1279,7 @@ export class ElementNode {
       width = w;
       height = h;
       const parent = this.parent;
-      if (parent !== undefined && parent !== null) {
+      if (parent !== undefined && parent !== null && !this._detached) {
         enqueueLayout(parent);
         schedulePostMutationInFrame();
       }
@@ -1552,7 +1557,8 @@ export class ElementNode {
 
     // A container whose size changed queues its parent (one with nothing to
     // lay out would do nothing).
-    const parent = this.parent;
+    // A removed container keeps its parent link but not its place.
+    const parent = this._detached ? undefined : this.parent;
     if ((flexChanged || onLayoutChanged) && parent && parent._requiresLayout) {
       queueLayout(parent);
     }
