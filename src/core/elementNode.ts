@@ -48,6 +48,7 @@ import {
   FocusNode,
 } from './focusManager.js';
 import { initClickInspector } from './clickInspector.js';
+import { onFontLoaded } from './fontLoaded.js';
 
 import {
   IRendererNode,
@@ -63,7 +64,9 @@ import {
 // Three phases run in one microtask (or, for a `loaded` handler, in the
 // renderer frame between its walks: schedulePostMutationInFrame):
 //   1. delete-flush — destroy nodes that were removed and not re-inserted
-//   2. layout       — recompute flex layout for any dirty subtree
+//   2. layout       — measure the texts written since the last run (and
+//                     those that waited for a font), then recompute flex
+//                     layout for any dirty subtree
 //   3. focus        — resolve forwardFocus on deferred elements, then apply
 //
 // Order matters: layout reads the rendered tree (so destroyed nodes must be
@@ -87,6 +90,30 @@ const layoutBuckets: Array<Array<ElementNode | undefined>> = [];
 const layoutBucketSize: number[] = [];
 let layoutMaxDepth = -1; // deepest bucket that may hold a node
 let layoutSweepDepth = -1; // bucket the layout phase is on, -1 outside it
+
+// Text measurement (design 3.4): a `<text>` whose parent lays out is sized by
+// the renderer's synchronous `measure()` before the parent's flex, not by the
+// walk and its `loaded` event. A write to a prop its layout reads queues it
+// here (`TextMeasure.due`); the layout phase measures the queue and queues
+// the parent of a text whose size, as flex reads it, changed. Entries past
+// textMeasureCount are undefined; the array keeps its capacity.
+const textMeasureQueue: Array<ElementNode | undefined> = [];
+let textMeasureCount = 0;
+// Texts whose font's description was missing when measured (`waiting`):
+// each hears `loaded` once (the walk lays it out when the font arrives), and
+// loadFonts() tells when a font has loaded, for those no walk visits. Both
+// set fontWaitingDue; the layout phase then measures them.
+const fontWaiting: ElementNode[] = [];
+let fontWaitingDue = false;
+// Length at which the list is next swept of texts that no longer wait
+// (destroyed: nothing else takes them off while their font never loads).
+// Never while measureFontWaiting walks it (`measuringFontWaiting`).
+let fontWaitingSweepAt = 64;
+let measuringFontWaiting = false;
+// Re-measures in one layout phase before the rest waits for its next change:
+// a text whose size flex writes (flexGrow, flexShrink, minWidth) settles in
+// one or two, so more means a layout that does not converge.
+const MAX_TEXT_SWEEPS = 16;
 
 export function enqueueDelete(node: ElementNode, n: number): void {
   if (node._queueDelete === undefined) {
@@ -141,6 +168,9 @@ function runPostMutation() {
   }
 
   // Phase 2: layout
+  if (fontWaitingDue === true) {
+    measureFontWaiting();
+  }
   runLayoutQueue();
 
   // Phase 3: focus.  setFocus() may have evaluated forwardFocus pre-render
@@ -194,9 +224,11 @@ function queueLayout(node: ElementNode): void {
 }
 
 function runLayoutQueue(): void {
+  measureQueuedTexts();
   // Start from the deepest bucket there is, so entries a run that threw left
   // behind are not stranded.
   layoutMaxDepth = layoutBuckets.length - 1;
+  let textSweeps = 0;
   while (layoutMaxDepth >= 0) {
     let depth = layoutMaxDepth;
     layoutMaxDepth = -1;
@@ -214,8 +246,189 @@ function runLayoutQueue(): void {
       layoutBucketSize[depth] = 0;
     }
     layoutSweepDepth = -1;
+    // Texts the sweep wrote (flex sizing a text, an onLayout): measured now,
+    // so the container of one that resized runs again in another sweep.
+    if (textMeasureCount > 0 && textSweeps < MAX_TEXT_SWEEPS) {
+      textSweeps++;
+      measureQueuedTexts();
+    }
+  }
+  if (textMeasureCount > 0) {
+    // Not converging: drop the rest (each is measured again at its next
+    // change), or the run its writes scheduled would start over.
+    for (let i = 0; i < textMeasureCount; i++) {
+      const t = textMeasureQueue[i];
+      textMeasureQueue[i] = undefined;
+      if (t !== undefined) {
+        t._text!.due = false;
+      }
+    }
+    textMeasureCount = 0;
+    if (isDev) {
+      console.warn(
+        '[solid] Text sizes did not settle in ' +
+          MAX_TEXT_SWEEPS +
+          ' layout passes (a layout that changes the size of a text it lays out); the rest waits for its next change.',
+      );
+    }
   }
 }
+
+/**
+ * Measures the texts written since the last call (`_textLayoutDirty`) and
+ * queues the parent of each whose size, as flex reads it, changed. A text
+ * the parent's updateLayout() measured already is skipped.
+ */
+function measureQueuedTexts(): void {
+  for (let i = 0; i < textMeasureCount; i++) {
+    const t = textMeasureQueue[i];
+    textMeasureQueue[i] = undefined;
+    // Cleared by a run that threw part way (the count was not reset).
+    if (t === undefined) {
+      continue;
+    }
+    const m = t._text!;
+    if (m.due !== true) {
+      continue;
+    }
+    const parent = t._parent;
+    if (
+      parent === undefined ||
+      t._detached === true ||
+      parent._requiresLayout !== true
+    ) {
+      // Moved out, or the parent stopped laying out: nothing to size.
+      m.due = false;
+      m.w = NaN;
+      continue;
+    }
+    if (t._measureText() === true) {
+      enqueueLayout(parent);
+    }
+  }
+  textMeasureCount = 0;
+}
+
+/**
+ * A text that waited for its font heard `loaded`: the walk laid it out, as
+ * the font's description arrived. Shared by every waiting text (no closure
+ * per text); the layout phase, in this frame, measures them all.
+ */
+function fontWaitHeard(): void {
+  fontWaitingDue = true;
+  schedulePostMutationInFrame();
+}
+
+/**
+ * Measures the texts that waited for a font (`_waitForFont`): one whose font
+ * is there now stops waiting and, if its size changed, queues its parent; one
+ * whose font is still missing waits again.
+ */
+function measureFontWaiting(): void {
+  fontWaitingDue = false;
+  const n = fontWaiting.length;
+  // A text whose font is still missing is appended again (_waitForFont),
+  // which must not sweep the list under this loop.
+  measuringFontWaiting = true;
+  try {
+    for (let i = 0; i < n; i++) {
+      const t = fontWaiting[i]!;
+      const m = t._text!;
+      if (m.waiting !== true) {
+        continue; // measured meanwhile
+      }
+      // Off first, so a measure() now queues no `loaded` for it.
+      (t.lng as IRendererTextNode).off('loaded', fontWaitHeard);
+      m.waiting = false;
+      if (t.destroyed === true) {
+        continue;
+      }
+      const parent = t._parent;
+      if (
+        parent === undefined ||
+        t._detached === true ||
+        parent._requiresLayout !== true
+      ) {
+        m.w = NaN;
+        continue;
+      }
+      // Waits again (appended past n) while the font is still missing.
+      if (t._measureText() === true) {
+        enqueueLayout(parent);
+      }
+    }
+  } finally {
+    measuringFontWaiting = false;
+  }
+  // Keep the entries appended meanwhile, without allocating.
+  const length = fontWaiting.length;
+  for (let i = n; i < length; i++) {
+    fontWaiting[i - n] = fontWaiting[i]!;
+  }
+  fontWaiting.length = length - n;
+}
+
+/** Drops the texts that no longer wait for a font (destroyed ones). */
+function sweepFontWaiting(): void {
+  let kept = 0;
+  for (let i = 0; i < fontWaiting.length; i++) {
+    const t = fontWaiting[i]!;
+    if (t._text!.waiting === true && t.destroyed !== true) {
+      fontWaiting[kept++] = t;
+    }
+  }
+  fontWaiting.length = kept;
+  fontWaitingSweepAt = kept * 2 > 64 ? kept * 2 : 64;
+}
+
+/** The props a text's layout reads that an animation can change. */
+function animatesTextLayout(props: Partial<AnimateProps>): boolean {
+  return (
+    'fontSize' in props ||
+    'lineHeight' in props ||
+    'letterSpacing' in props ||
+    'maxWidth' in props ||
+    'maxHeight' in props ||
+    'maxLines' in props ||
+    'w' in props ||
+    'h' in props
+  );
+}
+
+/**
+ * What Solid knows of a `<text>` it measures (`ElementNode._text`), made the
+ * first time: only texts in a container that lays out have one. Its sizes
+ * start as doubles, so storing a measured size allocates nothing.
+ */
+class TextMeasure {
+  /** A prop its layout reads was written since it was last measured; queued. */
+  due: boolean;
+  /** Its font was missing when measured (`_waitForFont`). */
+  waiting: boolean;
+  /** Width and height, as flex reads them, when last measured; NaN before. */
+  w: number;
+  h: number;
+  /**
+   * Hears every layout (`_listenTextLoaded`): a text Solid animated a layout
+   * prop of, and every measured text in DOM builds. For its lifetime.
+   */
+  listening: boolean;
+
+  constructor() {
+    this.due = false;
+    this.waiting = false;
+    this.w = NaN;
+    this.h = NaN;
+    this.listening = false;
+  }
+}
+
+onFontLoaded(() => {
+  if (fontWaiting.length > 0) {
+    fontWaitingDue = true;
+    schedulePostMutation();
+  }
+});
 
 // Text-default template, built once on first use.  Config.fontSettings is
 // expected to be set at app startup and not change afterwards.
@@ -337,6 +550,12 @@ export interface ElementNode extends RendererNode, FocusNode {
   _flexH?: number;
   /** @internal in the layout queue (queueLayout) */
   _layoutQueued: boolean;
+  /**
+   * @internal a `<text>` in a container that lays out: what Solid's text
+   * measurement knows of it (`_textLayoutDirty`, `_measureText`); undefined
+   * until it is first queued or measured
+   */
+  _text: TextMeasure | undefined;
   _hasRenderedChildren?: boolean;
   _effects?: Record<string, any>;
   _fontFamily?: string;
@@ -853,6 +1072,7 @@ export class ElementNode {
     this._layoutQueued = false;
     this._textProps = undefined;
     this._detached = false;
+    this._text = undefined;
   }
 
   get effects(): StyleEffects | undefined {
@@ -972,15 +1192,16 @@ export class ElementNode {
       const family = this._fontFamily;
       (this.lng as ElementNode).fontFamily =
         family === undefined && this.rendered ? _fontFamilyWithWeight : family;
-      return;
+    } else {
+      const alias = Config.fontWeightAlias;
+      const aliased =
+        alias !== undefined && alias !== null
+          ? (alias[weight] as number | string | undefined)
+          : undefined;
+      (this.lng as ElementNode).fontFamily =
+        `${this._fontFamily || Config.fontSettings?.fontFamily}${aliased ?? weight}`;
     }
-    const alias = Config.fontWeightAlias;
-    const aliased =
-      alias !== undefined && alias !== null
-        ? (alias[weight] as number | string | undefined)
-        : undefined;
-    (this.lng as ElementNode).fontFamily =
-      `${this._fontFamily || Config.fontSettings?.fontFamily}${aliased ?? weight}`;
+    this._textLayoutDirty();
   }
 
   insertChild(
@@ -1156,6 +1377,16 @@ export class ElementNode {
       value,
       animationSettings || this.animationSettings || {},
     );
+    // A text's layout prop: its container follows the animated sizes.
+    if (
+      this._type === NodeType.TextNode &&
+      (name === 'fontSize' ||
+        name === 'lineHeight' ||
+        name === 'w' ||
+        name === 'h')
+    ) {
+      this._textLayoutAnimated();
+    }
     this._fireAnimationEvents(name, value, animationSettings);
     return true;
   }
@@ -1185,10 +1416,16 @@ export class ElementNode {
       if (isDev) console.log('NOT RENDERED! CANNOT ANIMATE');
       return { start: () => {} } as IAnimationController;
     }
-    return (this.lng as IRendererNode).animate(
+    const controller = (this.lng as IRendererNode).animate(
       props,
       animationSettings || this.animationSettings || {},
     );
+    if (this._type === NodeType.TextNode && animatesTextLayout(props)) {
+      // Started now or later, again or not at all: the text hears its
+      // layouts from now on (`_listenTextLoaded`).
+      this._textLayoutAnimated();
+    }
+    return controller;
   }
 
   chain(props: Partial<AnimateProps>, animationSettings?: AnimationSettings) {
@@ -1267,9 +1504,10 @@ export class ElementNode {
   }
 
   _layoutOnLoad() {
-    // The size the parent's last layout saw: a load that leaves it unchanged
-    // needs no layout. Until Solid measures text itself, this is how a text
-    // size reaches flex: queue the parent and run the pass in the frame.
+    // An autosize node takes its size from its texture: the size the
+    // parent's last layout saw, so a load that leaves it unchanged needs no
+    // layout; a new one queues the parent and runs the pass in the frame.
+    // (A text in a layout parent is measured instead: _measureText.)
     let width = this.width;
     let height = this.height;
     (this.lng as IRendererNode).on('loaded', () => {
@@ -1284,6 +1522,214 @@ export class ElementNode {
         schedulePostMutationInFrame();
       }
     });
+  }
+
+  /**
+   * @internal A prop the text layout reads was written on this element:
+   * `text`, `fontFamily`/`fontWeight`, `fontSize`, `lineHeight`,
+   * `letterSpacing`, `maxWidth`/`width`, `maxHeight`/`height`, `maxLines`,
+   * `wordBreak`, `overflowSuffix`. A rendered `<text>` whose parent lays out
+   * is measured again in the post-mutation pass, and its parent laid out if
+   * its size changed. Anything else returns at once.
+   */
+  _textLayoutDirty(): void {
+    if (this._type !== NodeType.TextNode || this.rendered !== true) {
+      return;
+    }
+    let m = this._text;
+    if (m !== undefined && m.due === true) {
+      return;
+    }
+    const parent = this._parent;
+    if (
+      parent === undefined ||
+      this._detached === true ||
+      parent._requiresLayout !== true
+    ) {
+      // No layout reads it: a parent that lays it out later measures it
+      // first (updateLayout), as one it never measured.
+      if (m !== undefined) {
+        m.w = NaN;
+      }
+      return;
+    }
+    if (m === undefined) {
+      m = new TextMeasure();
+      this._text = m;
+    }
+    m.due = true;
+    textMeasureQueue[textMeasureCount++] = this;
+    schedulePostMutation();
+  }
+
+  /**
+   * @internal Size this rendered `<text>` for its parent's layout now, with
+   * the renderer's synchronous `measure()` (renderer v2 lays it out into its
+   * layout cache, and the walk reuses that layout). Returns whether its
+   * width or height, as flex reads them (`maxWidth || w`, `maxHeight || h`),
+   * changed since the last call. A text with both max sizes is that large to
+   * flex whatever its layout: the walk lays it out. While its font is
+   * missing it waits (`_waitForFont`).
+   */
+  _measureText(): boolean {
+    let m = this._text;
+    if (m === undefined) {
+      m = new TextMeasure();
+      this._text = m;
+    }
+    m.due = false;
+    const lng = this.lng as IRendererTextNode;
+    const maxWidth = lng.maxWidth;
+    const maxHeight = lng.maxHeight;
+    if (!(maxWidth > 0 && maxHeight > 0)) {
+      if (lng.measure() === true) {
+        if (m.waiting === true) {
+          // The font arrived: stop listening (the list entry goes at the
+          // next measureFontWaiting).
+          m.waiting = false;
+          lng.off('loaded', fontWaitHeard);
+          fontWaitingDue = true;
+        }
+      } else if (lng.destroyed === true) {
+        return false; // in a subtree destroyed since it was written
+      } else if (m.waiting === false) {
+        this._waitForFont(m);
+      }
+    }
+    const w = maxWidth || lng.w;
+    const h = maxHeight || lng.h;
+    if (w === m.w && h === m.h) {
+      return false;
+    }
+    m.w = w;
+    m.h = h;
+    return true;
+  }
+
+  /**
+   * @internal Development only, on `loaded`: a layout Solid did not ask for
+   * (the walk's) changed the size of a text Solid measures, so its parent's
+   * flex has the old one. A prop the layout reads was written on the
+   * renderer node (`el.lng`) rather than on the element, or animated there.
+   */
+  _warnUnmeasuredLayout(): void {
+    const m = this._text;
+    if (
+      m === undefined ||
+      m.due === true ||
+      m.waiting === true ||
+      m.listening === true ||
+      m.w !== m.w ||
+      this._detached === true ||
+      this._parent === undefined ||
+      this._parent._requiresLayout !== true
+    ) {
+      return;
+    }
+    const lng = this.lng as IRendererTextNode;
+    if ((lng.maxWidth || lng.w) !== m.w || (lng.maxHeight || lng.h) !== m.h) {
+      console.warn(
+        '[solid] A text in a flex container was laid out at a size Solid did not measure: a prop its layout reads was written, or animated, on its renderer node (el.lng) instead of on the element. Its container keeps the old size.',
+        this,
+      );
+    }
+  }
+
+  /**
+   * @internal `measure()` found no font description: hear `loaded` once,
+   * when the walk lays the text out (the renderer wakes the nodes it
+   * visited), and wait for loadFonts() to say a font loaded (for one no walk
+   * visits). Either way measureFontWaiting measures it again.
+   */
+  _waitForFont(m: TextMeasure): void {
+    m.waiting = true;
+    (this.lng as IRendererTextNode).on('loaded', fontWaitHeard);
+    if (
+      measuringFontWaiting === false &&
+      fontWaiting.length >= fontWaitingSweepAt
+    ) {
+      sweepFontWaiting();
+    }
+    fontWaiting.push(this);
+  }
+
+  /**
+   * @internal Solid animated a prop this text's layout reads
+   * (`_sendToLightningAnimatable`, `animate()`): from now on, for the text's
+   * lifetime, each layout the walk makes of an animated value lays its
+   * container out again in that frame, as 1.6's `loaded` listener did.
+   * Lifetime, not the animation's: Solid does not see a controller started
+   * later, or again (`animate()` returns it to the app).
+   */
+  _textLayoutAnimated(): void {
+    if (this.rendered !== true) {
+      return;
+    }
+    const parent = this._parent;
+    if (
+      parent === undefined ||
+      this._detached === true ||
+      parent._requiresLayout !== true
+    ) {
+      return;
+    }
+    this._listenTextLoaded();
+  }
+
+  /**
+   * @internal Hear every layout of this text: one whose size, as flex reads
+   * it, Solid did not measure lays the container out in that frame. One
+   * closure per text, made once and kept for its lifetime, on its renderer
+   * node only (nothing else holds it, so it goes with the node). A layout
+   * Solid measured changes nothing, and asks for no second walk.
+   */
+  _listenTextLoaded(): void {
+    let m = this._text;
+    if (m === undefined) {
+      m = new TextMeasure();
+      this._text = m;
+    }
+    if (m.listening === true) {
+      return;
+    }
+    m.listening = true;
+    (this.lng as IRendererTextNode).on('loaded', () => {
+      if (this._textSizeChanged() === true) {
+        enqueueLayout(this._parent!);
+        schedulePostMutationInFrame();
+      }
+    });
+  }
+
+  /**
+   * @internal After a layout Solid did not make (the walk's, of an animated
+   * value; the DOM renderer's late re-measure): whether this text's size, as
+   * flex reads it, changed since Solid last saw it. If so, it is recorded
+   * and the caller lays the parent out. False while a measure is due.
+   */
+  _textSizeChanged(): boolean {
+    const m = this._text;
+    if (m === undefined || m.due === true || m.waiting === true) {
+      return false;
+    }
+    const parent = this._parent;
+    if (this._detached === true) {
+      // Removed (N3 keeps `parent`): the parent it joins next measures it.
+      m.w = NaN;
+      return false;
+    }
+    if (parent === undefined || parent._requiresLayout !== true) {
+      return false;
+    }
+    const lng = this.lng as IRendererTextNode;
+    const w = lng.maxWidth || lng.w;
+    const h = lng.maxHeight || lng.h;
+    if (w === m.w && h === m.h) {
+      return false;
+    }
+    m.w = w;
+    m.h = h;
+    return true;
   }
 
   getText(this: ElementText) {
@@ -1523,6 +1969,19 @@ export class ElementNode {
     const isFlex = this._display === 'flex';
     if (isFlex && this.flexGrow && this.width === 0) {
       return;
+    }
+
+    // Texts written since Solid last measured them (a direct updateLayout()
+    // before the post-mutation pass), or never measured (this container lays
+    // out only now): sized before the pass reads them.
+    for (let i = 0; i < numChildren; i++) {
+      const c = children[i] as ElementNode;
+      if (c._type === NodeType.TextNode && c.rendered === true) {
+        const m = c._text;
+        if (m === undefined || m.due === true || m.w !== m.w) {
+          c._measureText();
+        }
+      }
     }
 
     let flexChanged = isFlex && calculateFlex(this);
@@ -1808,11 +2267,9 @@ export class ElementNode {
         props as Partial<ITextNodeProps> & Partial<IRendererTextNodeProps>,
       ) as IRendererTextNode;
 
-      if (parent.requiresLayout()) {
-        if (!textProps.maxWidth || !textProps.maxHeight) {
-          node._layoutOnLoad();
-        }
-      }
+      // A text in a layout parent is queued to be measured below, once its
+      // listeners are on (an `onEvent.loaded` hears the layout measure()
+      // makes).
     } else {
       // If its not an image or texture apply some defaults
       if (!props.texture) {
@@ -1898,6 +2355,24 @@ export class ElementNode {
           node.lng.on(name, (_inode, data) => handler.call(node, node, data));
         }
       }
+    }
+
+    if (node._type === NodeType.TextNode && parent._requiresLayout === true) {
+      // Its parent's flex reads its size: it is measured in the post-mutation
+      // pass, before the parent's layout (queued above) and before the frame,
+      // instead of waiting for the walk's `loaded`. Not here: a write later
+      // in this tick would lay it out twice (and `loaded` twice).
+      if (isDomRendererActive()) {
+        // The DOM renderer measures again when a web font loads after the
+        // text was measured (its size then was the fallback font's): lay the
+        // container out at that size, as before 1.7.
+        node._listenTextLoaded();
+      } else if (isDev) {
+        (node.lng as IRendererTextNode).on('loaded', () =>
+          node._warnUnmeasuredLayout(),
+        );
+      }
+      node._textLayoutDirty();
     }
 
     // L3 Inspector adds div to the lng object
@@ -2004,7 +2479,7 @@ function nextDrawn(
 // then `_sendToLightningAnimatable` may animate instead.
 type Forwarding = Pick<
   ElementNode,
-  'transition' | '_sendToLightningAnimatable'
+  'transition' | '_sendToLightningAnimatable' | '_type' | '_textLayoutDirty'
 > & { lng: Record<string, unknown> };
 
 const NO_TEXT_PROPS: Readonly<Record<string, unknown>> = Object.freeze({});
@@ -2182,6 +2657,10 @@ Object.defineProperties(ElementNode.prototype, {
       ) {
         this.lng.h = v;
       }
+      // On a text, the max height (renderer v2), which its layout reads.
+      if (this._type === NodeType.TextNode) {
+        this._textLayoutDirty();
+      }
     },
   },
   mount: {
@@ -2325,6 +2804,10 @@ Object.defineProperties(ElementNode.prototype, {
       ) {
         this.lng.w = v;
       }
+      // On a text, the max width (renderer v2), which its layout reads.
+      if (this._type === NodeType.TextNode) {
+        this._textLayoutDirty();
+      }
     },
   },
   x: {
@@ -2379,6 +2862,7 @@ Object.defineProperties(ElementNode.prototype, {
       ) {
         textPropsFor(this).fontSize = v;
       }
+      this._textLayoutDirty();
     },
   },
   lineHeight: {
@@ -2393,6 +2877,7 @@ Object.defineProperties(ElementNode.prototype, {
       ) {
         textPropsFor(this).lineHeight = v;
       }
+      this._textLayoutDirty();
     },
   },
   // Not animated
@@ -2515,6 +3000,9 @@ Object.defineProperties(ElementNode.prototype, {
     },
     set(this: ElementNode, v: unknown) {
       textPropsFor(this).contain = v;
+      // The DOM renderer sizes a text by it (renderer v2 only moves the
+      // block: the measure finds nothing to lay out).
+      this._textLayoutDirty();
     },
   },
   forceLoad: {
@@ -2539,6 +3027,7 @@ Object.defineProperties(ElementNode.prototype, {
     },
     set(this: ElementNode, v: unknown) {
       textPropsFor(this).letterSpacing = v;
+      this._textLayoutDirty();
     },
   },
   maxHeight: {
@@ -2547,6 +3036,7 @@ Object.defineProperties(ElementNode.prototype, {
     },
     set(this: ElementNode, v: unknown) {
       textPropsFor(this).maxHeight = v;
+      this._textLayoutDirty();
     },
   },
   maxLines: {
@@ -2555,6 +3045,7 @@ Object.defineProperties(ElementNode.prototype, {
     },
     set(this: ElementNode, v: unknown) {
       textPropsFor(this).maxLines = v;
+      this._textLayoutDirty();
     },
   },
   maxWidth: {
@@ -2563,6 +3054,7 @@ Object.defineProperties(ElementNode.prototype, {
     },
     set(this: ElementNode, v: unknown) {
       textPropsFor(this).maxWidth = v;
+      this._textLayoutDirty();
     },
   },
   offsetY: {
@@ -2579,6 +3071,7 @@ Object.defineProperties(ElementNode.prototype, {
     },
     set(this: ElementNode, v: unknown) {
       textPropsFor(this).overflowSuffix = v;
+      this._textLayoutDirty();
     },
   },
   text: {
@@ -2587,6 +3080,7 @@ Object.defineProperties(ElementNode.prototype, {
     },
     set(this: ElementNode, v: unknown) {
       textPropsFor(this).text = v;
+      this._textLayoutDirty();
     },
   },
   textAlign: {
@@ -2611,6 +3105,7 @@ Object.defineProperties(ElementNode.prototype, {
     },
     set(this: ElementNode, v: unknown) {
       textPropsFor(this).wordBreak = v;
+      this._textLayoutDirty();
     },
   },
   // Read-only on the renderer node: a write would throw there (B20)

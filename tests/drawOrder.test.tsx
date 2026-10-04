@@ -421,4 +421,33 @@ v.describe('child list', () => {
       dispose();
     },
   );
+
+  v.test(
+    "a removed text's change does not lay out its old parent",
+    async () => {
+      let count = 0;
+      let row!: ElementNode;
+      let label!: ElementNode;
+      const dispose = renderer.render(() => (
+        <view ref={row} display="flex" onLayout={() => void count++}>
+          <text ref={label}>Short</text>
+          <view width={20} height={20} />
+        </view>
+      ));
+      await tick();
+      row.removeChild(label);
+      await tick();
+      const afterRemove = count;
+
+      // N3 keeps `parent` on a removed node: the text's measure path must
+      // still treat it as out of the tree. (jsdom measures text at 0x0, so
+      // the size change comes from maxWidth, which flex reads first.)
+      v.expect(label.parent).toBe(row);
+      label.text = 'A much longer label than before';
+      label.maxWidth = 200;
+      await tick();
+      v.expect(count).toBe(afterRemove);
+      dispose();
+    },
+  );
 });

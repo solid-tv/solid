@@ -4,9 +4,13 @@
  * Within one post-mutation run, flex containers are laid out deepest first,
  * each at most once unless a child's size changed after its pass; a
  * container queues its parent only when its own size changed. The run is
- * scheduled as a microtask; only a `loaded` handler (the text fallback until
- * Solid measures text itself) also asks the renderer to run it inside the
- * frame, between its walks.
+ * scheduled as a microtask; only a `loaded` handler (an autosize node's, or
+ * a text's while its font loads: Solid measures text itself from 1.7) also
+ * asks the renderer to run it inside the frame, between its walks.
+ *
+ * The `loaded` cases use an autosize view: until stream T a text's size
+ * reached flex through `loaded` too (tests/contract-text.test.tsx has the
+ * text cases now).
  *
  * DOM renderer (jsdom) with the text measurement mocked as in
  * contract-text.test.tsx: 10px per character, 20px per line.
@@ -177,13 +181,12 @@ describe('layout queue', () => {
   });
 
   it('a loaded event that reports an unchanged size does not lay the container out again', async () => {
-    mockTextMeasure();
     let count = 0;
     let t!: lng.ElementNode;
     let last!: lng.ElementNode;
     const dispose = renderer.render(() => (
       <view display="flex" gap={10} onLayout={() => void count++}>
-        <text ref={t}>Hello</text>
+        <view ref={t} autosize width={50} height={20} />
         <view ref={last} width={50} height={50} />
       </view>
     ));
@@ -192,7 +195,7 @@ describe('layout queue', () => {
     count = 0;
 
     emitter(t).emit('loaded', {
-      type: 'text',
+      type: 'texture',
       dimensions: { w: 50, h: 20 },
     });
     await settle();
@@ -201,13 +204,12 @@ describe('layout queue', () => {
   });
 
   it('a loaded event that reports a new size lays the container out in the post-mutation pass', async () => {
-    mockTextMeasure();
     let count = 0;
     let t!: lng.ElementNode;
     let last!: lng.ElementNode;
     const dispose = renderer.render(() => (
       <view display="flex" gap={10} onLayout={() => void count++}>
-        <text ref={t}>Hello</text>
+        <view ref={t} autosize width={50} height={20} />
         <view ref={last} width={50} height={50} />
       </view>
     ));
@@ -216,7 +218,7 @@ describe('layout queue', () => {
 
     t.lng.w = 80;
     emitter(t).emit('loaded', {
-      type: 'text',
+      type: 'texture',
       dimensions: { w: 80, h: 20 },
     });
     expect(count).toBe(0); // not synchronously
@@ -288,15 +290,14 @@ describe('layout queue: more cases', () => {
     dispose();
   });
 
-  it('a loaded event on a text removed from its container does not throw, and the container stays laid out', async () => {
-    mockTextMeasure();
+  it('a loaded event on an autosize node removed from its container does not throw, and the container stays laid out', async () => {
     const [show, setShow] = s.createSignal(true);
     let t!: lng.ElementNode;
     let last!: lng.ElementNode;
     const dispose = renderer.render(() => (
       <view display="flex" gap={10}>
         <s.Show when={show()}>
-          <text ref={t}>Hello</text>
+          <view ref={t} autosize width={50} height={20} />
         </s.Show>
         <view ref={last} width={50} height={50} />
       </view>
@@ -310,7 +311,7 @@ describe('layout queue: more cases', () => {
     t.lng.w = 90;
     expect(() =>
       emitter(t).emit('loaded', {
-        type: 'text',
+        type: 'texture',
         dimensions: { w: 90, h: 20 },
       }),
     ).not.toThrow();
@@ -383,17 +384,19 @@ describe('post-mutation scheduling', () => {
       let last!: lng.ElementNode;
       const dispose = renderer.render(() => (
         <view display="flex" gap={10}>
-          <text ref={t}>Hello</text>
+          <text>Hi</text>
+          <view ref={t} autosize width={50} height={20} />
           <view ref={last} width={50} height={50} />
         </view>
       ));
       await settle();
-      expect(last.x).toBe(60);
+      expect(last.x).toBe(90); // 20 + 10 + 50 + 10
+      // A text measured by Solid needs no frame either (1.7, stream T).
       expect(reprocess).not.toHaveBeenCalled();
 
       t.lng.w = 80;
       emitter(t).emit('loaded', {
-        type: 'text',
+        type: 'texture',
         dimensions: { w: 80, h: 20 },
       });
       expect(reprocess).toHaveBeenCalledTimes(1);
@@ -401,7 +404,7 @@ describe('post-mutation scheduling', () => {
       // The renderer runs the callback between its walks: the layout lands
       // in the same frame.
       reprocess.mock.calls[0]![0]();
-      expect(last.x).toBe(90);
+      expect(last.x).toBe(120); // 20 + 10 + 80 + 10
       dispose();
     } finally {
       if (saved === undefined) {
@@ -410,5 +413,112 @@ describe('post-mutation scheduling', () => {
         st.reprocessUpdates = saved;
       }
     }
+  });
+});
+
+describe('text measurement in the layout phase', () => {
+  it('stops re-measuring after 16 sweeps of texts that never settle, warns once, and leaves later runs working', async () => {
+    mockTextMeasure();
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    let passes = 0;
+    let t!: lng.ElementNode;
+    let toggle = false;
+    let looping = true;
+    let last!: lng.ElementNode;
+    const dispose = renderer.render(() => (
+      <view
+        display="flex"
+        gap={10}
+        onLayout={() => {
+          passes++;
+          if (!looping) return;
+          // A layout that changes the size of a text it lays out: never settles.
+          toggle = !toggle;
+          t.text = toggle ? 'Hello world' : 'Hi';
+        }}
+      >
+        <text ref={t}>Hello</text>
+        <view ref={last} width={50} height={50} />
+      </view>
+    ));
+    // One post-mutation run (microtasks only: the DOM renderer's own
+    // re-measure, on a timer, would start the loop again, as in 1.6).
+    for (let i = 0; i < 5; i++) await Promise.resolve();
+    // The first pass, then one per sweep: 16 more; then it stops.
+    expect(passes).toBe(17);
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(String(warn.mock.calls[0]![0])).toContain('did not settle');
+    // Clean up: stop the loop, and let the DOM renderer's re-measure timer
+    // (scheduled by the text writes) run before the container goes, so it
+    // does not run into later tests.
+    looping = false;
+    await settle();
+    dispose();
+    await settle();
+    void last;
+
+    // Later runs lay out.
+    let next!: lng.ElementNode;
+    const dispose2 = renderer.render(() => (
+      <view display="flex" gap={10}>
+        <text>Hello</text>
+        <view ref={next} width={50} height={50} />
+      </view>
+    ));
+    await settle();
+    expect(next.x).toBe(60);
+    dispose2();
+  });
+
+  it('a measure that throws does not stop later post-mutation runs', async () => {
+    mockTextMeasure();
+    const [label, setLabel] = s.createSignal('Hello');
+    let t!: lng.ElementNode;
+    let last!: lng.ElementNode;
+    const dispose = renderer.render(() => (
+      <view display="flex" gap={10}>
+        <text ref={t}>{label()}</text>
+        <view ref={last} width={50} height={50} />
+      </view>
+    ));
+    await settle();
+    expect(last.x).toBe(60);
+
+    const proto = Object.getPrototypeOf(t.lng) as { measure(): boolean };
+    const measure = proto.measure;
+    let throws = true;
+    const spy = vi.spyOn(proto, 'measure').mockImplementation(function (
+      this: unknown,
+    ) {
+      if (throws) {
+        throws = false;
+        throw new Error('measure failed');
+      }
+      return measure.call(this);
+    });
+    const errors: unknown[] = [];
+    const saved = globalThis.queueMicrotask;
+    globalThis.queueMicrotask = (fn: () => void) =>
+      saved(() => {
+        try {
+          fn();
+        } catch (e) {
+          errors.push(e);
+        }
+      });
+    try {
+      setLabel('Hello world'); // its run throws in the measure
+      await settle();
+      expect(errors).toHaveLength(1);
+
+      setLabel('Hi'); // a later run measures and lays out
+      await settle();
+      expect(errors).toHaveLength(1);
+      expect(last.x).toBe(30);
+    } finally {
+      globalThis.queueMicrotask = saved;
+      spy.mockRestore();
+    }
+    dispose();
   });
 });
