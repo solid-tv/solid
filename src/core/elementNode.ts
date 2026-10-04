@@ -2055,6 +2055,10 @@ export class ElementNode {
     this._flexY = undefined;
     this._flexW = undefined;
     this._flexH = undefined;
+    // Written by flexLayout when it resizes a container: here, so that
+    // write adds no field.
+    this.preFlexwidth = undefined;
+    this.preFlexheight = undefined;
     this._hasRenderedChildren = undefined;
     this._effects = undefined;
     this._fontFamily = undefined;
