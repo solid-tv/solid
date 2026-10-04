@@ -432,67 +432,15 @@ function borderWritesOf(node: ElementNode): BorderWrites {
   return writes;
 }
 
-/** Whether a border object other than `key`'s is set on the node. */
-function otherBorderSet(
-  effects: Record<string, unknown>,
-  key: string,
-): boolean {
-  for (let i = 0; i < BORDER_KEYS.length; i++) {
-    const k = BORDER_KEYS[i]!;
-    if (k !== key && isObject(effects[k])) {
-      return true;
-    }
-  }
-  return false;
-}
-
 // One write's view of the node's objects for the key's group (the five
 // border keys, or the shadow alone), as they will be once the write and
 // the running state change are done: each parsed once, in the order they
-// were written, the object being written last. Module scratch: a write
-// does not nest.
+// were written, the object being written last (loaded at the start of
+// writeShaderValue). Module scratch: a write does not nest.
 const groupParses: (ShaderParse | null)[] = [null, null, null, null, null];
 const groupOrder: number[] = [0, 1, 2, 3, 4];
 let groupSize = 0;
 let groupSelf = 0;
-
-function loadGroup(
-  key: string,
-  value: unknown,
-  effects: Record<string, unknown>,
-  writes: BorderWrites | undefined,
-): void {
-  if (IS_BORDER_KEY[key] !== true) {
-    groupParses[0] = isObject(value) ? shaderParse(key, value) : null;
-    groupOrder[0] = 0;
-    groupSize = 1;
-    groupSelf = 0;
-    return;
-  }
-  groupSize = BORDER_KEYS.length;
-  for (let i = 0; i < groupSize; i++) {
-    const k = BORDER_KEYS[i]!;
-    let obj: unknown;
-    if (k === key) {
-      obj = value;
-      groupSelf = i;
-    } else {
-      obj = writes !== undefined ? writes.next[k] : NOT_PENDING;
-      if (obj === NOT_PENDING) {
-        obj = effects[k];
-      }
-    }
-    groupParses[i] = isObject(obj) ? shaderParse(k, obj) : null;
-    // Insertion sort by write order; ties keep BORDER_KEYS order.
-    const s = groupSeq(i, writes);
-    let j = i - 1;
-    while (j >= 0 && groupSeq(groupOrder[j]!, writes) > s) {
-      groupOrder[j + 1] = groupOrder[j]!;
-      j--;
-    }
-    groupOrder[j + 1] = i;
-  }
-}
 
 function groupSeq(i: number, writes: BorderWrites | undefined): number {
   if (i === groupSelf) {
@@ -514,16 +462,6 @@ function otherValue(name: string): unknown {
     }
   }
   return NOT_SET;
-}
-
-/** Whether another object of the group remains. */
-function otherObjectSet(): boolean {
-  for (let i = 0; i < groupSize; i++) {
-    if (i !== groupSelf && groupParses[i]! !== null) {
-      return true;
-    }
-  }
-  return false;
 }
 
 /** Whether another object of the group names any of `names`. */
@@ -677,7 +615,38 @@ function writeShaderValue(
         : value;
     return true;
   }
-  loadGroup(key, value, effects, writes);
+  // Load the group (inline on purpose here and below: terser's default
+  // `reduce_funcs` turns a single-use helper into a closure per call).
+  if (IS_BORDER_KEY[key] !== true) {
+    groupParses[0] = isObject(value) ? shaderParse(key, value) : null;
+    groupOrder[0] = 0;
+    groupSize = 1;
+    groupSelf = 0;
+  } else {
+    groupSize = BORDER_KEYS.length;
+    for (let i = 0; i < groupSize; i++) {
+      const k = BORDER_KEYS[i]!;
+      let obj: unknown;
+      if (k === key) {
+        obj = value;
+        groupSelf = i;
+      } else {
+        obj = writes !== undefined ? writes.next[k] : NOT_PENDING;
+        if (obj === NOT_PENDING) {
+          obj = effects[k];
+        }
+      }
+      groupParses[i] = isObject(obj) ? shaderParse(k, obj) : null;
+      // Insertion sort by write order; ties keep BORDER_KEYS order.
+      const s = groupSeq(i, writes);
+      let j = i - 1;
+      while (j >= 0 && groupSeq(groupOrder[j]!, writes) > s) {
+        groupOrder[j + 1] = groupOrder[j]!;
+        j--;
+      }
+      groupOrder[j + 1] = i;
+    }
+  }
   const next = groupParses[groupSelf]!;
   const old = isObject(prev) ? shaderParse(key, prev) : null;
   if (old === next) {
@@ -711,7 +680,13 @@ function writeShaderValue(
     // or shadow nor grows the quad for it).
     let v = otherValue(colorKey);
     if (v === NOT_SET) {
-      if (otherObjectSet()) {
+      let others = false;
+      for (let i = 0; i < groupSize; i++) {
+        if (i !== groupSelf && groupParses[i]! !== null) {
+          others = true;
+        }
+      }
+      if (others) {
         v = old!.index[colorKey] !== undefined ? info.fresh[colorKey] : NOT_SET;
       } else {
         const c = current !== null ? current[colorKey] : undefined;
@@ -2691,15 +2666,19 @@ export function shaderAccessor<T extends Record<string, any> | number>(
       effects[key] = value;
       // The write order of the border objects, once there are two.
       let writes = this._borderWrites;
-      if (
-        writes === undefined &&
-        IS_BORDER_KEY[key] === true &&
-        otherBorderSet(effects, key)
-      ) {
-        writes = borderWritesOf(this);
-      }
-      if (writes !== undefined && IS_BORDER_KEY[key] === true) {
-        writes.seq[key] = ++borderWriteCount;
+      if (IS_BORDER_KEY[key] === true) {
+        if (writes === undefined) {
+          for (let i = 0; i < BORDER_KEYS.length; i++) {
+            const k = BORDER_KEYS[i]!;
+            if (k !== key && isObject(effects[k])) {
+              writes = borderWritesOf(this);
+              break;
+            }
+          }
+        }
+        if (writes !== undefined) {
+          writes.seq[key] = ++borderWriteCount;
+        }
       }
 
       const shader = this.lng.shader as IRendererShader | null | undefined;
