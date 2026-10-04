@@ -39,13 +39,20 @@ function findFirstFocusableChildIdx(
   from = 0,
   delta = 1,
 ): number {
-  for (let i = from; ; i += delta) {
-    if (!idxInArray(i, el.children)) {
-      if (el.wrap) {
-        i = (i + el.children.length) % el.children.length;
+  const children = el.children;
+  const length = children.length;
+  const wrap = el.wrap;
+  // Visits each child at most once, so with wrap and every child skipFocus
+  // the search ends (B1). With no children there is nothing to find: -1.
+  let i = from;
+  for (let n = 0; n < length; n++, i += delta) {
+    if (!(i >= 0 && i < length)) {
+      if (wrap) {
+        i = ((i % length) + length) % length;
       } else break;
     }
-    if (!el.children[i]?.skipFocus) {
+    const child = children[i];
+    if (child !== undefined && !child.skipFocus) {
       return i;
     }
   }
@@ -122,6 +129,25 @@ type NavWithTransitionCache = lngp.NavigableElement & {
   _navLastMerged?: object;
 };
 
+type TransitionObject = Exclude<
+  lng.ElementNode['transition'],
+  boolean | undefined
+>;
+
+// The base when `transition` is not an object (unset, true or false).
+const noTransition = {};
+// Merged transitions per element, then per directional transition. A press
+// reuses the merged object for its direction instead of allocating one, so
+// the node's `transition` (and the settings object animateProp gets) stays
+// the same while the direction and the base do. Per element, so an in-place
+// edit of one Row's `transition` never reaches another Row; the cache is
+// rebuilt when the element's base `transition` object changes (an in-place
+// edit of the same base object is not picked up: assign a new object).
+const mergedTransitions = new WeakMap<
+  object,
+  WeakMap<object, TransitionObject>
+>();
+
 export function handleNavigation(
   direction: 'up' | 'right' | 'down' | 'left',
 ): lng.KeyHandler {
@@ -137,19 +163,34 @@ export function handleNavigation(
             : el.transitionRight;
 
     if (directional) {
+      const transition = el.transition;
       const current =
-        typeof el.transition === 'object' && el.transition !== null
-          ? el.transition
-          : {};
+        typeof transition === 'object' && transition !== null
+          ? transition
+          : noTransition;
 
       // Re-snapshot the developer-supplied transition whenever el.transition
       // doesn't match our last merge — that means it was set externally
-      // (initial render or a reactive update), not by this handler.
-      if (current !== el._navLastMerged) {
+      // (initial render or a reactive update), not by this handler — and it
+      // is not the base the cache was built from.
+      let byDirectional = mergedTransitions.get(el);
+      if (
+        current !== el._navLastMerged &&
+        (current !== el._navBaseTransition || byDirectional === undefined)
+      ) {
         el._navBaseTransition = current;
+        byDirectional = new WeakMap();
+        mergedTransitions.set(el, byDirectional);
       }
 
-      const merged = { ...(directional as object), ...el._navBaseTransition };
+      let merged = byDirectional!.get(directional as object);
+      if (merged === undefined) {
+        merged = {
+          ...(directional as object),
+          ...el._navBaseTransition,
+        } as TransitionObject;
+        byDirectional!.set(directional as object, merged);
+      }
       el.transition = merged;
       el._navLastMerged = merged;
     }

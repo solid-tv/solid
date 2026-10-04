@@ -219,16 +219,111 @@ v.describe('Row and Column: navigation', () => {
     v.expect([col.selected, focusedId()]).toEqual([0, 'c0']);
   });
 
-  // findFirstFocusableChildIdx (src/primitives/utils/handleNavigation.ts:37-53)
-  // is a `for (let i = from; ; i += delta)` loop whose only exits are
-  // `return i` for a child without skipFocus (line 48) and `break` when the
-  // index leaves the array without wrap (line 46). With wrap, line 45 maps the
-  // index back into range, so if every child has skipFocus neither exit is
-  // reached. Reached from navigableForwardFocus (line 114, on focus) and
-  // moveSelection (line 194, on a key press). Not run: it would hang the
-  // worker.
-  v.it.todo(
-    'BUG: wrap with every child skipFocus loops forever in findFirstFocusableChildIdx (handleNavigation.ts:42-51); expected: focus is not taken and the key bubbles',
+  // B1 (fixed in 1.7): findFirstFocusableChildIdx (handleNavigation.ts) was a
+  // `for (let i = from; ; i += delta)` loop whose only exits were a child
+  // without skipFocus and leaving the array without wrap. With wrap and every
+  // child skipFocus neither exit was reached: an endless loop on focus
+  // (navigableForwardFocus) and on a key press (moveSelection). With wrap and
+  // no children it returned NaN.
+  //
+  // Bounded harness: a synchronous endless loop cannot be stopped by a vitest
+  // timeout, so each child's skipFocus is a getter that counts its reads and
+  // throws past a cap. A search that does not terminate then fails the test
+  // instead of hanging the worker.
+  const skipFocusGuard = () => {
+    const state = { reads: 0, on: false };
+    const guard = (el: lng.ElementNode) => {
+      Object.defineProperty(el, 'skipFocus', {
+        configurable: true,
+        get() {
+          if (++state.reads > 1000) {
+            throw new Error('B1: the focusable-child search did not end');
+          }
+          return state.on;
+        },
+        set() {},
+      });
+    };
+    return { state, guard };
+  };
+
+  v.it(
+    'B1: wrap with every child skipFocus: a press returns, focus stays and the key bubbles',
+    async () => {
+      const { state, guard } = skipFocusGuard();
+      let row!: lng.ElementNode;
+      const parentRight = v.vi.fn(() => true);
+      const parentLeft = v.vi.fn(() => true);
+      dispose = await mount(() => (
+        <view
+          width={1920}
+          height={1080}
+          onRight={parentRight}
+          onLeft={parentLeft}
+        >
+          <Row ref={row} autofocus wrap scroll="none">
+            {[0, 1, 2].map((i) => (
+              <view id={`c${i}`} ref={guard} width={400} height={200} />
+            ))}
+          </Row>
+        </view>
+      ));
+      v.expect([row.selected, focusedId()]).toEqual([0, 'c0']);
+
+      // Every child becomes skipFocus while c0 holds focus.
+      state.on = true;
+      await press('ArrowRight');
+      await press('ArrowLeft');
+      v.expect([row.selected, focusedId()]).toEqual([0, 'c0']);
+      v.expect(parentRight).toHaveBeenCalledTimes(1);
+      v.expect(parentLeft).toHaveBeenCalledTimes(1);
+      v.expect(state.reads).toBeLessThan(1000);
+    },
+    5000,
+  );
+
+  v.it(
+    'B1: wrap with every child skipFocus: focusing the Row keeps focus on the Row itself',
+    async () => {
+      const { state, guard } = skipFocusGuard();
+      state.on = true;
+      let row!: lng.ElementNode;
+      const parentRight = v.vi.fn(() => true);
+      dispose = await mount(() => (
+        <view width={1920} height={1080} onRight={parentRight}>
+          <Row ref={row} id="row" autofocus wrap scroll="none">
+            {[0, 1, 2].map((i) => (
+              <view id={`c${i}`} ref={guard} width={400} height={200} />
+            ))}
+          </Row>
+        </view>
+      ));
+      // No focusable child: forwardFocus selects nothing (-1), as without
+      // wrap, and the Row takes focus itself.
+      v.expect([row.selected, focusedId()]).toEqual([-1, 'row']);
+      await press('ArrowRight');
+      v.expect([row.selected, focusedId()]).toEqual([-1, 'row']);
+      v.expect(parentRight).toHaveBeenCalledTimes(1);
+      v.expect(state.reads).toBeLessThan(1000);
+    },
+    5000,
+  );
+
+  v.it(
+    'B1: wrap with no children: a press bubbles and selected stays (no NaN index)',
+    async () => {
+      let row!: lng.ElementNode;
+      const parentRight = v.vi.fn(() => true);
+      dispose = await mount(() => (
+        <view width={1920} height={1080} onRight={parentRight}>
+          <Row ref={row} id="row" autofocus wrap scroll="none" />
+        </view>
+      ));
+      v.expect([row.selected, focusedId()]).toEqual([0, 'row']);
+      await press('ArrowRight');
+      v.expect([row.selected, focusedId()]).toEqual([0, 'row']);
+      v.expect(parentRight).toHaveBeenCalledTimes(1);
+    },
   );
 });
 
@@ -799,6 +894,89 @@ v.describe('Row and Column: transitions and throttleInput', () => {
       v.expect(row.transition).toEqual({ x: { duration: 999 }, alpha: true });
       await press('ArrowLeft');
       v.expect(row.transition).toEqual({ x: { duration: 999 }, alpha: true });
+    },
+  );
+
+  v.it(
+    'the merged transition is one object per direction and base `transition`, not one per press (1.7)',
+    async () => {
+      let row!: lng.ElementNode;
+      const [base, setBase] = s.createSignal<lng.NodeProps['transition']>();
+      dispose = await mount(() => (
+        <view width={1920} height={1080}>
+          <Row ref={row} autofocus transition={base()}>
+            {items(6)}
+          </Row>
+        </view>
+      ));
+      await press('ArrowRight');
+      const right = row.transition;
+      await press('ArrowRight');
+      v.expect(row.transition).toBe(right);
+      await press('ArrowLeft');
+      const left = row.transition;
+      v.expect(left).not.toBe(right);
+      await press('ArrowLeft', 'ArrowRight');
+      v.expect(row.transition).toBe(right);
+
+      // A new base transition from the app gives new merged objects, again
+      // one per direction.
+      setBase({ alpha: true });
+      await press('ArrowRight');
+      const right2 = row.transition;
+      v.expect(right2).toEqual({
+        x: { duration: 180, easing: 'cubic-bezier(0.2, 0, 0, 1)' },
+        alpha: true,
+      });
+      await press('ArrowRight');
+      v.expect(row.transition).toBe(right2);
+    },
+  );
+
+  v.it(
+    'Rows without a `transition` do not share a merged transition object (1.7)',
+    async () => {
+      let r0!: lng.ElementNode;
+      let r1!: lng.ElementNode;
+      dispose = await mount(() => (
+        <view width={1920} height={1080}>
+          <Column autofocus scroll="none">
+            <Row ref={r0}>{items(3)}</Row>
+            <Row ref={r1}>{items(3)}</Row>
+          </Column>
+        </view>
+      ));
+      await press('ArrowRight', 'ArrowDown', 'ArrowRight');
+      v.expect(r0.transition).toEqual(r1.transition);
+      v.expect(r0.transition).not.toBe(r1.transition);
+    },
+  );
+
+  v.it(
+    'Rows given the same `transition` object do not share a merged transition object (1.7)',
+    async () => {
+      let r0!: lng.ElementNode;
+      let r1!: lng.ElementNode;
+      const shared = { alpha: true };
+      dispose = await mount(() => (
+        <view width={1920} height={1080}>
+          <Column autofocus scroll="none">
+            <Row ref={r0} transition={shared}>
+              {items(3)}
+            </Row>
+            <Row ref={r1} transition={shared}>
+              {items(3)}
+            </Row>
+          </Column>
+        </view>
+      ));
+      await press('ArrowRight', 'ArrowDown', 'ArrowRight');
+      v.expect(r0.transition).toEqual({
+        x: { duration: 180, easing: 'cubic-bezier(0.2, 0, 0, 1)' },
+        alpha: true,
+      });
+      v.expect(r0.transition).toEqual(r1.transition);
+      v.expect(r0.transition).not.toBe(r1.transition);
     },
   );
 

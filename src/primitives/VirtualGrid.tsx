@@ -52,15 +52,25 @@ export function VirtualGrid<T>(props: VirtualGridProps<T>): s.JSX.Element {
     return Math.min(items().length, rawEnd);
   });
 
-  const [slice, setSlice] = s.createSignal(items().slice(start(), end()));
+  const [slice, setSliceSignal] = s.createSignal(items().slice(start(), end()));
+  // Set when the window's items change, cleared by the grid's next flex pass
+  // (onLayout): a window shift lays the grid out only if nothing else has.
+  let layoutPending = false;
+  function setSlice(window: T[]) {
+    layoutPending = true;
+    setSliceSignal(window);
+  }
 
   let viewRef!: lngp.NavigableElement;
 
   function onVerticalNav(dir: -1 | 1): lngp.KeyHandler {
     return function () {
       const perRow = itemsPerRow();
+      const count = items().length;
       const currentRowIndex = Math.floor(cursor() / perRow);
-      const maxRows = Math.floor(items().length / perRow);
+      // B15: the last row's index. floor(length / perRow) was one row late
+      // when the length is a multiple of perRow.
+      const maxRows = Math.floor((count - 1) / perRow);
 
       if (
         currentRowIndex === 0 && dir === -1
@@ -69,19 +79,21 @@ export function VirtualGrid<T>(props: VirtualGridProps<T>): s.JSX.Element {
 
       const selected = this.selected || 0;
       const offset = dir * perRow;
-      const newIndex = utils.clamp(selected + offset, 0, items().length - 1);
-      const lastIdx = selected;
-      this.selected = newIndex;
-      const active = this.children[this.selected];
+      const newIndex = utils.clamp(selected + offset, 0, count - 1);
+      const active = this.children[newIndex];
 
+      // B15: `selected` changes only when there is a child to move to. It was
+      // written first, so a Down with nothing below left it past the mounted
+      // children and the next Up was lost.
       if (active instanceof lng.ElementNode) {
+        this.selected = newIndex;
         active.setFocus();
         chainedOnSelectedChanged.call(
           this as lngp.NavigableElement,
-          this.selected,
+          newIndex,
           this as lngp.NavigableElement,
           active,
-          lastIdx
+          selected
         );
         return true;
       }
@@ -91,9 +103,16 @@ export function VirtualGrid<T>(props: VirtualGridProps<T>): s.JSX.Element {
   const onUp = onVerticalNav(-1);
   const onDown = onVerticalNav(1);
 
+  // B15: set by applySelected for the call that applies an initial
+  // `selected`. The app gets lastIdx === idx there (as Row and Column report
+  // a mount selection); internally there is no previous selection, so the
+  // scroll to that row runs.
+  let forceRowScroll = false;
+
   const onSelectedChanged: lngp.OnSelectedChanged = function (_idx, elm, active, _lastIdx,) {
     let idx = _idx;
-    let lastIdx = _lastIdx;
+    let lastIdx = forceRowScroll ? undefined : _lastIdx;
+    forceRowScroll = false;
     const perRow = itemsPerRow();
     const newRowIndex = Math.floor(idx / perRow);
     const prevRowIndex = Math.floor((lastIdx || 0) / perRow);
@@ -115,15 +134,50 @@ export function VirtualGrid<T>(props: VirtualGridProps<T>): s.JSX.Element {
       props.onEndReached?.();
     }
 
-    queueMicrotask(() => {
-      const prevRowY = this.y + active.y;
-      this.updateLayout();
-      this.lng.y = prevRowY - active.y;
-      columnScroll(idx, elm, active, lastIdx);
-    });
+    // `elm` is the grid (`this`): navigation calls it on itself.
+    shiftView = elm;
+    shiftActive = active;
+    shiftIdx = idx;
+    shiftLastIdx = lastIdx;
+    queueMicrotask(applyShift);
   };
 
+  // The scroll after a row change, run in a microtask once the new window is
+  // mounted. One function for every press (no closure per press): the press
+  // stores what it needs here.
+  let shiftView!: lngp.NavigableElement;
+  let shiftActive!: lng.ElementNode;
+  let shiftIdx = 0;
+  let shiftLastIdx: number | undefined;
+  function applyShift() {
+    const view = shiftView;
+    const active = shiftActive;
+    const prevRowY = view.y + active.y;
+    // One flex pass per window shift: lay out here only if the post-mutation
+    // layout has not already run since the window changed.
+    if (layoutPending) view.updateLayout();
+    view.lng.y = prevRowY - active.y;
+    columnScroll(shiftIdx, view, active, shiftLastIdx);
+  }
+
   const chainedOnSelectedChanged = lngp.chainFunctions(props.onSelectedChanged, onSelectedChanged)!;
+
+  // B15: an initial `selected` has not been applied (scrolled to) yet. It
+  // stays pending through runs that find no child (items still loading, or
+  // waiting for onEndReached) and is cleared by the run that applies it.
+  let initialSelectedPending = s.untrack(() => props.selected != null);
+
+  function applySelected(active: lng.ElementNode, lastSelected: number) {
+    const idx = viewRef.selected;
+    if (initialSelectedPending) {
+      initialSelectedPending = false;
+      forceRowScroll = true;
+      lastSelected = idx;
+    }
+    chainedOnSelectedChanged.call(viewRef, idx, viewRef, active, lastSelected);
+    // Not consumed when the app's handler returned true and stopped the chain.
+    forceRowScroll = false;
+  }
 
   let cachedSelected: number | undefined;
   const updateSelected = ([selected, _items]: [number?, any?]) => {
@@ -150,20 +204,20 @@ export function VirtualGrid<T>(props: VirtualGridProps<T>): s.JSX.Element {
         // force focus as scrollToIndex is manually called
         active.setFocus();
       }
-      chainedOnSelectedChanged.call(viewRef, viewRef.selected, viewRef, active, lastSelected);
+      applySelected(active, lastSelected);
     } else {
       setCursor(selected);
       setSlice(items().slice(start(), end()));
 
       queueMicrotask(() => {
-        viewRef.updateLayout();
+        if (layoutPending) viewRef.updateLayout();
         active = viewRef.children.find(x => x.item === item);
         if (active instanceof lng.ElementNode) {
           viewRef.selected = viewRef.children.indexOf(active);
           if (lng.hasFocus(viewRef)) {
             active.setFocus();
           }
-          chainedOnSelectedChanged.call(viewRef, viewRef.selected, viewRef, active, lastSelected);
+          applySelected(active, lastSelected);
         }
       });
     }
@@ -202,13 +256,28 @@ export function VirtualGrid<T>(props: VirtualGridProps<T>): s.JSX.Element {
   );
 
 
-  return (
+  // Clears layoutPending: the grid's flex pass has run since the window
+  // changed. The app's onLayout still runs, read when called.
+  function onLayout(this: lng.ElementNode, target: lng.ElementNode) {
+    layoutPending = false;
+    return props.onLayout?.call(this, target);
+  }
+
+  // B15: `selected` on the node is a child index into the window, set once
+  // here and then by navigation and the selected effect. Passing the data
+  // index (`props.selected`) made the first forwardFocus pick the wrong child,
+  // and its reactive rewrite hid the previous child index from updateSelected.
+  const initialSelected = s.untrack(() =>
+    Math.max(0, (props.selected || 0) - start()),
+  );
+
+  const view = (
     <view
       {...props}
       scroll={props.scroll || 'always'}
       ref={lngp.chainRefs(el => { viewRef = el as lngp.NavigableElement; }, props.ref)}
-      selected={props.selected || 0}
-      cursor={cursor()}
+      selected={/* @once */ initialSelected}
+      onLayout={/* @once */ onLayout}
       onLeft={/* @once */ lngp.chainFunctions(props.onLeft, lngp.navigableHandleNavigation)}
       onRight={/* @once */ lngp.chainFunctions(props.onRight, lngp.navigableHandleNavigation)}
       onUp={/* @once */ lngp.chainFunctions(props.onUp, onUp)}
@@ -222,4 +291,12 @@ export function VirtualGrid<T>(props: VirtualGridProps<T>): s.JSX.Element {
       <List each={slice()}>{props.children}</List>
     </view>
   );
+
+  // `cursor` has an effect of its own: in the spread above, a cursor change
+  // (every press) re-ran every prop of the spread.
+  s.createRenderEffect(() => {
+    viewRef.cursor = cursor();
+  });
+
+  return view;
 }
