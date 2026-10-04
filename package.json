@@ -48,6 +48,7 @@
   "sideEffects": false,
   "scripts": {
     "start": "pnpm run watch",
+    "bench": "node bench/run.mjs",
     "test": "vitest",
     "lint": "pnpm run lint:prettier && pnpm run lint:eslint",
     "lint:fix": "pnpm run lint:fix:prettier && pnpm run lint:fix:eslint",
@@ -56,12 +57,13 @@
     "lint:eslint": "eslint .",
     "lint:fix:eslint": "eslint --fix .",
     "build": "rm -rf dist && pnpm run tsc && cp jsx-runtime.d.ts dist/",
-    "tsc": "tsc",
+    "tsc": "tsc && tsc -p tests/tsconfig.contract.json",
     "watch": "tsc -w",
     "prepare": "husky",
     "prepack": "pnpm run build",
     "release": "release-it",
-    "test:browser": "vitest --config=vitest.browser.config.ts"
+    "test:browser": "vitest --config=vitest.browser.config.ts",
+    "test:webgl": "vitest run --config=vitest.webgl.config.ts"
   },
   "keywords": [
     "lightning",
@@ -80,6 +82,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.39.4",
+    "@lightningtv/vite-hex-transform": "^1.1.0",
     "@solid-devtools/debugger": "^0.28.1",
     "@solidjs/testing-library": "^0.8.10",
     "@typescript-eslint/eslint-plugin": "^8.59.2",
@@ -92,8 +95,10 @@
     "husky": "^9.1.7",
     "jsdom": "^26.1.0",
     "lint-staged": "^17.0.4",
+    "playwright": "1.56.1",
     "prettier": "^3.8.3",
     "release-it": "^20.0.1",
+    "terser": "^5.51.2",
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.59.2",
     "vite": "^8.0.13",

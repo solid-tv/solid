@@ -1,4 +1,4 @@
-import { defineConfig } from 'vitest/config';
+import { configDefaults, defineConfig } from 'vitest/config';
 import solidPlugin from 'vite-plugin-solid';
 
 export default defineConfig(({ mode }) => ({
@@ -18,6 +18,8 @@ export default defineConfig(({ mode }) => ({
   ],
   test: {
     watch: false,
+    // Real-renderer tests run in a browser: vitest.webgl.config.ts.
+    exclude: [...configDefaults.exclude, 'tests/webgl/**', 'bench/**'],
     isolate: false,
     passWithNoTests: true,
     environment: 'jsdom',
