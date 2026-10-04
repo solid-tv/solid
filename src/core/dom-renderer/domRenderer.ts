@@ -1145,7 +1145,16 @@ function updateDOMTextSize(node: DOMText, emitLoaded = true): void {
       break;
   }
 
-  if (emitLoaded && (!node.loaded || dimensionsChanged)) {
+  // Against the size last emitted, not the size before this measure: a
+  // `measure()` (Solid, before its layout) takes the new size without
+  // emitting, and `loaded` listeners must still hear it.
+  if (
+    emitLoaded &&
+    (!node.loaded ||
+      dimensionsChanged ||
+      node.w !== node.loadedW ||
+      node.h !== node.loadedH)
+  ) {
     const payload: lng.NodeTextLoadedPayload = {
       type: 'text',
       dimensions: {
@@ -1153,6 +1162,8 @@ function updateDOMTextSize(node: DOMText, emitLoaded = true): void {
         h: node.h,
       },
     };
+    node.loadedW = node.w;
+    node.loadedH = node.h;
     node.emit('loaded', payload);
     node.loaded = true;
   }
@@ -1962,6 +1973,9 @@ export class DOMNode extends EventEmitter implements IRendererNode {
 
 class DOMText extends DOMNode {
   public loaded = false;
+  /** The size `loaded` last told (updateDOMTextSize). */
+  public loadedW = 0;
+  public loadedH = 0;
 
   constructor(
     stage: IRendererStage,
