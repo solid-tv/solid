@@ -123,6 +123,12 @@ not reflow its flex parent) changes nothing.
       `node.border = { width: 6, color: GREEN }` made while
       `$focus: { border: { width: 4, color: BLUE } }` is on stays GREEN 6 when
       `$hover: { alpha: 0.5 }` is added; 1.6 showed BLUE 4 again.
+    - Exception, the border keys (`border`, `borderTop`, `borderRight`,
+      `borderBottom`, `borderLeft`): when a state change writes one of them
+      and leaves another unchanged, it writes all of them again in order, as
+      1.6 did, so the sides and the whole border combine as before. A direct
+      border write and an in-flight `transition.border` animation are then
+      overwritten or restarted, as in 1.6.
     - The undo is a state change too. When a key's base value (`theme`, else
       `style`) is `===` the value the state wrote, the undo skips it, so a
       write made while the state was on survives the undo. Where the values
