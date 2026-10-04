@@ -570,6 +570,37 @@ v.test(
 );
 
 v.test(
+  'X6: a setter that adds a state mid-change: the family rewrite covers the keys the nested change tracked, as 1.6',
+  async () => {
+    const { changed, dispose } = await pair({
+      width: 100,
+      height: 100,
+      border: { width: 2, color: RED },
+      $focus: {
+        border: { width: 4, color: BLUE },
+        myKick: 1,
+        borderBottom: { width: 10 },
+      } as NodeStyles['$focus'],
+      $active: { border: { width: 6, color: GREEN }, borderTop: { width: 8 } },
+    });
+    let kicked = false;
+    Object.defineProperty(changed, 'myKick', {
+      configurable: true,
+      get: () => undefined,
+      set(v: unknown) {
+        if (v === 1 && !kicked) {
+          kicked = true;
+          changed.states.add('$active');
+        }
+      },
+    });
+    changed.states.add('$focus');
+    v.expect(shaderOf(changed).props['border-w']).toEqual([8, 6, 10, 6]);
+    dispose();
+  },
+);
+
+v.test(
   'ST2: a $focus border removed while an $active borderTop stays on keeps the top over the base border, as 1.6',
   async () => {
     let throwOnApply = true;

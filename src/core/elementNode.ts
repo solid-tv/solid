@@ -2413,7 +2413,9 @@ export class ElementNode {
       }
     }
     if (borderWrites !== 0 && borderWrites !== borderKeys) {
-      this._rewriteBorderKeys(count);
+      // The tracked count as it is now: a setter above may have changed the
+      // states and tracked more keys.
+      this._rewriteBorderKeys(this._undoCount);
     }
   }
 
