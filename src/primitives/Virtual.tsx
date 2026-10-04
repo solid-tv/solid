@@ -21,6 +21,10 @@ export type VirtualProps<T> = lng.NewOmit<lngp.RowProps, 'children'> & {
   onEndReached?: () => void;
   onEndReachedThreshold?: number;
   debugInfo?: boolean;
+  /**
+   * @deprecated No effect since 1.7: a window shift always moves the row by
+   * one unscaled slot (item size + gap), the distance flex moves the items.
+   */
   factorScale?: boolean;
   uniformSize?: boolean;
   children: (item: s.Accessor<T>, index: s.Accessor<number>) => s.JSX.Element;
