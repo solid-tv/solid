@@ -1075,37 +1075,6 @@ function writeShaderGroup(
   }
 }
 
-/**
- * The groups a state change's `mask` touched, each recomputed once, the
- * group of the first key written first: a node without a shader gets the
- * type 1.6's first write chose (N5).
- */
-function writeShaderGroups(node: ElementNode, mask: number): void {
-  let shadowFirst = false;
-  if ((mask & BORDER_BITS) !== 0 && (mask & SHADOW_BIT) !== 0) {
-    const keys = node._undoStyles!;
-    const count = node._undoCount;
-    for (let i = 0; i < count; i++) {
-      const bit = SHADER_BIT[keys[i]!];
-      if (bit !== undefined && (mask & bit) !== 0) {
-        shadowFirst = bit === SHADOW_BIT;
-        break;
-      }
-    }
-  }
-  if (shadowFirst) {
-    writeShaderGroup(node, SHADOW_GROUP, mask, null);
-    writeShaderGroup(node, BORDER_GROUP, mask, null);
-    return;
-  }
-  if ((mask & BORDER_BITS) !== 0) {
-    writeShaderGroup(node, BORDER_GROUP, mask, null);
-  }
-  if ((mask & SHADOW_BIT) !== 0) {
-    writeShaderGroup(node, SHADOW_GROUP, mask, null);
-  }
-}
-
 /** The gradient shaders the raw accessors made, by accessor key. */
 const gradientShaders = new WeakMap<object, string>();
 
@@ -2539,8 +2508,41 @@ export class ElementNode {
     } finally {
       const mask = this._shaderMask;
       if (mask !== 0) {
-        writeShaderGroups(this, mask);
+        this._writeShaderGroups(mask);
       }
+    }
+  }
+
+  /**
+   * The groups a state change's `mask` touched, each recomputed once, the
+   * group of the first key written first: a node without a shader gets the
+   * type 1.6's first write chose (N5). A method, not a module function: with
+   * its one call site terser's `reduce_funcs` made a function expression of
+   * it inside `_applyStates`, a closure per press.
+   */
+  _writeShaderGroups(mask: number) {
+    let shadowFirst = false;
+    if ((mask & BORDER_BITS) !== 0 && (mask & SHADOW_BIT) !== 0) {
+      const keys = this._undoStyles!;
+      const count = this._undoCount;
+      for (let i = 0; i < count; i++) {
+        const bit = SHADER_BIT[keys[i]!];
+        if (bit !== undefined && (mask & bit) !== 0) {
+          shadowFirst = bit === SHADOW_BIT;
+          break;
+        }
+      }
+    }
+    if (shadowFirst) {
+      writeShaderGroup(this, SHADOW_GROUP, mask, null);
+      writeShaderGroup(this, BORDER_GROUP, mask, null);
+      return;
+    }
+    if ((mask & BORDER_BITS) !== 0) {
+      writeShaderGroup(this, BORDER_GROUP, mask, null);
+    }
+    if ((mask & SHADOW_BIT) !== 0) {
+      writeShaderGroup(this, SHADOW_GROUP, mask, null);
     }
   }
 
