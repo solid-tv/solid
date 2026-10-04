@@ -48,6 +48,7 @@
   "sideEffects": false,
   "scripts": {
     "start": "pnpm run watch",
+    "bench": "node bench/run.mjs",
     "test": "vitest",
     "lint": "pnpm run lint:prettier && pnpm run lint:eslint",
     "lint:fix": "pnpm run lint:fix:prettier && pnpm run lint:fix:eslint",
