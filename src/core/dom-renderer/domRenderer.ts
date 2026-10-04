@@ -1358,6 +1358,8 @@ export class DOMNode extends EventEmitter implements IRendererNode {
 
   preventCleanup = true;
 
+  destroyed = false;
+
   constructor(
     public stage: IRendererStage,
     public props: IRendererNodeProps,
@@ -1380,12 +1382,21 @@ export class DOMNode extends EventEmitter implements IRendererNode {
   }
 
   destroy(): void {
+    this.markDestroyed();
     elMap.delete(this);
     const parent = this.props.parent;
     if (parent instanceof DOMNode) {
       parent.children.delete(this);
     }
     this.div.parentNode?.removeChild(this.div);
+  }
+
+  // Like CoreNode, destroying a node marks its whole subtree destroyed.
+  private markDestroyed() {
+    this.destroyed = true;
+    for (const child of this.children) {
+      child.markDestroyed();
+    }
   }
 
   get parent() {
