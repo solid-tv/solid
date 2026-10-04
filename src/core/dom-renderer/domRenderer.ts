@@ -1415,14 +1415,26 @@ export class DOMNode extends EventEmitter implements IRendererNode {
   /**
    * Renderer v2's `Node.insertBefore`: makes `child` a child of this node,
    * before `before` (`null`, or a node that is not a child, appends); a child
-   * of this node moves, and one placed before itself stays. The div order is
-   * the paint order among equal z-index, as v2's sibling order is its draw
-   * order.
+   * of this node moves, and one placed before itself stays. A destroyed
+   * parent or child does nothing; a destroyed `before` appends. The div order
+   * is the paint order among equal z-index, as v2's sibling order is its
+   * draw order.
    */
   insertBefore(child: IRendererNode, before: IRendererNode | null): void {
-    if (!(child instanceof DOMNode) || child === before) return;
+    if (
+      !(child instanceof DOMNode) ||
+      child === before ||
+      !elMap.has(this) ||
+      !elMap.has(child)
+    ) {
+      return;
+    }
     const anchor =
-      before instanceof DOMNode && before.props.parent === this ? before : null;
+      before instanceof DOMNode &&
+      before.props.parent === this &&
+      elMap.has(before)
+        ? before
+        : null;
 
     // A new parent: adds it to this node's children and appends its div.
     child.parent = this;
@@ -1433,16 +1445,21 @@ export class DOMNode extends EventEmitter implements IRendererNode {
       children.add(child);
       this.div.appendChild(child.div);
     } else {
-      // A Set keeps insertion order: re-add the anchor and what follows it.
-      const after: DOMNode[] = [];
-      let found = false;
-      for (const c of children) {
-        if (c === anchor) found = true;
-        if (found) after.push(c);
-      }
-      for (const c of after) children.delete(c);
+      // A Set keeps insertion order: add the child at the end, then move the
+      // anchor and everything after it behind the child (no array: stop at
+      // the last one before the child, as re-added entries come after it).
+      let last: DOMNode | undefined;
+      for (const c of children) last = c;
       children.add(child);
-      for (const c of after) children.add(c);
+      let moving = false;
+      for (const c of children) {
+        if (c === anchor) moving = true;
+        if (moving) {
+          children.delete(c);
+          children.add(c);
+        }
+        if (c === last) break;
+      }
       this.div.insertBefore(child.div, anchor.div);
     }
     this.markChildrenBoundsDirty();
