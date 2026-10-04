@@ -85,10 +85,17 @@ not reflow its flex parent) changes nothing.
     `on<Name>Hold` handlers and `useFocusManager`'s `userKeyHoldMap` and
     `holdThreshold` options were removed in 1.5.1 and are not restored.
   - **Demo app:** `src/pages/App.tsx:5, 32-38` and `src/pages/KeyHandling.tsx:49`
-    move their hold handlers to `useHold` in Phase 3 (the demo's `EnterHold`
-    and `BackHold` never fire on 1.6.4).
+    moved their hold handlers to `useHold` (the demo's `EnterHold` and
+    `BackHold` never fired on 1.6.4; `BackHold` had no handler and was
+    dropped).
   - **Upgrade step:** none for an app already on `useHold`; otherwise move
-    `on<Name>Hold` handlers to `useHold`.
+    each `userKeyHoldMap` entry and `on<Name>Hold` handler to `useHold` on the
+    element that owns it. Two differences from the removed hold map: it
+    resolved a hold by its timer alone, while `useHold` by default needs an
+    auto-repeat key-down by the threshold and otherwise resolves the press as
+    a tap (set `holdRequiresRepeat: false` for a key that reports key-up only
+    on real release); and the handler `useHold` returns handles the key, so
+    `onEnter={holdEnter}` stops Enter from bubbling to ancestors.
 
 ### States and styles
 
