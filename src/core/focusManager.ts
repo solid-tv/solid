@@ -232,10 +232,14 @@ export const printFocusHistory = (count: number): void => {
  * through the focus-path logic.
  */
 export const setActiveElementCore = (elm: ElementNode) => {
-  const prev = activeElement();
-  if (elm === prev) return;
+  // No local: terser inlines this single-use function into its caller, and a
+  // block-scoped local there would make it an IIFE (a closure per change).
+  _focusPrev = activeElement();
+  if (elm === _focusPrev) {
+    _focusPrev = undefined;
+    return;
+  }
   _focusTarget = elm;
-  _focusPrev = prev;
   // The whole focus phase runs in one batch (5.1): the callbacks keep their
   // order, and the effects their signal writes trigger, like those of
   // focusPath and the active element, run once, after the last of them.
