@@ -410,6 +410,58 @@ v.describe('VirtualRow: window and scroll modes', () => {
     },
   );
 
+  v.it(
+    'B13: scroll="none" + wrap with fewer items than the window (displaySize < count < displaySize + bufferSize): each item mounted once, every press moves',
+    async () => {
+      let row!: lng.ElementNode;
+      const parentRight = v.vi.fn(() => true);
+      dispose = await mount(() => (
+        <view width={1920} height={1080} onRight={parentRight}>
+          <VirtualRow
+            ref={row}
+            autofocus
+            x={50}
+            each={[0, 1, 2, 3, 4]}
+            displaySize={4}
+            scroll="none"
+            wrap
+          >
+            {(item) => <Item item={item()} />}
+          </VirtualRow>
+        </view>
+      ));
+      const step = (): [...Step, number] => [
+        ...rowStep(row),
+        row.x + lng.activeElement()!.x,
+      ];
+      const seen = [step()];
+      for (let i = 0; i < 7; i++) {
+        await press('ArrowRight');
+        seen.push(step());
+      }
+      for (let i = 0; i < 3; i++) {
+        await press('ArrowLeft');
+        seen.push(step());
+      }
+      // [focused, selected, cursor, x, mounted, focused screen x]: five
+      // items in a window of five, the focus kept in slots 1-3.
+      v.expect(seen).toEqual([
+        ['v0', 1, 0, -180, '4,0,1,2,3', 50],
+        ['v1', 2, 1, -180, '4,0,1,2,3', 280],
+        ['v2', 3, 2, -180, '4,0,1,2,3', 510],
+        ['v3', 3, 3, -180, '0,1,2,3,4', 510],
+        ['v4', 3, 4, -180, '1,2,3,4,0', 510],
+        ['v0', 3, 0, -180, '2,3,4,0,1', 510],
+        ['v1', 3, 1, -180, '3,4,0,1,2', 510],
+        ['v2', 3, 2, -180, '4,0,1,2,3', 510],
+        ['v1', 2, 1, -180, '4,0,1,2,3', 280],
+        ['v0', 1, 0, -180, '4,0,1,2,3', 50],
+        ['v4', 1, 4, -180, '3,4,0,1,2', 50],
+      ]);
+      v.expect(parentRight).not.toHaveBeenCalled();
+    },
+  );
+
   // B14 (fixed in 1.7): a window shift moves the row by one slot, the
   // item's unscaled size plus the gap, which is how far flex moves the items.
   // With factorScale and a `$focus` scale of 1.2 it moved by 200 * 1.2 + 30 =
