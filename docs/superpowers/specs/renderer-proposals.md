@@ -82,4 +82,31 @@ Nth idle transition, or on a timer), or only after frames that uploaded
 textures. Needs a device measurement first (a TV's driver may make the sync
 cheaper or far more expensive).
 
+## P5. Coalesce queued `loaded` events per node
+
+**Measured.** With Solid measuring flex text through `TextNode.measure()`
+(stream T), two text writes to one node in separate tasks before one frame
+each queue a `loaded` event; the listener hears both, the first with a stale
+size (`[257, 52]` where one event `[52]` is enough). The final layout is
+correct; the cost is an extra listener call per stale write, and an app
+listener (Marquee-style width tracking) sees a size that was never drawn.
+
+**Why it is a proposal.** The event queue is the renderer's (between walks).
+Options: keep one pending `loaded` per node and update its payload in place,
+or drop a queued event whose node was re-measured since.
+
+## P6. A text layout cache that a page swap does not flush
+
+**Measured.** Eager layout of flex text (approved decision 5.2) pushes a
+page's strings through the text-keyed layout cache (R2) on mount. With the
+default 250 entries, `page-mount`/`page-swap` (283 strings) hit 0.00-0.01;
+with 1024 entries, 1.00. An LRU falls to a 0% hit rate as soon as a page's
+working set exceeds its capacity, whatever the capacity.
+
+**Why it is a proposal.** The cache policy is the renderer's. Options: size
+the cache in bytes rather than entries (a description layout is about
+8x a title's), or make it scan-resistant (for example a small probation
+segment, as in SLRU/2Q), so a one-off page does not evict the strings that
+recur. Solid can only pick `textLayoutCacheSize` at init.
+
 <!-- Further items are added during Phase 2 when a measured win needs a change outside the boundaries. -->
