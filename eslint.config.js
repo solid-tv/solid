@@ -30,7 +30,13 @@ const relaxedTypedRules = {
 
 export default tseslint.config(
   {
-    ignores: ['dist/**', 'node_modules/**', 'bench/.arms/**', 'bench/dist/**'],
+    ignores: [
+      'dist/**',
+      'node_modules/**',
+      'bench/.arms/**',
+      'bench/dist/**',
+      '.superpowers/**',
+    ],
   },
   eslint.configs.recommended,
   {
