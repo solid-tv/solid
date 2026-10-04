@@ -216,42 +216,62 @@ function timeStatsOf(ops) {
   return out;
 }
 
-/** Per-run statistics of a count-mode op list, overall and by kind. */
-export function countStats(ops, flexHooked) {
-  const out = countStatsOf(ops, flexHooked);
-  out.byKind = byKind(ops, (list) => countStatsOf(list, flexHooked));
+/**
+ * Per-run statistics of a count-mode op list, overall and by kind. `hooks` is
+ * what the probe's installCounters() found plus what it learned over the run
+ * (bench/harness/probe.mjs): a count whose hook did not install is null,
+ * reported as n/a, never 0.
+ */
+export function countStats(ops, hooks) {
+  const out = countStatsOf(ops, hooks);
+  out.byKind = byKind(ops, (list) => countStatsOf(list, hooks));
   return out;
 }
 
 /** Per op, summed over the ops. */
-function countStatsOf(ops, flexHooked) {
+function countStatsOf(ops, hooks) {
   const sum = (k) => ops.reduce((a, o) => a + o.counts[k], 0);
   const n = ops.length;
   const frames = ops.reduce((a, o) => a + o.frames, 0);
   const hits = sum('cacheHits');
   const misses = sum('cacheMisses');
+  const found = (hook) => hook !== null && hook !== undefined;
+  const nodes = hooks.nodeAccessors > 0;
+  const shaders = !(hooks.shaderUnwrapped > 0);
+  const walks = found(hooks.walkHook);
+  const drawn = found(hooks.drawHook);
+  const loaded = found(hooks.loadedHook);
+  const text = found(hooks.textHook);
+  const cache = found(hooks.cacheHook);
+  const flex = hooks.flexHooks > 0;
+  // The layout activity behind the final-layout frame: flex, text layout and
+  // text `loaded`; with one of them unhooked it would read too early.
+  const layout = flex && text && loaded;
+  const per = (ok, k) => (ok ? sum(k) / n : null);
   return {
-    flexPasses: flexHooked ? sum('flex') / n : null,
-    writes: sum('writes') / n,
-    shaderWrites: sum('shaderWrites') / n,
-    frameWrites: sum('frameWrites') / n,
-    animations: sum('animations') / n,
-    walks: sum('walks') / n,
+    flexPasses: per(flex, 'flex'),
+    writes: per(nodes, 'writes'),
+    shaderWrites: per(shaders, 'shaderWrites'),
+    frameWrites: per(nodes, 'frameWrites'),
+    animations: per(hooks.animateHooks > 0, 'animations'),
+    walks: per(walks, 'walks'),
     walksPerFrame:
-      frames > 0 ? ops.reduce((a, o) => a + o.frameWalks, 0) / frames : null,
-    drawnFrames: frames / n,
-    created: sum('created') / n,
-    creationProps: sum('creationProps') / n,
-    loadedText: sum('loadedText') / n,
-    loadedOther: sum('loadedOther') / n,
-    loadedTextEmits: sum('loadedTextEmits') / n,
-    loadedOtherEmits: sum('loadedOtherEmits') / n,
-    textLayouts: sum('textLayouts') / n,
-    textLayoutMs: sum('textLayoutMs') / n,
-    cacheHitRate: hits + misses > 0 ? hits / (hits + misses) : null,
-    cacheLookups: (hits + misses) / n,
-    finalLayoutFrame: stats(ops.map((o) => o.finalLayoutFrame)),
-    finalLayoutMs: stats(ops.map((o) => o.finalLayoutMs)),
+      walks && drawn && frames > 0
+        ? ops.reduce((a, o) => a + o.frameWalks, 0) / frames
+        : null,
+    drawnFrames: drawn ? frames / n : null,
+    created: per(found(hooks.createHook), 'created'),
+    creationProps: per(found(hooks.createHook), 'creationProps'),
+    loadedText: per(loaded, 'loadedText'),
+    loadedOther: per(loaded, 'loadedOther'),
+    loadedTextEmits: per(loaded, 'loadedTextEmits'),
+    loadedOtherEmits: per(loaded, 'loadedOtherEmits'),
+    textLayouts: per(text, 'textLayouts'),
+    textLayoutMs: per(text, 'textLayoutMs'),
+    cacheHitRate: cache && hits + misses > 0 ? hits / (hits + misses) : null,
+    cacheLookups: cache ? (hits + misses) / n : null,
+    finalLayoutFrame: layout ? stats(ops.map((o) => o.finalLayoutFrame)) : null,
+    finalLayoutMs: layout ? stats(ops.map((o) => o.finalLayoutMs)) : null,
   };
 }
 

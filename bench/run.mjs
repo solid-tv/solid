@@ -437,10 +437,17 @@ async function runOnce({ origin, arm, scenario, mode, run }) {
         record.rawProfile = profile;
       }
     } else {
-      record.stats = countStats(ops, record.hooks.flexHooks > 0);
       const details = await page.evaluate(() =>
         window.__benchProbe.countDetails(),
       );
+      // What the hooks learned over the run, beside what they found at
+      // install; a hook that threw, or could not install, fails the run.
+      record.hooks.shaderUnwrapped = details.shaderUnwrapped;
+      record.hooks.errors = details.hookErrors;
+      for (const [hook, count] of details.hookErrors) {
+        errors.push(`count hook ${hook} threw ${count} time(s)`);
+      }
+      record.stats = countStats(ops, record.hooks);
       const perOp = (list) =>
         list
           .sort((a, b) => b[1] - a[1])
