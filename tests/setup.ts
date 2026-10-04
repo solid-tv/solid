@@ -30,6 +30,9 @@ if (!document.fonts) {
     load: () => Promise.resolve(),
     forEach: () => {},
     ready: Promise.resolve(),
+    // As in a browser once its fonts are in: the DOM renderer re-measures a
+    // text on a timer then (not on `ready`, a microtask).
+    status: 'loaded',
   };
 }
 

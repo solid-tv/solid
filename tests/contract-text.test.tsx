@@ -591,6 +591,8 @@ describe('contract: text in a flex container (DOM renderer)', () => {
       </view>
     ));
     await waitForUpdate();
+    // The DOM renderer re-measures on a timer once fonts are loaded.
+    await nextTask();
     expect(t.width).toBe(0);
     expect(t.height).toBe(0);
     expect(raw(t).loaded).toBe(true);
@@ -630,6 +632,7 @@ describe('contract: text in a flex container (DOM renderer)', () => {
     expect(t.width).toBe(5 * CHAR_W);
     expect(t.height).toBe(LINE_H);
     await waitForUpdate();
+    await nextTask(); // the DOM renderer's re-measure timer
     expect(t.x).toBe(60);
     expect(last.x).toBe(120);
     expect(row.width).toBe(170);
@@ -673,10 +676,14 @@ describe('contract: text in a flex container (DOM renderer)', () => {
           toJSON() {},
         }) as DOMRect,
     );
-    const fonts = document.fonts as unknown as { ready: Promise<unknown> };
+    const fonts = document.fonts as unknown as {
+      ready: Promise<unknown>;
+      status: string;
+    };
     const savedReady = fonts.ready;
     let fontsReady!: () => void;
     fonts.ready = new Promise<void>((r) => (fontsReady = r));
+    fonts.status = 'loading';
     let dispose = () => {};
     try {
       let count = 0;
@@ -703,6 +710,7 @@ describe('contract: text in a flex container (DOM renderer)', () => {
       spy.mockRestore();
       mockTextMeasure();
       fontSet.check = savedCheck;
+      fonts.status = 'loaded';
       fontsReady();
       await waitForUpdate();
       await nextTask();
@@ -714,6 +722,7 @@ describe('contract: text in a flex container (DOM renderer)', () => {
       expect(count).toBe(2);
     } finally {
       fontSet.check = savedCheck;
+      fonts.status = 'loaded';
       fontsReady();
       fonts.ready = savedReady;
       await waitForUpdate();
@@ -1095,5 +1104,38 @@ describe('contract: Solid measures text before flex (1.7, stream T)', () => {
     await nextTask();
     expect(measure).not.toHaveBeenCalled();
     d3();
+  });
+
+  it('an onEvent.loaded on a flex text hears every new size, after Solid measured it first', async () => {
+    mockTextMeasure();
+    const [label, setLabel] = s.createSignal('Hello');
+    const heard: unknown[] = [];
+    let last!: lng.ElementNode;
+    const dispose = renderer.render(() => (
+      <view display="flex" gap={10}>
+        <text
+          onEvent={{
+            loaded(_el: unknown, payload: { dimensions: unknown }) {
+              heard.push(payload.dimensions);
+            },
+          }}
+        >
+          {label()}
+        </text>
+        <view ref={last} width={50} height={50} />
+      </view>
+    ));
+    await nextTask();
+    expect(heard).toEqual([{ w: 50, h: 20 }]);
+
+    setLabel('Hello world');
+    await microtask();
+    expect(last.x).toBe(120); // Solid measured and laid out first
+    await nextTask(); // the DOM renderer's re-measure timer
+    expect(heard).toEqual([
+      { w: 50, h: 20 },
+      { w: 110, h: 20 },
+    ]);
+    dispose();
   });
 });
