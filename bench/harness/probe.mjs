@@ -441,8 +441,8 @@ export function pageProbe(opts) {
   // (bench/harness/analyze.mjs, countStats). One that throws, or whose
   // install throws, is counted in `hookErrors` and logged once with
   // console.error, which the runner records as a run error: the renderer's
-  // frame loop swallows what a frame throws (settings.handleLoopError), so an
-  // unseen exception would otherwise read as zeroes.
+  // frame loop swallows what a frame throws (handleLoopError, hooked below),
+  // so an unseen exception would otherwise read as zeroes.
   const detail = {
     nodeAccessors: 0,
     nodeWrites: new Map(),
@@ -612,7 +612,7 @@ export function pageProbe(opts) {
               }
             };
           } else if (name === 'insertBefore' && typeof d.value === 'function') {
-            // Renderer v2 (6392ce4): a second way to attach a child, which
+            // Renderer v2 (dc09e5e): a second way to attach a child, which
             // Solid 1.7 uses to keep draw order; the `parent` setter is the
             // other, so both count as a write (`insertBefore` in topWrites).
             const fn = d.value;
@@ -804,7 +804,7 @@ export function pageProbe(opts) {
       const tn = r.textNodes;
       if (tn !== undefined && tn !== null) {
         // Renderer v2: TextNodes.lay (private; every layout, from a walk's
-        // visit or from TextNode.measure(): since 6392ce4), else
+        // visit or from TextNode.measure(): since 407b973), else
         // TextNodes.layoutText (every walk visit with DIRTY_LAYOUT: faf4b9f,
         // where the layout is inline in the visit).
         const name =
@@ -874,23 +874,40 @@ export function pageProbe(opts) {
         detail.cacheHook = 'v1 renderText layout identity';
       }
     });
-    // Renderer v2's frame loop swallows what a frame, or a listener it
-    // calls, throws (settings.handleLoopError, a no-op by default): the
-    // frame is not drawn and is retried, and a throwing hook would read as
-    // zero frames and zero counts. v1 lets it reach the page.
+    // Both majors' frame loops swallow what a frame, or a listener it calls,
+    // throws: the frame is not drawn and is tried again, so a throwing hook
+    // would read as zero frames and zero counts. They hand it to a no-op by
+    // default: v2 reads settings.handleLoopError on every error; v1 (1.9.3)
+    // reads stage.options.handleLoopError, a copy the Stage made of the
+    // setting when it was built, so replacing the setting later does nothing
+    // there. Hook the one the loop reads.
     attempt('loop', () => {
-      const settings = r.settings;
+      const options =
+        r.stage !== undefined && r.stage !== null ? r.stage.options : undefined;
+      let owner = null;
+      let label = null;
       if (
-        settings !== undefined &&
-        settings !== null &&
-        typeof settings.handleLoopError === 'function'
+        options !== undefined &&
+        options !== null &&
+        typeof options.handleLoopError === 'function'
       ) {
-        const handle = settings.handleLoopError;
-        settings.handleLoopError = function (error) {
+        owner = options;
+        label = 'v1 stage.options.handleLoopError';
+      } else if (
+        r.settings !== undefined &&
+        r.settings !== null &&
+        typeof r.settings.handleLoopError === 'function'
+      ) {
+        owner = r.settings;
+        label = 'v2 settings.handleLoopError';
+      }
+      if (owner !== null) {
+        const handle = owner.handleLoopError;
+        owner.handleLoopError = function (error) {
           hookFailed('renderer frame loop', error);
           return handle.apply(this, arguments);
         };
-        detail.loopHook = 'settings.handleLoopError';
+        detail.loopHook = label;
       }
     });
     return {
