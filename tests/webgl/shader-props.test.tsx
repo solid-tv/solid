@@ -671,10 +671,10 @@ v.test('a $state getter for a border key is read once per apply', async () => {
 });
 
 v.test(
-  'a setter that throws mid state change leaves no state behind: later direct border writes and the blur are right',
+  'a setter that throws before the border keys leaves no state behind: later direct border writes and the blur are as in 1.6',
   async () => {
     let thrown = false;
-    const { changed, never, dispose } = await pair({
+    const { changed, dispose } = await pair({
       width: 100,
       height: 100,
       border: { width: 2, color: RED },
@@ -698,11 +698,383 @@ v.test(
     v.expect(shaderOf(changed).props['border-w']).toEqual([2, 2, 2, 2]);
     changed.borderLeft = { width: 5 };
     v.expect(shaderOf(changed).props['border-w']).toEqual([2, 2, 2, 5]);
+    // A write of undefined writes nothing (1.6).
     changed.borderLeft = undefined as unknown as NodeStyles['borderLeft'];
-    v.expect(shaderOf(changed).props['border-w']).toEqual([2, 2, 2, 2]);
+    v.expect(shaderOf(changed).props['border-w']).toEqual([2, 2, 2, 5]);
+    // The direct write is part of the base: it survives the blur (round 5).
+    changed.states.remove('$focus');
+    v.expect(shaderOf(changed).props['border-w']).toEqual([2, 2, 2, 5]);
+    v.expect(shaderOf(changed).props['border-color']).toBe(RED);
+    dispose();
+  },
+);
+
+// Fix round 5 (the coordinator's ruling): the node's base record is 1.6's
+// last-write-wins record of its non-state writes; the display is that
+// record, then the active states' objects. The D-, J-, TH- and N-cases of
+// the round-4 review, each at the moment of the write as 1.6 gave it.
+
+/** The border colour and widths a node's shader holds. */
+const borderOf = (node: ElementNode) => [
+  shaderOf(node).props['border-color'],
+  shaderOf(node).props['border-w'],
+];
+
+v.test(
+  'D1: a direct border over a base borderTop sets all four widths; a later borderTop its own',
+  async () => {
+    const { changed, dispose } = await pair({
+      width: 100,
+      height: 100,
+      borderTop: { width: 6, color: RED },
+    });
+    v.expect(borderOf(changed)).toEqual([RED, [6, 0, 0, 0]]);
+    changed.border = { width: 2, color: BLUE };
+    v.expect(borderOf(changed)).toEqual([BLUE, [2, 2, 2, 2]]);
+    changed.borderTop = { width: 9 };
+    v.expect(borderOf(changed)).toEqual([BLUE, [9, 2, 2, 2]]);
+    dispose();
+  },
+);
+
+v.test(
+  'D3: a direct border hides and restores a base border with a bottom accent',
+  async () => {
+    const { changed, dispose } = await pair({
+      width: 100,
+      height: 100,
+      border: { width: 2, color: RED },
+      borderBottom: { width: 6 },
+    });
+    v.expect(borderOf(changed)).toEqual([RED, [2, 2, 6, 2]]);
+    changed.border = { width: 0 };
+    v.expect(borderOf(changed)).toEqual([RED, [0, 0, 0, 0]]);
+    changed.border = { width: 4, color: BLUE };
+    v.expect(borderOf(changed)).toEqual([BLUE, [4, 4, 4, 4]]);
+    dispose();
+  },
+);
+
+v.test(
+  'D3h: a handler-driven border over a base underline, then hidden',
+  async () => {
+    const { changed, dispose } = await pair({
+      width: 100,
+      height: 100,
+      borderBottom: { width: 4, color: RED },
+    });
+    v.expect(borderOf(changed)).toEqual([RED, [0, 0, 4, 0]]);
+    changed.border = { width: 3, color: BLUE };
+    v.expect(borderOf(changed)).toEqual([BLUE, [3, 3, 3, 3]]);
+    changed.border = { width: 0 };
+    v.expect(borderOf(changed)).toEqual([BLUE, [0, 0, 0, 0]]);
+    dispose();
+  },
+);
+
+v.test(
+  'D4: a direct borderTop while $focus is on wins over the display, and persists after blur',
+  async () => {
+    const { changed, never, dispose } = await pair({
+      width: 100,
+      height: 100,
+      border: { width: 2, color: RED },
+      $focus: { border: { width: 4, color: BLUE } },
+    });
+    changed.states.add('$focus');
+    v.expect(borderOf(changed)).toEqual([BLUE, [4, 4, 4, 4]]);
+    changed.borderTop = { width: 8, color: GREEN };
+    v.expect(borderOf(changed)).toEqual([GREEN, [8, 4, 4, 4]]);
+    changed.states.remove('$focus');
+    // The base record has the direct write (1.6 gave the never-focused
+    // node's [2, 2, 2, 2] RED: the undo rewrote the style's border).
+    v.expect(borderOf(changed)).toEqual([GREEN, [8, 2, 2, 2]]);
+    v.expect(borderOf(never)).toEqual([RED, [2, 2, 2, 2]]);
+    dispose();
+  },
+);
+
+v.test(
+  'D5: a direct border to the key $focus names wins while on, and persists after blur',
+  async () => {
+    const { changed, dispose } = await pair({
+      width: 100,
+      height: 100,
+      border: { width: 2, color: RED },
+      $focus: { border: { width: 4, color: BLUE } },
+    });
+    changed.states.add('$focus');
+    changed.border = { width: 6, color: GREEN };
+    v.expect(borderOf(changed)).toEqual([GREEN, [6, 6, 6, 6]]);
+    changed.states.remove('$focus');
+    v.expect(borderOf(changed)).toEqual([GREEN, [6, 6, 6, 6]]);
+    // The getter gives the style's object, as before 1.7.
+    v.expect(changed.border).toBe(changed.style.border);
+    dispose();
+  },
+);
+
+v.test(
+  'D6: a direct border while a $focus borderBottom is on sets all four widths',
+  async () => {
+    const { changed, dispose } = await pair({
+      width: 100,
+      height: 100,
+      border: { width: 2, color: RED },
+      $focus: { borderBottom: { width: 4 } },
+    });
+    changed.states.add('$focus');
+    v.expect(borderOf(changed)).toEqual([RED, [2, 2, 4, 2]]);
+    changed.border = { width: 1, color: BLUE };
+    v.expect(borderOf(changed)).toEqual([BLUE, [1, 1, 1, 1]]);
+    changed.states.remove('$focus');
+    v.expect(borderOf(changed)).toEqual([BLUE, [1, 1, 1, 1]]);
+    dispose();
+  },
+);
+
+v.test(
+  'D7: a direct border over a base border and borderTop sets all four; a $focus side then sits on it',
+  async () => {
+    const { changed, dispose } = await pair({
+      width: 100,
+      height: 100,
+      border: { width: 2, color: RED },
+      borderTop: { width: 6 },
+      $focus: { borderBottom: { width: 4 } },
+    });
+    v.expect(borderOf(changed)).toEqual([RED, [6, 2, 2, 2]]);
+    changed.border = { width: 3, color: BLUE };
+    v.expect(borderOf(changed)).toEqual([BLUE, [3, 3, 3, 3]]);
+    changed.states.add('$focus');
+    v.expect(borderOf(changed)).toEqual([BLUE, [3, 3, 4, 3]]);
+    changed.states.remove('$focus');
+    v.expect(borderOf(changed)).toEqual([BLUE, [3, 3, 3, 3]]);
+    dispose();
+  },
+);
+
+v.test(
+  'J1: a JSX border prop and a style borderTop: the later colour wins, the widths as createShader resolves the bag',
+  async () => {
+    let a!: ElementNode;
+    let b!: ElementNode;
+    const dispose = render(() => (
+      <view>
+        <view
+          ref={a}
+          border={{ width: 2, color: RED }}
+          style={{
+            width: 100,
+            height: 100,
+            borderTop: { width: 6, color: GREEN },
+          }}
+        />
+        <view
+          ref={b}
+          x={200}
+          style={{
+            width: 100,
+            height: 100,
+            borderTop: { width: 6, color: GREEN },
+          }}
+          border={{ width: 2, color: RED }}
+        />
+      </view>
+    ));
+    await settle();
+    v.expect(borderOf(a)).toEqual([GREEN, [6, 2, 2, 2]]);
+    v.expect(borderOf(b)).toEqual([RED, [6, 2, 2, 2]]);
+    dispose();
+  },
+);
+
+v.test(
+  'TH1: theme border keys in key order: the later colour wins',
+  async () => {
+    let a!: ElementNode;
+    const dispose = render(() => (
+      <view>
+        <view
+          ref={a}
+          width={100}
+          height={100}
+          theme={
+            {
+              borderTop: { width: 6, color: GREEN },
+              border: { width: 2, color: RED },
+            } as NodeStyles
+          }
+        />
+      </view>
+    ));
+    await settle();
+    v.expect(borderOf(a)).toEqual([RED, [6, 2, 2, 2]]);
+    dispose();
+  },
+);
+
+v.test(
+  'S3: JSX border props before render: the later write of a key wins in the bag',
+  async () => {
+    let a!: ElementNode;
+    let b!: ElementNode;
+    const dispose = render(() => (
+      <view>
+        <view
+          ref={a}
+          width={100}
+          height={100}
+          borderTop={{ width: 6 }}
+          border={{ top: 3, width: 1 }}
+        />
+        <view
+          ref={b}
+          x={200}
+          width={100}
+          height={100}
+          border={{ top: 3, width: 1 }}
+          borderTop={{ width: 6 }}
+        />
+      </view>
+    ));
+    await settle();
+    v.expect(shaderOf(a).props['border-w']).toEqual([3, 1, 1, 1]);
+    v.expect(shaderOf(b).props['border-w']).toEqual([6, 1, 1, 1]);
+    dispose();
+  },
+);
+
+v.test(
+  'N2: B18 holds when another state outlives $focus: blur and the final undo both equal a never-focused node',
+  async () => {
+    const { changed, never, dispose } = await pair({
+      width: 100,
+      height: 100,
+      border: { width: 2, color: RED },
+      borderTop: { width: 6 },
+      $focus: { border: { width: 4, color: BLUE } },
+      $active: { alpha: 0.9 },
+    });
+    changed.states.add('$active');
+    never.states.add('$active');
+    changed.states.add('$focus');
+    v.expect(borderOf(changed)).toEqual([BLUE, [4, 4, 4, 4]]);
     changed.states.remove('$focus');
     v.expect(declaredProps(changed)).toEqual(declaredProps(never));
-    v.expect(shaderOf(changed).props['border-color']).toBe(RED);
+    v.expect(borderOf(changed)).toEqual([RED, [6, 2, 2, 2]]);
+    changed.states.remove('$active');
+    v.expect(borderOf(changed)).toEqual([RED, [6, 2, 2, 2]]);
+    dispose();
+  },
+);
+
+v.test(
+  'N3: a $focus with a side before border on a node without a shader gives the same widths on every focus',
+  async () => {
+    const { changed, dispose } = await pair({
+      width: 100,
+      height: 100,
+      color: 0xffffffff,
+      $focus: { borderTop: { width: 8 }, border: { width: 4, color: BLUE } },
+    });
+    v.expect(shaderOf(changed)).toBeNull();
+    changed.states.add('$focus');
+    v.expect(borderOf(changed)).toEqual([BLUE, [4, 4, 4, 4]]);
+    changed.states.remove('$focus');
+    v.expect(shaderOf(changed).props['border-w']).toEqual([0, 0, 0, 0]);
+    v.expect(alphaOf(shaderOf(changed).props['border-color'])).toBe(0);
+    changed.states.add('$focus');
+    v.expect(borderOf(changed)).toEqual([BLUE, [4, 4, 4, 4]]);
+    dispose();
+  },
+);
+
+for (const shadowFirst of [true, false]) {
+  const label = shadowFirst ? 'shadow then border' : 'border then shadow';
+  v.test(
+    `N5: a $focus with ${label} on a node without a shader creates the type 1.6's first write chose`,
+    async () => {
+      const sh = { color: 0x000000ff, blur: 10 };
+      const bo = { width: 4, color: BLUE };
+      const { changed, dispose } = await pair({
+        width: 100,
+        height: 100,
+        color: 0xffffffff,
+        $focus: shadowFirst
+          ? { shadow: sh, border: bo }
+          : { border: bo, shadow: sh },
+      });
+      changed.states.add('$focus');
+      const declared = shaderOf(changed).shaderType.props;
+      v.expect('shadow-color' in declared).toBe(shadowFirst);
+      v.expect('border-w' in declared).toBe(!shadowFirst);
+      if (shadowFirst) {
+        v.expect(shaderOf(changed).props['shadow-projection']).toEqual([
+          0, 0, 10, 5,
+        ]);
+      } else {
+        v.expect(borderOf(changed)).toEqual([BLUE, [4, 4, 4, 4]]);
+      }
+      dispose();
+    },
+  );
+}
+
+v.test(
+  'N6: a setter that throws after the border key does not lose the border',
+  async () => {
+    let thrown = false;
+    const { changed, never, dispose } = await pair({
+      width: 100,
+      height: 100,
+      border: { width: 2, color: RED },
+      $focus: {
+        border: { width: 4, color: BLUE },
+        myThrow: 1,
+      } as NodeStyles['$focus'],
+      $hover: { alpha: 0.9 },
+    });
+    Object.defineProperty(changed, 'myThrow', {
+      configurable: true,
+      get: () => undefined,
+      set() {
+        if (!thrown) {
+          thrown = true;
+          throw new Error('boom');
+        }
+      },
+    });
+    v.expect(() => changed.states.add('$focus')).toThrow('boom');
+    v.expect(borderOf(changed)).toEqual([BLUE, [4, 4, 4, 4]]);
+    changed.states.add('$hover');
+    v.expect(borderOf(changed)).toEqual([BLUE, [4, 4, 4, 4]]);
+    changed.states.remove('$hover');
+    changed.states.remove('$focus');
+    v.expect(declaredProps(changed)).toEqual(declaredProps(never));
+    v.expect(borderOf(changed)).toEqual([RED, [2, 2, 2, 2]]);
+    dispose();
+  },
+);
+
+v.test(
+  'N7: an effects border is part of the base: a direct borderTop sits on it, and a $focus border undoes to it',
+  async () => {
+    const style = {
+      width: 100,
+      height: 100,
+      effects: { border: { width: 2, color: RED } },
+      $focus: { border: { width: 4, color: BLUE } },
+    } as NodeStyles;
+    const { changed, never, dispose } = await pair(style);
+    v.expect(borderOf(never)).toEqual([RED, [2, 2, 2, 2]]);
+    changed.states.add('$focus');
+    v.expect(borderOf(changed)).toEqual([BLUE, [4, 4, 4, 4]]);
+    changed.states.remove('$focus');
+    // 1.6 kept the focus border (the undo's fallback was undefined).
+    v.expect(declaredProps(changed)).toEqual(declaredProps(never));
+    never.borderTop = { width: 6 };
+    v.expect(borderOf(never)).toEqual([RED, [6, 2, 2, 2]]);
     dispose();
   },
 );
