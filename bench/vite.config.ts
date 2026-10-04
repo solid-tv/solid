@@ -27,7 +27,7 @@
 // `import.meta.env.VITE_USE_NEW_FLEX` is non-empty). Every arm is built the
 // same way by default; BENCH_FLEX=old builds src/core/flex.ts instead, into
 // dist/<arm>[-count]-flexold.
-import { readFileSync } from 'node:fs';
+import { readFileSync, realpathSync } from 'node:fs';
 import { dirname, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { defineConfig, type Alias, type Plugin } from 'vite';
@@ -40,7 +40,12 @@ const arm = (process.env.BENCH_ARM ?? 'C') as keyof typeof ARMS;
 if (!(arm in ARMS)) {
   throw new Error(`BENCH_ARM must be one of ${Object.keys(ARMS).join(', ')}`);
 }
-const { solid, renderer, rendererMajor } = ARMS[arm];
+const { rendererMajor } = ARMS[arm];
+// The arms' real paths: the bundler's module ids are real paths, and a
+// worktree's `bench/.arms` is a symlink to the shared arms, so a path joined
+// from it matches no id (no chunks, no flex hook).
+const solid = realpathSync(ARMS[arm].solid);
+const renderer = realpathSync(ARMS[arm].renderer);
 const escape = (s: string) => s.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&');
 const instrument = process.env.BENCH_INSTRUMENT === '1';
 const chunks = process.env.BENCH_CHUNKS !== '0';
@@ -83,17 +88,26 @@ const solidAliases: Alias[] = [
  * Count mode only: wraps the default export of the arm's flex layout modules
  * so that each call (one flex pass over one container) counts. It matches
  * `export default function (` in src/core/flex.ts and flexLayout.ts, as in
- * arms A and B. A module without it is left alone with a warning, and the
- * runner reports flex passes as n/a (`flexHooks` stays 0).
+ * arms A and B. A module without it is left alone with a warning, as is a
+ * build in which neither module was transformed (a path that matches no
+ * module id), and the runner reports flex passes as n/a (`flexHooks` stays 0).
  */
 function countFlexPasses(): Plugin {
   const files = new Set(
     ['flex.ts', 'flexLayout.ts'].map((f) => join(solid, 'src', 'core', f)),
   );
   const head = /export default function\s*\(/;
+  let hooked = 0;
   return {
     name: 'bench-count-flex',
     enforce: 'pre',
+    buildEnd() {
+      if (hooked === 0) {
+        this.warn(
+          `flex pass hook not installed: none of ${[...files].join(', ')} was transformed`,
+        );
+      }
+    },
     transform(code, id) {
       const file = id.split('?')[0]!;
       if (!files.has(file)) {
@@ -105,6 +119,7 @@ function countFlexPasses(): Plugin {
         );
         return null;
       }
+      hooked++;
       return (
         code.replace(head, 'function __benchFlexPass(') +
         `

@@ -63,6 +63,7 @@ export function pageProbe(opts) {
 
   // Drawn-frame detection: one gl.clear per drawn frame in both majors.
   let clears = 0;
+  let drawHook = null;
   const glTypes = [window.WebGLRenderingContext, window.WebGL2RenderingContext];
   for (let g = 0; g < glTypes.length; g++) {
     const type = glTypes[g];
@@ -74,6 +75,7 @@ export function pageProbe(opts) {
       clears++;
       clear.call(this, mask);
     };
+    drawHook = 'gl.clear';
   }
 
   // The frame log: a ring of CAP callbacks.
@@ -434,14 +436,66 @@ export function pageProbe(opts) {
     });
 
   // Count mode: runtime hooks on the renderer (both majors). See
-  // docs/perf/README.md, "Count mode".
+  // docs/perf/README.md, "Count mode". Every hook is found by name; one that
+  // finds nothing stays null, and the runner reports what it feeds as n/a
+  // (bench/harness/analyze.mjs, countStats). One that throws, or whose
+  // install throws, is counted in `hookErrors` and logged once with
+  // console.error, which the runner records as a run error: the renderer's
+  // frame loop swallows what a frame throws (handleLoopError, hooked below),
+  // so an unseen exception would otherwise read as zeroes.
   const detail = {
     nodeAccessors: 0,
     nodeWrites: new Map(),
     shaderWrites: new Map(),
+    shaderUnwrapped: 0,
+    animateHooks: 0,
     walkHook: null,
     textHook: null,
     cacheHook: null,
+    loadedHook: null,
+    createHook: null,
+    loopHook: null,
+    hookErrors: new Map(),
+  };
+  // An exception passes every hook on the stack (and the loop's handler):
+  // it is charged once, to the innermost.
+  const charged = new WeakSet();
+  const hookFailed = (name, error) => {
+    if (error !== null && typeof error === 'object') {
+      if (charged.has(error)) {
+        return;
+      }
+      charged.add(error);
+    }
+    const known = detail.hookErrors.get(name);
+    if (known !== undefined) {
+      known.count++;
+      return;
+    }
+    const message =
+      error !== null && typeof error === 'object' && error.stack
+        ? String(error.stack)
+        : String(error);
+    detail.hookErrors.set(name, { count: 1, first: message });
+    console.error(`bench count: ${name}: ${message}`);
+  };
+  /** `fn` as a hook: what it throws is counted as the hook's error, then thrown on. */
+  const guarded = (name, fn) =>
+    function () {
+      try {
+        return fn.apply(this, arguments);
+      } catch (e) {
+        hookFailed(name, e);
+        throw e;
+      }
+    };
+  /** One hook's install: a throw leaves that hook uninstalled (null), not the run dead. */
+  const attempt = (name, install) => {
+    try {
+      install();
+    } catch (e) {
+      hookFailed(`${name} (install)`, e);
+    }
   };
   const installCounters = () => {
     const r = bench.renderer;
@@ -468,6 +522,7 @@ export function pageProbe(opts) {
         }
       }
       if (field === null) {
+        detail.shaderUnwrapped++;
         return;
       }
       const wrapper = {};
@@ -544,9 +599,30 @@ export function pageProbe(opts) {
             typeof d.value === 'function'
           ) {
             const fn = d.value;
+            detail.animateHooks++;
             p[name] = function () {
               if (rdepth === 0) {
                 C.animations++;
+              }
+              rdepth++;
+              try {
+                return fn.apply(this, arguments);
+              } finally {
+                rdepth--;
+              }
+            };
+          } else if (name === 'insertBefore' && typeof d.value === 'function') {
+            // Renderer v2 (dc09e5e): a second way to attach a child, which
+            // Solid 1.7 uses to keep draw order; the `parent` setter is the
+            // other, so both count as a write (`insertBefore` in topWrites).
+            const fn = d.value;
+            p[name] = function () {
+              if (rdepth === 0) {
+                C.writes++;
+                if (inRaf) {
+                  C.frameWrites++;
+                }
+                bump(detail.nodeWrites, name);
               }
               rdepth++;
               try {
@@ -566,8 +642,13 @@ export function pageProbe(opts) {
     // a defined value), the same on both majors: renderer v2 applies it
     // through the public setters, v1 in the constructor, and neither counts
     // as a write.
+    const created = [];
     for (const method of ['createNode', 'createTextNode']) {
       const create = r[method];
+      if (typeof create !== 'function') {
+        continue;
+      }
+      created.push(method);
       r[method] = function (props) {
         if (rdepth === 0) {
           C.created++;
@@ -589,6 +670,9 @@ export function pageProbe(opts) {
         patchProto(Object.getPrototypeOf(node));
         return node;
       };
+    }
+    if (created.length > 0) {
+      detail.createHook = created.join(' + ');
     }
     const createShader = r.createShader;
     r.createShader = function () {
@@ -627,13 +711,16 @@ export function pageProbe(opts) {
       const list = map !== null && map !== undefined ? map[event] : undefined;
       return list !== undefined && list !== null && list.length > 0;
     };
-    let ep = nodeProto;
-    while (ep !== null && !Object.prototype.hasOwnProperty.call(ep, 'emit')) {
-      ep = Object.getPrototypeOf(ep);
-    }
-    if (ep !== null) {
+    attempt('loadedHook', () => {
+      let ep = nodeProto;
+      while (ep !== null && !Object.prototype.hasOwnProperty.call(ep, 'emit')) {
+        ep = Object.getPrototypeOf(ep);
+      }
+      if (ep === null) {
+        return;
+      }
       const emit = ep.emit;
-      ep.emit = function (event, data) {
+      ep.emit = guarded('loadedHook', function (event, data) {
         const isNode =
           Object.prototype.isPrototypeOf.call(nodeProto, this) === true;
         if (event === 'loaded' && isNode) {
@@ -656,119 +743,183 @@ export function pageProbe(opts) {
         const saved = rdepth;
         rdepth = app ? 0 : rdepth + 1;
         try {
-          return emit.call(this, event, data);
+          return emit.apply(this, arguments);
         } finally {
           rdepth = saved;
         }
-      };
-    }
-    if (r.scene !== undefined && typeof r.scene.run === 'function') {
-      // Renderer v2: one ScenePass.run per walk (RendererCore.update).
-      const scene = r.scene;
-      const run = scene.run;
-      scene.run = function (id) {
-        C.walks++;
-        return run.call(this, id);
-      };
-      detail.walkHook = 'v2 ScenePass.run';
-    } else if (
-      r.stage !== undefined &&
-      typeof r.stage.drawFrame === 'function'
-    ) {
-      // Renderer v1: Stage.drawFrame's update loop reads `reprocessFrame`
-      // twice per iteration (at its top and in its `while`).
-      const stage = r.stage;
-      let value = stage.reprocessFrame;
-      let reads = 0;
-      let inDraw = false;
-      Object.defineProperty(stage, 'reprocessFrame', {
-        configurable: true,
-        get() {
-          if (inDraw) {
-            reads++;
-          }
-          return value;
-        },
-        set(v) {
-          value = v;
-        },
       });
-      const drawFrame = stage.drawFrame;
-      stage.drawFrame = function (animating) {
-        inDraw = true;
-        reads = 0;
-        try {
-          return drawFrame.call(this, animating);
-        } finally {
-          inDraw = false;
-          C.walks += reads / 2;
-        }
-      };
-      detail.walkHook = 'v1 Stage.drawFrame update-loop iterations';
-    }
-    if (
-      r.textNodes !== undefined &&
-      typeof r.textNodes.layoutText === 'function'
-    ) {
-      // Renderer v2: TextNodes.layoutText runs for every text visit that has
-      // DIRTY_LAYOUT; LayoutCache.get is looked up when a layout is due.
-      const tn = r.textNodes;
-      const layoutText = tn.layoutText;
-      tn.layoutText = function (id) {
-        const s = now();
-        const out = layoutText.call(this, id);
-        C.textLayoutMs += now() - s;
-        C.textLayouts++;
-        return out;
-      };
-      const cache = tn.cache;
-      const get = cache.get;
-      cache.get = function (key) {
-        const layout = get.call(this, key);
-        if (layout === undefined) {
-          C.cacheMisses++;
-        } else {
-          C.cacheHits++;
-        }
-        return layout;
-      };
-      detail.textHook = 'v2 TextNodes.layoutText';
-      detail.cacheHook = 'v2 LayoutCache.get';
-    } else if (
-      r.stage !== undefined &&
-      r.stage.textRenderers !== undefined &&
-      r.stage.textRenderers.sdf !== undefined
-    ) {
-      // Renderer v1: SdfTextRenderer.renderText (cache lookup + layout).
-      // A layout object returned before is a cache hit.
-      const sdf = r.stage.textRenderers.sdf;
-      const renderText = sdf.renderText;
-      const seen = new WeakSet();
-      sdf.renderText = function (props) {
-        const s = now();
-        const out = renderText.call(this, props);
-        C.textLayoutMs += now() - s;
-        C.textLayouts++;
-        const layout =
-          out !== undefined && out !== null ? out.layout : undefined;
-        if (layout !== undefined && layout !== null) {
-          if (seen.has(layout)) {
-            C.cacheHits++;
-          } else {
-            seen.add(layout);
-            C.cacheMisses++;
+      detail.loadedHook = 'emit on the node prototype chain';
+    });
+    attempt('walkHook', () => {
+      if (r.scene !== undefined && typeof r.scene.run === 'function') {
+        // Renderer v2: one ScenePass.run per walk (RendererCore.update).
+        const scene = r.scene;
+        const run = scene.run;
+        scene.run = guarded('walkHook', function () {
+          C.walks++;
+          return run.apply(this, arguments);
+        });
+        detail.walkHook = 'v2 ScenePass.run';
+      } else if (
+        r.stage !== undefined &&
+        typeof r.stage.drawFrame === 'function'
+      ) {
+        // Renderer v1: Stage.drawFrame's update loop reads `reprocessFrame`
+        // twice per iteration (at its top and in its `while`).
+        const stage = r.stage;
+        let value = stage.reprocessFrame;
+        let reads = 0;
+        let inDraw = false;
+        Object.defineProperty(stage, 'reprocessFrame', {
+          configurable: true,
+          get() {
+            if (inDraw) {
+              reads++;
+            }
+            return value;
+          },
+          set(v) {
+            value = v;
+          },
+        });
+        const drawFrame = stage.drawFrame;
+        stage.drawFrame = guarded('walkHook', function () {
+          inDraw = true;
+          reads = 0;
+          try {
+            return drawFrame.apply(this, arguments);
+          } finally {
+            inDraw = false;
+            C.walks += reads / 2;
           }
+        });
+        detail.walkHook = 'v1 Stage.drawFrame update-loop iterations';
+      }
+    });
+    // Text layout and its cache. Each hook forwards every argument it is
+    // called with, so a changed signature (LayoutCache.get took a key string,
+    // then a font record id and the node's text props) cannot break the
+    // renderer's own call, which the frame loop would swallow.
+    attempt('textHook', () => {
+      const tn = r.textNodes;
+      if (tn !== undefined && tn !== null) {
+        // Renderer v2: TextNodes.lay (private; every layout, from a walk's
+        // visit or from TextNode.measure(): since 407b973), else
+        // TextNodes.layoutText (every walk visit with DIRTY_LAYOUT: faf4b9f,
+        // where the layout is inline in the visit).
+        const name =
+          typeof tn.lay === 'function'
+            ? 'lay'
+            : typeof tn.layoutText === 'function'
+              ? 'layoutText'
+              : null;
+        if (name !== null) {
+          const layout = tn[name];
+          tn[name] = guarded('textHook', function () {
+            const s = now();
+            const out = layout.apply(this, arguments);
+            C.textLayoutMs += now() - s;
+            C.textLayouts++;
+            return out;
+          });
+          detail.textHook = `v2 TextNodes.${name}`;
         }
-        return out;
-      };
-      detail.textHook = 'v1 SdfTextRenderer.renderText';
-      detail.cacheHook = 'v1 renderText layout identity';
-    }
+        const cache = tn.cache;
+        if (
+          cache !== undefined &&
+          cache !== null &&
+          typeof cache.get === 'function'
+        ) {
+          const get = cache.get;
+          cache.get = guarded('cacheHook', function () {
+            const layout = get.apply(this, arguments);
+            if (layout === undefined || layout === null) {
+              C.cacheMisses++;
+            } else {
+              C.cacheHits++;
+            }
+            return layout;
+          });
+          detail.cacheHook = 'v2 LayoutCache.get';
+        }
+      } else if (
+        r.stage !== undefined &&
+        r.stage.textRenderers !== undefined &&
+        r.stage.textRenderers.sdf !== undefined &&
+        typeof r.stage.textRenderers.sdf.renderText === 'function'
+      ) {
+        // Renderer v1: SdfTextRenderer.renderText (cache lookup + layout).
+        // A layout object returned before is a cache hit.
+        const sdf = r.stage.textRenderers.sdf;
+        const renderText = sdf.renderText;
+        const seen = new WeakSet();
+        sdf.renderText = guarded('textHook', function () {
+          const s = now();
+          const out = renderText.apply(this, arguments);
+          C.textLayoutMs += now() - s;
+          C.textLayouts++;
+          const layout =
+            out !== undefined && out !== null ? out.layout : undefined;
+          if (layout !== undefined && layout !== null) {
+            if (seen.has(layout)) {
+              C.cacheHits++;
+            } else {
+              seen.add(layout);
+              C.cacheMisses++;
+            }
+          }
+          return out;
+        });
+        detail.textHook = 'v1 SdfTextRenderer.renderText';
+        detail.cacheHook = 'v1 renderText layout identity';
+      }
+    });
+    // Both majors' frame loops swallow what a frame, or a listener it calls,
+    // throws: the frame is not drawn and is tried again, so a throwing hook
+    // would read as zero frames and zero counts. They hand it to a no-op by
+    // default: v2 reads settings.handleLoopError on every error; v1 (1.9.3)
+    // reads stage.options.handleLoopError, a copy the Stage made of the
+    // setting when it was built, so replacing the setting later does nothing
+    // there. Hook the one the loop reads.
+    attempt('loop', () => {
+      const options =
+        r.stage !== undefined && r.stage !== null ? r.stage.options : undefined;
+      let owner = null;
+      let label = null;
+      if (
+        options !== undefined &&
+        options !== null &&
+        typeof options.handleLoopError === 'function'
+      ) {
+        owner = options;
+        label = 'v1 stage.options.handleLoopError';
+      } else if (
+        r.settings !== undefined &&
+        r.settings !== null &&
+        typeof r.settings.handleLoopError === 'function'
+      ) {
+        owner = r.settings;
+        label = 'v2 settings.handleLoopError';
+      }
+      if (owner !== null) {
+        const handle = owner.handleLoopError;
+        owner.handleLoopError = function (error) {
+          hookFailed('renderer frame loop', error);
+          return handle.apply(this, arguments);
+        };
+        detail.loopHook = label;
+      }
+    });
     return {
       nodeAccessors: detail.nodeAccessors,
+      animateHooks: detail.animateHooks,
+      createHook: detail.createHook,
       walkHook: detail.walkHook,
       textHook: detail.textHook,
       cacheHook: detail.cacheHook,
+      loadedHook: detail.loadedHook,
+      loopHook: detail.loopHook,
+      drawHook,
       flexHooks: C.flexHooks,
     };
   };
@@ -852,11 +1003,19 @@ export function pageProbe(opts) {
       }
       return out;
     },
-    /** Count mode: writes by name over everything since installCounters(). */
+    /** Count mode: writes by name over everything since installCounters(), and the hooks' errors. */
     countDetails() {
       return {
         nodeWrites: Array.from(detail.nodeWrites.entries()),
         shaderWrites: Array.from(detail.shaderWrites.entries()),
+        // Shader nodes whose `props` could not be swapped for a counter.
+        shaderUnwrapped: detail.shaderUnwrapped,
+        // [hook, times it threw, the first throw], including install failures.
+        hookErrors: Array.from(detail.hookErrors.entries()).map(([k, v]) => [
+          k,
+          v.count,
+          v.first,
+        ]),
       };
     },
     /** For debugging the harness: the frame log's tail and the idle count. */

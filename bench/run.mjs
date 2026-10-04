@@ -437,10 +437,17 @@ async function runOnce({ origin, arm, scenario, mode, run }) {
         record.rawProfile = profile;
       }
     } else {
-      record.stats = countStats(ops, record.hooks.flexHooks > 0);
       const details = await page.evaluate(() =>
         window.__benchProbe.countDetails(),
       );
+      // What the hooks learned over the run, beside what they found at
+      // install; a hook that threw, or could not install, fails the run.
+      record.hooks.shaderUnwrapped = details.shaderUnwrapped;
+      record.hooks.errors = details.hookErrors;
+      for (const [hook, count] of details.hookErrors) {
+        errors.push(`count hook ${hook} threw ${count} time(s)`);
+      }
+      record.stats = countStats(ops, record.hooks);
       const perOp = (list) =>
         list
           .sort((a, b) => b[1] - a[1])
@@ -529,7 +536,7 @@ for (const mode of modes) {
           line += ` ${r.selfPerOp.total.toFixed(3)} ms self/op; top ${r.selfPerOp.top[0]?.[0]}`;
         } else if (mode === 'count' && r.stats !== undefined) {
           const s = r.stats;
-          line += ` flex ${s.flexPasses?.toFixed(1) ?? 'n/a'} writes ${s.writes.toFixed(1)} shader ${s.shaderWrites.toFixed(1)} walks/frame ${s.walksPerFrame?.toFixed(2) ?? 'n/a'} loaded ${s.loadedText.toFixed(1)}/${s.loadedOther.toFixed(1)} per op`;
+          line += ` flex ${s.flexPasses?.toFixed(1) ?? 'n/a'} writes ${s.writes?.toFixed(1) ?? 'n/a'} shader ${s.shaderWrites?.toFixed(1) ?? 'n/a'} walks/frame ${s.walksPerFrame?.toFixed(2) ?? 'n/a'} loaded ${s.loadedText?.toFixed(1) ?? 'n/a'}/${s.loadedOther?.toFixed(1) ?? 'n/a'} per op`;
         }
         if (r.env !== undefined) {
           if (
