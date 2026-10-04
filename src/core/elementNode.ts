@@ -979,7 +979,13 @@ export class ElementNode {
   _writeFontFamily() {
     const weight = this._fontWeight as number | string | undefined;
     if (weight === undefined) {
-      (this.lng as ElementNode).fontFamily = this._fontFamily;
+      // No family of its own: before render, undefined lets render's font
+      // template fill it in; after render, write what the template gave
+      // (Config.fontSettings' family and weight, read at the first text
+      // render), not undefined, which the renderer takes as its default.
+      const family = this._fontFamily;
+      (this.lng as ElementNode).fontFamily =
+        family === undefined && this.rendered ? _fontFamilyWithWeight : family;
       return;
     }
     const alias = Config.fontWeightAlias;
