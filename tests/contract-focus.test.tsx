@@ -793,3 +793,50 @@ v.describe('contract: autofocus', () => {
     },
   );
 });
+
+v.describe('contract: a removed focused subtree', () => {
+  // 1.6 behaviour (found by the demo port, #/complexflex): a removed node
+  // keeps its `parent`, so when the focused element's subtree is removed and
+  // nothing re-focuses, a focus path built inside it (here: navigation within
+  // the removed parent) still reaches the removed node's former ancestors,
+  // and their key handlers still run.
+  v.it(
+    "keys from a removed subtree still bubble to its former ancestors' handlers",
+    async () => {
+      const [show, setShow] = createSignal(true);
+      const onDown = v.vi.fn(() => true);
+      let g!: ElementNode, p!: ElementNode, a!: ElementNode, b!: ElementNode;
+      const { target, dispose } = await mount(() => (
+        <view ref={g} onDown={onDown}>
+          {show() && (
+            <view
+              ref={p}
+              onRight={() => {
+                b.setFocus();
+                return true;
+              }}
+            >
+              <view ref={a} autofocus />
+              <view ref={b} />
+            </view>
+          )}
+        </view>
+      ));
+      v.expect(activeElement()).toBe(a);
+
+      setShow(false);
+      await flush();
+      v.expect(g.children).not.toContain(p);
+      v.expect(p.parent).toBe(g);
+
+      target.down('ArrowRight');
+      await flush();
+      v.expect(activeElement()).toBe(b);
+      v.expect(focusPath()).toContain(g);
+
+      target.down('ArrowDown');
+      v.expect(onDown).toHaveBeenCalledTimes(1);
+      dispose();
+    },
+  );
+});
