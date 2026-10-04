@@ -80,6 +80,8 @@ export interface IRendererNodeShaded extends EventEmitter {
   ) => lng.IAnimationController;
   get absX(): number;
   get absY(): number;
+  /** Renderer v2's `Node.destroyed`: true once destroyed. */
+  get destroyed(): boolean;
   /** Renderer v2's `Node.insertBefore` (draw order follows Solid's children). */
   insertBefore(child: IRendererNode, before: IRendererNode | null): void;
 }
@@ -117,6 +119,12 @@ export interface IRendererTextNode
   div?: HTMLElement;
   props: IRendererTextNodeProps;
   renderState: lng.CoreNodeRenderState;
+  /**
+   * Renderer v2's `TextNode.measure()`: lays the text out now, outside the
+   * walk, so `w` and `h` read its size at once; false, changing nothing,
+   * while its font is not loaded (and for a destroyed node).
+   */
+  measure(): boolean;
 }
 
 /** Based on {@link lng.RendererMain} */
