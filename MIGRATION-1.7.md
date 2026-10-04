@@ -129,6 +129,17 @@ not reflow its flex parent) changes nothing.
       differ, the undo restores `theme`, then `style`, then `undefined`, as
       before. The first state change after all states were off writes every
       key.
+    - A `border`, border side or `shadow` key is diffed like any other, and
+      its write merges into the shader props. When one key of the border
+      family changes and another one stays, only the changed one is written,
+      and what its write overwrites is not restored: with
+      `$focus: { border: { width: 4 }, borderTop: { width: 8 } }` and
+      `$active: { border: { width: 6 } }`, adding `$active` shows
+      `[6, 6, 6, 6]` (1.6 rewrote the unchanged `borderTop` after the
+      `border`: `[8, 6, 6, 6]`); removing a `$focus` border while an
+      `$active` `borderTop: { width: 8 }` stays on shows the base border
+      without the top (1.6: `[8, 2, 2, 2]`). The unchanged key is written
+      again when its resolved value changes, or when the app writes it.
   - **Gain:** state application allocates nothing per press: none of the
     replaced functions is among the sampled allocation sites. Framework KiB/op
     2.63 → 1.52 (thumbnail-focus) and 14.91 → 7.29 (navdrawer-toggle): the
@@ -172,13 +183,8 @@ not reflow its flex parent) changes nothing.
     - A getter in a `$state` block (`get color() { ... }`) is read each time a
       state change applies the block, as before. An object with a getter is
       not cached.
-    - A getter in the base style for a `border` or `shadow` key is read when
-      the style is applied (and by a direct write) into the node's base border
-      (B18). The node shows what it read then, not the getter's value at the
-      undo: with `get border() { return { width: w, color: RED }; }`, `w` 2 at
-      creation and 7 at focus and blur, a blurred node shows `[2, 2, 2, 2]`;
-      1.6 read the getter at the undo and showed `[7, 7, 7, 7]`. A base-style
-      getter for any other key is still read at the undo.
+    - A getter in the base style, for a `border` or `shadow` key as for any
+      other, is still read at the undo, as before.
     - Assigning the same border object again writes nothing.
   - **Gain:** the per-write border parse is gone: `parseAndAssignShaderProps`
     and its closure were 0.48 and 0.63 KiB/op on thumbnail-focus, now 0.
@@ -509,7 +515,8 @@ Found while pinning the contract (Phase 1). Each had a skipped test
 (`it.skip('BUG: …')`) with the correct behaviour that its fix turns on. The
 maintainer approved fixing all 21 (B1-B21) at Checkpoint 1, including the ones
 marked **layout** or **scroll** in the design spec, section 5.8 (B5-B14),
-which change flex or scroll results.
+which change flex or scroll results. At Checkpoint 2 (2026-10-04) the B18 fix
+was removed again: **B18 is not fixed in 1.7** (see "States and styles").
 
 ### Keys and focus
 
@@ -547,113 +554,17 @@ which change flex or scroll results.
     `$disabled` and not `disabled`. `src/components/NavDrawer/NavDrawer.tsx:47`
     (`states.remove("$focus")`) is unaffected.
   - **Upgrade step:** none.
-- **B18: undoing a state's border or shadow leaves what the node's own writes
-  give.**
-  - **What changes:** 1.6 undid a state's `border` or `shadow` by writing the
-    style's object back, or nothing when the style had none, and kept every
-    sub-prop the state named and the base object did not. A blurred node then
-    differed from a never-focused one. Now it equals it. Only an app with a
-    `$state` block that sets `border`, a border side or `shadow` is affected.
-    - **How a node's border and shadow are defined.** Every write that is not
-      a state's merges as in 1.6, in the order it happens: the style's keys at
-      creation, `theme`, JSX props, `effects`, and `node.border = …` from a
-      handler or a reactive prop. A `border` object sets all four widths and
-      whatever else it names, a side object sets its side, and a sub-prop an
-      object does not name keeps its value (the later write of a key wins).
-      The node keeps that result as its base. With states on, it shows the
-      base, then the active states' border and shadow objects in the order
-      their keys were first applied. With none on, it shows the base.
-    - **What differs from 1.6** is the result of a state undo, as listed next,
-      and two cases under a border `transition`.
-    - **A sub-prop only a state named returns to the node's own value**, else
-      to a fresh shader's (`gap`, `align`, `fill`, a side's width, a shadow's
-      `x`/`y`/`blur`/`spread`/`projection`). 1.6 kept it. A `$focus` border
-      with `gap: 4, align: 'outside'` kept its gap after blur. A `$focus`
-      `borderTop: { width: 6 }` over a base `border: { width: 2 }` stayed
-      `[6, 2, 2, 2]`. A `$focus` `border: { width: 4 }` over a base `border` +
-      `borderTop: { width: 6 }` left `[2, 2, 2, 2]`, where a never-focused node
-      has `[6, 2, 2, 2]`.
-    - **A state's border or shadow over none goes away on undo.** Its colour
-      keeps its RGB at alpha 0 (with a `transition` it fades out while the
-      widths or the projection shrink to the fresh values), and the next add
-      brings the colour back (the fresh default when the object names none).
-      1.6 kept it drawn, with or without a transition. It also kept it when
-      the state is removed while another state that names other keys stays on,
-      or while another state's object of the same family remains. Now only
-      what remains is shown: `$focus: { borderTop: { width: 8 } }` alone is
-      `[8, 0, 0, 0]` white, where 1.6 kept the removed `$active` border's
-      `[8, 6, 6, 6]` blue.
-    - **A state's border or shadow over an `effects` object returns to the
-      `effects` object on undo.**
-      `effects: { border: { width: 2, color: RED } }` with
-      `$focus: { border: { width: 4, color: BLUE } }` gives `[2, 2, 2, 2]` RED
-      after blur, as a never-focused node. 1.6 kept the focus border, since
-      `effects` is not a style key the undo could read.
-    - **A direct write made while a state is on persists after the state is
-      removed.** `node.borderTop = { width: 8, color: GREEN }` while
-      `$focus: { border: { width: 4, color: BLUE } }` is on shows `[8, 4, 4, 4]`
-      GREEN (as 1.6) and, after blur, `[8, 2, 2, 2]` GREEN over a base
-      `border: { width: 2, color: RED }` (1.6: `[2, 2, 2, 2]` RED, the style's
-      object rewritten over it). Likewise
-      `node.border = { width: 6, color: GREEN }` made while that `$focus` is on
-      stays `[6, 6, 6, 6]` GREEN after blur (1.6: `[2, 2, 2, 2]` RED), and
-      `node.borderLeft = { width: 5 }` keeps its left width after the undo.
-      Reading `node.border` after an undo still returns the style's object, as
-      in 1.6. A later state change that leaves the family's keys unchanged does
-      not re-apply them either (section 2, "A state change writes only the keys
-      whose value changed").
-    - **With a `transition`, the undo animates to those values.** A vec4 whose
-      elements differ animates element by element (a track per side or
-      projection element), and a removed border or shadow fades (alpha and
-      widths down together). 1.6 animated to the style's object, or not at all
-      for a key the style lacks.
-    - **A base-style getter for a `border` or `shadow` key** is read when the
-      style is applied, into the base. The undo shows that, not the getter's
-      value then (section 2, "A `$state` block, and a `border` or `shadow`
-      object, are read once").
-    - **Values set through the `shader` prop are not in the base.**
-      A `shader` prop such as
-      `shader={['roundedWithBorder', { 'border-w': 3, 'border-color': GREEN }]}`,
-      `node.shader = …`, and writes straight into `shader.props` are not
-      recorded. A direct `border`/`borderTop`/`shadow` write still goes over
-      them as in 1.6 (`borderTop = { width: 6 }` gives GREEN `[6, 3, 3, 3]`),
-      but a state undo of that family rebuilds from the base and drops them:
-      `$focus: { border: { width: 4, color: BLUE } }` on and off ends at
-      `0x0000ff00` `[0, 0, 0, 0]`, where 1.6 kept GREEN `[3, 3, 3, 3]`. Mixing
-      the `shader` prop with `border`/`shadow` states is unsupported.
-    - **Under a border `transition`, two cases are not plain undo results.**
-      - With base `border: { width: 2, color: RED }`,
-        `$focus: { border: { width: 4, color: BLUE }, borderTop: { width: 8 } }`
-        and `transition: { border }`, focus shows `[8, 4, 4, 4]`: the object's
-        own later key wins, as without a transition. 1.6 showed `[4, 4, 4, 4]`,
-        its running `border` animation overwriting the `borderTop` write on
-        every frame.
-      - A direct `borderTop = { width: 6 }` made during the undo's fade of a
-        state border over none shows, at the write, what the node's own writes
-        give (white `[6, 0, 0, 0]`, as a never-focused node with the same
-        write), but the fade's remaining frames then overwrite it and the
-        border ends at alpha 0, `[0, 0, 0, 0]`. 1.6 had no fade, so it showed
-        `[6, 4, 4, 4]` BLUE at the write and at the end. Same class as the
-        case above: a running `border` animation overwrites a later write.
-    - Not visible: an undo writes only the sub-props whose value differs.
-      Readable but not drawn: a border or shadow written into a shader whose
-      type does not declare it (a `$focus` border on a node whose first state
-      write made a `roundedWithShadow`, as in 1.6) no longer lands as own
-      properties on the shader's `props` facade.
-  - **Gain:** none; a correctness fix. It costs shader writes on blur
-    (thumbnail-focus 6.2 → 8.2 per press: `border-gap` goes 4 → 0), with no
-    Solid allocation.
-  - **Demo app:** `src/styles.ts` `Thumbnail` (a base `border` and
-    `$focus`/`$hover`/`$pressed` borders, one object each, `$focus` with `gap`
-    and `align`): the gap and align now reset on blur. `src/components/Input.tsx`
-    and `src/components/index.tsx` (`BlockStyle`) have a base `border` and a
-    `$focus` `border` that name the same sub-props: no change. `src/styles.ts`
-    `Button` (a shadow in the base and in `$focus`) is unaffected. No handler
-    in the demo writes a border or shadow while a state is on (grep of
-    `.border` and `.shadow` assignments).
-  - **Upgrade step:** none, except an app that mixes the `shader` prop with
-    `border`/`shadow` states: give those values through `border`, `shadow` or
-    `effects`, which the base keeps.
+- **B18 is not fixed in 1.7.** Undoing a state's `border`, border side or
+  `shadow` writes the key's fallback object back (`theme`'s, else the style's;
+  nothing when there is none), and that write merges into the shader props as
+  every border or shadow write does, so the sub-props only the state named
+  stay (`border-gap`, `border-align`, a side's width, a shadow's `blur`), and
+  a state's border or shadow over none stays drawn after the undo, as in 1.6.
+  A fix shipped in stream S and was removed at Checkpoint 2 (user decision):
+  making a blurred node equal a never-focused one in every combination needed
+  a per-node record of every border and shadow write, most of S's bundle
+  growth. The correct behaviour stays pinned as `it.skip('BUG: B18 …')` in
+  `tests/contract-states.test.tsx`.
 
 ### Layout and flex
 

@@ -283,6 +283,14 @@ status line still says "draft until Checkpoint 2".
      only, 1.6 everywhere else). That is smaller and closer to 1.6, but blur ≠
      never-focused in the combinations MIGRATION lists.
    - Tell me if you want the narrow version.
+   - **Decided: removed** (2026-10-04). B18 is back to 1.6.4 behaviour and a
+     known bug (`it.skip('BUG: B18 …')`); the rest of S stays. Saved: the
+     framework chunk 22,106 → 19,695 B gzip (−2.4 kB; §6's +7.9 kB becomes
+     +5.5 kB), `elementNode.ts` minified+gzip 11,277 → 8,631 B (−2.6 kB).
+     Framework B/op unchanged within noise (thumbnail-focus 178 → 171,
+     navdrawer-toggle 1,504 → 1,500, rows-lr-noshift 260 → 260,
+     portal-focus-text 310 → 303); thumbnail-focus shader writes 6.0 → 5.2
+     per press. Details: `docs/perf/log.md`, "B18 removed".
 5. **A container destroyed in the same run is still laid out.** 1.6.4 does the
    same, and its `onLayout` still fires on the destroyed node. A one-line fix
    plus test and a MIGRATION entry are drafted. Options: apply as a bug fix, or

@@ -37,8 +37,6 @@ const style = {
 };
 ```
 
-A `border` or `shadow` in a `$state` block sits on top of the element's own: what the style, `theme`, JSX props, `effects` and direct writes gave it. When the state goes away the element shows its own again, including the sub-props only the state named (`gap`, `align`, a side's width, a shadow's `x`, `y`, `blur` and `spread`), so a blurred element equals one that was never focused. A state's border or shadow over none goes away on undo instead of staying drawn: its colour ends at alpha 0 (with a `transition` it fades out). Values set through the `shader` prop are not part of the element's own, so do not mix them with `border` or `shadow` states.
-
 ## Linear Gradient & Radial Gradient
 
 `linearGradient` and `radialGradient` are effects that can be used by setting the effects prop.
