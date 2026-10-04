@@ -26,7 +26,6 @@ import {
   isElementText,
   logRenderTree,
   isFunction,
-  spliceItem,
 } from './utils.js';
 import { isDev, SHADERS_ENABLED } from './env.js';
 import { Config, isDomRendererActive } from './config.js';
@@ -287,78 +286,6 @@ export function convertToShader(
   ) as IRendererShader;
 }
 
-function getPropertyAlias(name: string) {
-  if (name === 'w') return 'width';
-  if (name === 'h') return 'height';
-  return name;
-}
-
-const LightningRendererNumberProps = [
-  'alpha',
-  'color',
-  'colorTop',
-  'colorRight',
-  'colorLeft',
-  'colorBottom',
-  'colorTl',
-  'colorTr',
-  'colorBl',
-  'colorBr',
-  'h',
-  'fontSize',
-  'lineHeight',
-  'mount',
-  'mountX',
-  'mountY',
-  'pivot',
-  'pivotX',
-  'pivotY',
-  'rotation',
-  'scale',
-  'scaleX',
-  'scaleY',
-  'w',
-  'x',
-  'y',
-  'zIndex',
-];
-
-// Forwarded to the renderer node (lng[key] = v). Only the renderer's props:
-// on a @solidtv/renderer 2.0 node any other name becomes a field of its
-// own. fontStretch, the DOM renderer's alone, has an accessor below.
-const LightningRendererNonAnimatingProps = [
-  'absX',
-  'absY',
-  'autosize',
-  'clipping',
-  'contain',
-  'componentName',
-  'componentLocation',
-  'data',
-  'destroyed',
-  'forceLoad',
-  'fontStyle',
-  'ignoreParentAlpha',
-  'imageType',
-  'letterSpacing',
-  'maxHeight',
-  'maxLines',
-  'maxWidth',
-  'offsetY',
-  'overflowSuffix',
-  'placeholderColor',
-  'srcHeight',
-  'srcWidth',
-  'srcX',
-  'srcY',
-  'text',
-  'textAlign',
-  'texture',
-  'textureOptions',
-  'verticalAlign',
-  'wordBreak',
-];
-
 declare global {
   interface HTMLElement {
     /** Assigned for development, to quickly get ElementNode from selected HTMLElement */
@@ -413,6 +340,8 @@ export interface ElementNode extends RendererNode, FocusNode {
   _rendererProps?: any;
   _states?: States;
   _style?: Styles;
+  /** @internal text-only props written to an element that is not a `<text>` (B20) */
+  _textProps?: Record<string, unknown>;
   _theme?: Styles;
   _lastAnyKeyPressTime?: number;
   _type: 'element' | 'textNode';
@@ -911,6 +840,7 @@ export class ElementNode {
     this._requiresLayout = false;
     this._focusGen = 0;
     this._layoutQueued = false;
+    this._textProps = undefined;
   }
 
   get effects(): StyleEffects | undefined {
@@ -995,12 +925,7 @@ export class ElementNode {
     }
 
     this._fontWeight = v;
-    const weight =
-      (Config.fontWeightAlias &&
-        (Config.fontWeightAlias[v as string] as number | string)) ??
-      v;
-    (this.lng as ElementNode).fontFamily =
-      `${this.fontFamily || Config.fontSettings?.fontFamily}${weight}`;
+    this._writeFontFamily();
   }
 
   get fontWeight() {
@@ -1009,47 +934,131 @@ export class ElementNode {
 
   set fontFamily(v) {
     this._fontFamily = v;
-    (this.lng as ElementNode).fontFamily = v;
+    this._writeFontFamily();
   }
 
   get fontFamily() {
     return this._fontFamily;
   }
 
+  /**
+   * The renderer's family name from `fontFamily` and `fontWeight`, resolved
+   * in one place so either JSX order gives the same name (B17). Only a
+   * `<text>` has a font: another element keeps both on the ElementNode and
+   * writes nothing to its renderer node (B20).
+   */
+  _writeFontFamily() {
+    if (this._type !== NodeType.TextNode) {
+      return;
+    }
+    const weight = this._fontWeight as number | string | undefined;
+    if (weight === undefined) {
+      // No family of its own: before render, undefined lets render's font
+      // template fill it in; after render, write what the template gave
+      // (Config.fontSettings' family and weight, read at the first text
+      // render), not undefined, which the renderer takes as its default.
+      const family = this._fontFamily;
+      (this.lng as ElementNode).fontFamily =
+        family === undefined && this.rendered ? _fontFamilyWithWeight : family;
+      return;
+    }
+    const alias = Config.fontWeightAlias;
+    const aliased =
+      alias !== undefined && alias !== null
+        ? (alias[weight] as number | string | undefined)
+        : undefined;
+    (this.lng as ElementNode).fontFamily =
+      `${this._fontFamily || Config.fontSettings?.fontFamily}${aliased ?? weight}`;
+  }
+
   insertChild(
     node: ElementNode | ElementText | TextNode,
     beforeNode?: ElementNode | ElementText | TextNode | null,
   ) {
-    // always remove nodes if they have a parent - for back swap of node
-    // this will then put the node at the end of the array when re-added
-    if (node.parent) {
-      node.parent.removeChild(node);
-
-      // We're inserting a node thats been rendered into a node that hasn't been
-      if (!this.rendered) {
-        this._hasRenderedChildren = true;
+    const children = this.children;
+    const prevParent = node.parent;
+    // The renderer node of a rendered element is placed among its siblings
+    // in `children` order (B19: renderer v2 draws siblings in that order).
+    // The renderer keeps siblings sorted by zIndex: when the anchor's zIndex
+    // is not the child's, it takes the nearest sorted place instead, so
+    // among equal-zIndex siblings its order can then differ from `children`.
+    const drawn = this.rendered && isElementNode(node) && node.rendered;
+    // A move within this node: the renderer sibling it was drawn before, so
+    // a move that leaves it there costs the renderer nothing.
+    let drawnBefore: ElementNode | null = null;
+    // Before itself: it stays where it is (DOM semantics). Solid's swap of
+    // adjacent items asks for this (insertNode(parent, y, nextSibling(x))).
+    if (beforeNode === node) {
+      beforeNode =
+        prevParent === this
+          ? children[lastIndexOf(children, node) + 1]
+          : undefined;
+    }
+    // A node in a parent (this one too) is taken out first, then inserted
+    // before `beforeNode`, or appended.
+    if (prevParent !== undefined) {
+      if (drawn && prevParent === this) {
+        drawnBefore = nextDrawn(children, lastIndexOf(children, node) + 1);
       }
+      prevParent.removeChild(node);
     }
 
-    node.parent = this;
-
-    if (beforeNode) {
-      // SolidJS can move nodes around in the children array.
-      // We need to insert following DOM insertBefore which moves elements.
-      spliceItem(this.children, node as ElementNode, 1);
-      if (spliceItem(this.children, beforeNode as ElementNode, 0, node) > -1) {
-        return;
-      }
+    // We're inserting a node thats been rendered into a node that hasn't been
+    if (!this.rendered && isElementNode(node) && node.rendered) {
+      this._hasRenderedChildren = true;
     }
 
-    this.children.push(node as ElementNode);
+    // DOM insertBefore semantics: an anchor that is not a child appends.
+    let index =
+      beforeNode !== undefined && beforeNode !== null
+        ? lastIndexOf(children, beforeNode)
+        : -1;
+    if (index === -1) {
+      index = children.length;
+      children.push(node as ElementNode);
+    } else {
+      insertAt(children, index, node as ElementNode);
+    }
+
+    if (!drawn) {
+      node.parent = this;
+      return;
+    }
+    // insertBefore reparents the renderer node too, so the parent setter's
+    // renderer write is skipped.
+    (node as ElementNode)._parent = this;
+    const next = nextDrawn(children, index + 1);
+    if (prevParent !== this || next !== drawnBefore) {
+      (this.lng as INode).insertBefore(
+        (node as ElementNode).lng as INode,
+        next === null ? null : (next.lng as INode),
+      );
+    }
+  }
+
+  /**
+   * After `render()` made `node`'s renderer node (it appends), move it before
+   * the renderer node of its next rendered sibling (B19). solidOpts calls it
+   * for a node inserted before an anchor.
+   */
+  _drawInOrder(node: ElementNode) {
+    const children = this.children;
+    const next = nextDrawn(children, lastIndexOf(children, node) + 1);
+    if (next !== null) {
+      (this.lng as INode).insertBefore(node.lng as INode, next.lng as INode);
+    }
   }
 
   removeChild(node: ElementNode | ElementText | TextNode) {
-    if (spliceItem(this.children, node, 1) > -1) {
+    const children = this.children;
+    const index = lastIndexOf(children, node);
+    if (index > -1) {
+      removeAt(children, index);
       if (isElementNode(node) && node.onRemove) {
         node.onRemove.call(node, node);
       }
+      // Out of the tree: a re-insert finds no parent to remove it from.
+      node.parent = undefined;
 
       if (this.requiresLayout()) {
         queueLayout(this);
@@ -1079,45 +1088,56 @@ export class ElementNode {
       : shaderProps;
   }
 
-  _sendToLightningAnimatable(name: string, value: number) {
-    if (
-      this.rendered &&
-      this.transition &&
-      Config.animationsEnabled &&
-      (this.transition === true ||
-        this.transition[name] ||
-        this.transition[getPropertyAlias(name)])
-    ) {
-      const animationSettings =
-        this.transition === true || this.transition[name] === true
-          ? undefined
-          : this.transition[name] ||
-            (this.transition[getPropertyAlias(name)] as
-              | undefined
-              | AnimationSettings);
-
-      // If the renderer doesn't support animateProp,
-      // keep backwards compatible with LightningRenderer
-      if (!('animateProp' in this.lng)) {
-        const animationController = this.animate(
-          { [name]: value },
-          animationSettings,
-        );
-        this._fireAnimationEvents(name, value, animationSettings);
-        return animationController.start();
+  /**
+   * The transition path of an animatable prop's setter, which calls it only
+   * when the node has a `transition`. Returns true when the write became an
+   * animation; false when the setter stores the value itself (the common
+   * case is a direct store in the setter, under its own name).
+   */
+  _sendToLightningAnimatable(name: string, value: number): boolean {
+    const transition = this.transition;
+    if (!this.rendered || !transition || !Config.animationsEnabled) {
+      return false;
+    }
+    let animationSettings: AnimationSettings | undefined;
+    if (transition !== true) {
+      const own = transition[name];
+      // The transition may name w/h as width/height. Written inline: a
+      // single-use helper here is what terser inlines as an IIFE (a closure
+      // per call) under its default compress options.
+      const setting =
+        own ||
+        (name === 'w'
+          ? transition.width
+          : name === 'h'
+            ? transition.height
+            : undefined);
+      if (!setting) {
+        return false;
       }
-
-      const result = (this.lng as INode).animateProp(
-        name,
-        value,
-        animationSettings || this.animationSettings || {},
-      );
-      this._fireAnimationEvents(name, value, animationSettings);
-      return result;
+      animationSettings =
+        own === true ? undefined : (setting as AnimationSettings | undefined);
     }
 
-    (this.lng[name as keyof (IRendererNode | INode)] as number | string) =
-      value;
+    // If the renderer doesn't support animateProp,
+    // keep backwards compatible with LightningRenderer
+    if (!('animateProp' in this.lng)) {
+      const animationController = this.animate(
+        { [name]: value },
+        animationSettings,
+      );
+      this._fireAnimationEvents(name, value, animationSettings);
+      animationController.start();
+      return true;
+    }
+
+    (this.lng as INode).animateProp(
+      name,
+      value,
+      animationSettings || this.animationSettings || {},
+    );
+    this._fireAnimationEvents(name, value, animationSettings);
+    return true;
   }
 
   _fireAnimationEvents(
@@ -1836,16 +1856,6 @@ export class ElementNode {
       node.lng = renderer.createNode(
         props as Partial<INodeProps> & Partial<IRendererNodeProps>,
       );
-
-      if (node._hasRenderedChildren) {
-        node._hasRenderedChildren = false;
-
-        for (const child of node.children) {
-          if (isElementNode(child) && isINode(child.lng)) {
-            child.lng.parent = node.lng as INode;
-          }
-        }
-      }
     }
 
     node.rendered = true;
@@ -1880,12 +1890,19 @@ export class ElementNode {
 
     if (node._type === NodeType.Element) {
       // only element nodes will have children that need rendering
+      // Children rendered before this node (moved in) are reparented here,
+      // in children order with the new ones (B19: v2 draws in that order).
+      const reparent = node._hasRenderedChildren === true;
+      node._hasRenderedChildren = false;
       const numChildren = node.children.length;
       for (let i = 0; i < numChildren; i++) {
         const c = node.children[i];
         if (isDev) assertTruthy(c, 'Child is undefined');
         // Text elements sneak in from Solid creating tracked nodes
         if (isElementNode(c)) {
+          if (reparent && isINode(c.lng)) {
+            c.lng.parent = node.lng as INode;
+          }
           c.render();
         }
       }
@@ -1900,27 +1917,701 @@ export class ElementNode {
   }
 }
 
-for (const key of LightningRendererNumberProps) {
-  Object.defineProperty(ElementNode.prototype, key, {
-    get(): number {
-      return this.lng[key];
-    },
-    set(this: ElementNode, v: number) {
-      this._sendToLightningAnimatable(key, v);
-    },
-  });
+/**
+ * The index of `item` in `list`, scanning from the end: Solid appends and
+ * removes at the tail most often. The first item is checked first, for
+ * Solid's cleanChildren, which removes the first child until none is left.
+ */
+function lastIndexOf<T>(list: T[], item: T): number {
+  if (list[0] === item) {
+    return 0;
+  }
+  let i = list.length - 1;
+  while (i > 0 && list[i] !== item) {
+    i--;
+  }
+  return i === 0 ? -1 : i;
 }
 
-for (const key of LightningRendererNonAnimatingProps) {
-  Object.defineProperty(ElementNode.prototype, key, {
-    get(): unknown {
-      return this.lng[key];
-    },
-    set(v: unknown) {
-      this.lng[key] = v;
-    },
-  });
+/** Removes `list[index]` without allocating (`splice` returns an array). */
+function removeAt<T>(list: T[], index: number): void {
+  if (index === 0) {
+    list.shift();
+    return;
+  }
+  const last = list.length - 1;
+  for (let i = index; i < last; i++) {
+    list[i] = list[i + 1]!;
+  }
+  list.pop();
 }
+
+/** Inserts `item` at `index` without allocating. */
+function insertAt<T>(list: T[], index: number, item: T): void {
+  let i = list.length;
+  list.push(item);
+  for (; i > index; i--) {
+    list[i] = list[i - 1]!;
+  }
+  list[index] = item;
+}
+
+/** The first rendered element in `children` from `from` on: the renderer sibling to draw before. */
+function nextDrawn(
+  children: ElementNode['children'],
+  from: number,
+): ElementNode | null {
+  for (let i = from; i < children.length; i++) {
+    const c = children[i];
+    if (c instanceof ElementNode && c.rendered) {
+      return c;
+    }
+  }
+  return null;
+}
+
+// Props forwarded to the renderer node, one accessor per prop (design
+// 3.6.6): every getter and setter below loads or stores one constant name,
+// so each has its own inline cache. A shared `this.lng[key]` body made from
+// a loop sees every name at one site: a megamorphic keyed access, and into
+// renderer v2's prototype accessors a call V8 does not inline (the double
+// it returns is boxed). Written out rather than made with `new Function`,
+// which a TV app's CSP may forbid.
+//
+// `lng` is the props bag before render and the renderer node after it. An
+// animatable setter stores directly unless the node has a `transition`,
+// then `_sendToLightningAnimatable` may animate instead.
+type Forwarding = Pick<
+  ElementNode,
+  'transition' | '_sendToLightningAnimatable'
+> & { lng: Record<string, unknown> };
+
+const NO_TEXT_PROPS: Readonly<Record<string, unknown>> = Object.freeze({});
+
+/**
+ * Where a text-only prop is written: a `<text>`'s renderer node (its props
+ * bag before render); on any other element, the ElementNode's `_textProps`.
+ * A renderer v2 handle takes no field it does not know (it would become a
+ * field of its own) and a view draws no text (B20).
+ */
+function textPropsFor(node: ElementNode): Record<string, unknown> {
+  if (node._type === NodeType.TextNode) {
+    return node.lng as Record<string, unknown>;
+  }
+  let own = node._textProps;
+  if (own === undefined) {
+    own = {};
+    node._textProps = own;
+  }
+  return own;
+}
+
+/** Where a text-only prop is read (textPropsFor), without allocating. */
+function textPropsOf(node: ElementNode): Readonly<Record<string, unknown>> {
+  if (node._type === NodeType.TextNode) {
+    return node.lng as Record<string, unknown>;
+  }
+  const own = node._textProps;
+  return own === undefined ? NO_TEXT_PROPS : own;
+}
+
+/** The setter of a read-only forwarded prop: the write is ignored. */
+function ignoreWrite(_v: unknown) {}
+
+Object.defineProperties(ElementNode.prototype, {
+  // Animatable
+  alpha: {
+    get(this: Forwarding) {
+      return this.lng.alpha;
+    },
+    set(this: Forwarding, v: number) {
+      if (
+        this.transition === undefined ||
+        !this._sendToLightningAnimatable('alpha', v)
+      ) {
+        this.lng.alpha = v;
+      }
+    },
+  },
+  color: {
+    get(this: Forwarding) {
+      return this.lng.color;
+    },
+    set(this: Forwarding, v: number) {
+      if (
+        this.transition === undefined ||
+        !this._sendToLightningAnimatable('color', v)
+      ) {
+        this.lng.color = v;
+      }
+    },
+  },
+  colorTop: {
+    get(this: Forwarding) {
+      return this.lng.colorTop;
+    },
+    set(this: Forwarding, v: number) {
+      if (
+        this.transition === undefined ||
+        !this._sendToLightningAnimatable('colorTop', v)
+      ) {
+        this.lng.colorTop = v;
+      }
+    },
+  },
+  colorRight: {
+    get(this: Forwarding) {
+      return this.lng.colorRight;
+    },
+    set(this: Forwarding, v: number) {
+      if (
+        this.transition === undefined ||
+        !this._sendToLightningAnimatable('colorRight', v)
+      ) {
+        this.lng.colorRight = v;
+      }
+    },
+  },
+  colorLeft: {
+    get(this: Forwarding) {
+      return this.lng.colorLeft;
+    },
+    set(this: Forwarding, v: number) {
+      if (
+        this.transition === undefined ||
+        !this._sendToLightningAnimatable('colorLeft', v)
+      ) {
+        this.lng.colorLeft = v;
+      }
+    },
+  },
+  colorBottom: {
+    get(this: Forwarding) {
+      return this.lng.colorBottom;
+    },
+    set(this: Forwarding, v: number) {
+      if (
+        this.transition === undefined ||
+        !this._sendToLightningAnimatable('colorBottom', v)
+      ) {
+        this.lng.colorBottom = v;
+      }
+    },
+  },
+  colorTl: {
+    get(this: Forwarding) {
+      return this.lng.colorTl;
+    },
+    set(this: Forwarding, v: number) {
+      if (
+        this.transition === undefined ||
+        !this._sendToLightningAnimatable('colorTl', v)
+      ) {
+        this.lng.colorTl = v;
+      }
+    },
+  },
+  colorTr: {
+    get(this: Forwarding) {
+      return this.lng.colorTr;
+    },
+    set(this: Forwarding, v: number) {
+      if (
+        this.transition === undefined ||
+        !this._sendToLightningAnimatable('colorTr', v)
+      ) {
+        this.lng.colorTr = v;
+      }
+    },
+  },
+  colorBl: {
+    get(this: Forwarding) {
+      return this.lng.colorBl;
+    },
+    set(this: Forwarding, v: number) {
+      if (
+        this.transition === undefined ||
+        !this._sendToLightningAnimatable('colorBl', v)
+      ) {
+        this.lng.colorBl = v;
+      }
+    },
+  },
+  colorBr: {
+    get(this: Forwarding) {
+      return this.lng.colorBr;
+    },
+    set(this: Forwarding, v: number) {
+      if (
+        this.transition === undefined ||
+        !this._sendToLightningAnimatable('colorBr', v)
+      ) {
+        this.lng.colorBr = v;
+      }
+    },
+  },
+  h: {
+    get(this: Forwarding) {
+      return this.lng.h;
+    },
+    set(this: Forwarding, v: number) {
+      if (
+        this.transition === undefined ||
+        !this._sendToLightningAnimatable('h', v)
+      ) {
+        this.lng.h = v;
+      }
+    },
+  },
+  mount: {
+    get(this: Forwarding) {
+      return this.lng.mount;
+    },
+    set(this: Forwarding, v: number) {
+      if (
+        this.transition === undefined ||
+        !this._sendToLightningAnimatable('mount', v)
+      ) {
+        this.lng.mount = v;
+      }
+    },
+  },
+  mountX: {
+    get(this: Forwarding) {
+      return this.lng.mountX;
+    },
+    set(this: Forwarding, v: number) {
+      if (
+        this.transition === undefined ||
+        !this._sendToLightningAnimatable('mountX', v)
+      ) {
+        this.lng.mountX = v;
+      }
+    },
+  },
+  mountY: {
+    get(this: Forwarding) {
+      return this.lng.mountY;
+    },
+    set(this: Forwarding, v: number) {
+      if (
+        this.transition === undefined ||
+        !this._sendToLightningAnimatable('mountY', v)
+      ) {
+        this.lng.mountY = v;
+      }
+    },
+  },
+  pivot: {
+    get(this: Forwarding) {
+      return this.lng.pivot;
+    },
+    set(this: Forwarding, v: number) {
+      if (
+        this.transition === undefined ||
+        !this._sendToLightningAnimatable('pivot', v)
+      ) {
+        this.lng.pivot = v;
+      }
+    },
+  },
+  pivotX: {
+    get(this: Forwarding) {
+      return this.lng.pivotX;
+    },
+    set(this: Forwarding, v: number) {
+      if (
+        this.transition === undefined ||
+        !this._sendToLightningAnimatable('pivotX', v)
+      ) {
+        this.lng.pivotX = v;
+      }
+    },
+  },
+  pivotY: {
+    get(this: Forwarding) {
+      return this.lng.pivotY;
+    },
+    set(this: Forwarding, v: number) {
+      if (
+        this.transition === undefined ||
+        !this._sendToLightningAnimatable('pivotY', v)
+      ) {
+        this.lng.pivotY = v;
+      }
+    },
+  },
+  rotation: {
+    get(this: Forwarding) {
+      return this.lng.rotation;
+    },
+    set(this: Forwarding, v: number) {
+      if (
+        this.transition === undefined ||
+        !this._sendToLightningAnimatable('rotation', v)
+      ) {
+        this.lng.rotation = v;
+      }
+    },
+  },
+  scale: {
+    get(this: Forwarding) {
+      return this.lng.scale;
+    },
+    set(this: Forwarding, v: number) {
+      if (
+        this.transition === undefined ||
+        !this._sendToLightningAnimatable('scale', v)
+      ) {
+        this.lng.scale = v;
+      }
+    },
+  },
+  scaleX: {
+    get(this: Forwarding) {
+      return this.lng.scaleX;
+    },
+    set(this: Forwarding, v: number) {
+      if (
+        this.transition === undefined ||
+        !this._sendToLightningAnimatable('scaleX', v)
+      ) {
+        this.lng.scaleX = v;
+      }
+    },
+  },
+  scaleY: {
+    get(this: Forwarding) {
+      return this.lng.scaleY;
+    },
+    set(this: Forwarding, v: number) {
+      if (
+        this.transition === undefined ||
+        !this._sendToLightningAnimatable('scaleY', v)
+      ) {
+        this.lng.scaleY = v;
+      }
+    },
+  },
+  w: {
+    get(this: Forwarding) {
+      return this.lng.w;
+    },
+    set(this: Forwarding, v: number) {
+      if (
+        this.transition === undefined ||
+        !this._sendToLightningAnimatable('w', v)
+      ) {
+        this.lng.w = v;
+      }
+    },
+  },
+  x: {
+    get(this: Forwarding) {
+      return this.lng.x;
+    },
+    set(this: Forwarding, v: number) {
+      if (
+        this.transition === undefined ||
+        !this._sendToLightningAnimatable('x', v)
+      ) {
+        this.lng.x = v;
+      }
+    },
+  },
+  y: {
+    get(this: Forwarding) {
+      return this.lng.y;
+    },
+    set(this: Forwarding, v: number) {
+      if (
+        this.transition === undefined ||
+        !this._sendToLightningAnimatable('y', v)
+      ) {
+        this.lng.y = v;
+      }
+    },
+  },
+  zIndex: {
+    get(this: Forwarding) {
+      return this.lng.zIndex;
+    },
+    set(this: Forwarding, v: number) {
+      if (
+        this.transition === undefined ||
+        !this._sendToLightningAnimatable('zIndex', v)
+      ) {
+        this.lng.zIndex = v;
+      }
+    },
+  },
+  // Animatable, text only
+  fontSize: {
+    get(this: ElementNode) {
+      return textPropsOf(this).fontSize;
+    },
+    set(this: ElementNode, v: number) {
+      if (
+        this._type !== NodeType.TextNode ||
+        this.transition === undefined ||
+        !this._sendToLightningAnimatable('fontSize', v)
+      ) {
+        textPropsFor(this).fontSize = v;
+      }
+    },
+  },
+  lineHeight: {
+    get(this: ElementNode) {
+      return textPropsOf(this).lineHeight;
+    },
+    set(this: ElementNode, v: number) {
+      if (
+        this._type !== NodeType.TextNode ||
+        this.transition === undefined ||
+        !this._sendToLightningAnimatable('lineHeight', v)
+      ) {
+        textPropsFor(this).lineHeight = v;
+      }
+    },
+  },
+  // Not animated
+  autosize: {
+    get(this: Forwarding) {
+      return this.lng.autosize;
+    },
+    set(this: Forwarding, v: unknown) {
+      this.lng.autosize = v;
+    },
+  },
+  clipping: {
+    get(this: Forwarding) {
+      return this.lng.clipping;
+    },
+    set(this: Forwarding, v: unknown) {
+      this.lng.clipping = v;
+    },
+  },
+  componentName: {
+    get(this: Forwarding) {
+      return this.lng.componentName;
+    },
+    set(this: Forwarding, v: unknown) {
+      this.lng.componentName = v;
+    },
+  },
+  componentLocation: {
+    get(this: Forwarding) {
+      return this.lng.componentLocation;
+    },
+    set(this: Forwarding, v: unknown) {
+      this.lng.componentLocation = v;
+    },
+  },
+  data: {
+    get(this: Forwarding) {
+      return this.lng.data;
+    },
+    set(this: Forwarding, v: unknown) {
+      this.lng.data = v;
+    },
+  },
+  ignoreParentAlpha: {
+    get(this: Forwarding) {
+      return this.lng.ignoreParentAlpha;
+    },
+    set(this: Forwarding, v: unknown) {
+      this.lng.ignoreParentAlpha = v;
+    },
+  },
+  imageType: {
+    get(this: Forwarding) {
+      return this.lng.imageType;
+    },
+    set(this: Forwarding, v: unknown) {
+      this.lng.imageType = v;
+    },
+  },
+  placeholderColor: {
+    get(this: Forwarding) {
+      return this.lng.placeholderColor;
+    },
+    set(this: Forwarding, v: unknown) {
+      this.lng.placeholderColor = v;
+    },
+  },
+  srcHeight: {
+    get(this: Forwarding) {
+      return this.lng.srcHeight;
+    },
+    set(this: Forwarding, v: unknown) {
+      this.lng.srcHeight = v;
+    },
+  },
+  srcWidth: {
+    get(this: Forwarding) {
+      return this.lng.srcWidth;
+    },
+    set(this: Forwarding, v: unknown) {
+      this.lng.srcWidth = v;
+    },
+  },
+  srcX: {
+    get(this: Forwarding) {
+      return this.lng.srcX;
+    },
+    set(this: Forwarding, v: unknown) {
+      this.lng.srcX = v;
+    },
+  },
+  srcY: {
+    get(this: Forwarding) {
+      return this.lng.srcY;
+    },
+    set(this: Forwarding, v: unknown) {
+      this.lng.srcY = v;
+    },
+  },
+  texture: {
+    get(this: Forwarding) {
+      return this.lng.texture;
+    },
+    set(this: Forwarding, v: unknown) {
+      this.lng.texture = v;
+    },
+  },
+  textureOptions: {
+    get(this: Forwarding) {
+      return this.lng.textureOptions;
+    },
+    set(this: Forwarding, v: unknown) {
+      this.lng.textureOptions = v;
+    },
+  },
+  // Not animated, text only
+  contain: {
+    get(this: ElementNode) {
+      return textPropsOf(this).contain;
+    },
+    set(this: ElementNode, v: unknown) {
+      textPropsFor(this).contain = v;
+    },
+  },
+  forceLoad: {
+    get(this: ElementNode) {
+      return textPropsOf(this).forceLoad;
+    },
+    set(this: ElementNode, v: unknown) {
+      textPropsFor(this).forceLoad = v;
+    },
+  },
+  fontStyle: {
+    get(this: ElementNode) {
+      return textPropsOf(this).fontStyle;
+    },
+    set(this: ElementNode, v: unknown) {
+      textPropsFor(this).fontStyle = v;
+    },
+  },
+  letterSpacing: {
+    get(this: ElementNode) {
+      return textPropsOf(this).letterSpacing;
+    },
+    set(this: ElementNode, v: unknown) {
+      textPropsFor(this).letterSpacing = v;
+    },
+  },
+  maxHeight: {
+    get(this: ElementNode) {
+      return textPropsOf(this).maxHeight;
+    },
+    set(this: ElementNode, v: unknown) {
+      textPropsFor(this).maxHeight = v;
+    },
+  },
+  maxLines: {
+    get(this: ElementNode) {
+      return textPropsOf(this).maxLines;
+    },
+    set(this: ElementNode, v: unknown) {
+      textPropsFor(this).maxLines = v;
+    },
+  },
+  maxWidth: {
+    get(this: ElementNode) {
+      return textPropsOf(this).maxWidth;
+    },
+    set(this: ElementNode, v: unknown) {
+      textPropsFor(this).maxWidth = v;
+    },
+  },
+  offsetY: {
+    get(this: ElementNode) {
+      return textPropsOf(this).offsetY;
+    },
+    set(this: ElementNode, v: unknown) {
+      textPropsFor(this).offsetY = v;
+    },
+  },
+  overflowSuffix: {
+    get(this: ElementNode) {
+      return textPropsOf(this).overflowSuffix;
+    },
+    set(this: ElementNode, v: unknown) {
+      textPropsFor(this).overflowSuffix = v;
+    },
+  },
+  text: {
+    get(this: ElementNode) {
+      return textPropsOf(this).text;
+    },
+    set(this: ElementNode, v: unknown) {
+      textPropsFor(this).text = v;
+    },
+  },
+  textAlign: {
+    get(this: ElementNode) {
+      return textPropsOf(this).textAlign;
+    },
+    set(this: ElementNode, v: unknown) {
+      textPropsFor(this).textAlign = v;
+    },
+  },
+  verticalAlign: {
+    get(this: ElementNode) {
+      return textPropsOf(this).verticalAlign;
+    },
+    set(this: ElementNode, v: unknown) {
+      textPropsFor(this).verticalAlign = v;
+    },
+  },
+  wordBreak: {
+    get(this: ElementNode) {
+      return textPropsOf(this).wordBreak;
+    },
+    set(this: ElementNode, v: unknown) {
+      textPropsFor(this).wordBreak = v;
+    },
+  },
+  // Read-only on the renderer node: a write would throw there (B20)
+  absX: {
+    get(this: Forwarding) {
+      return this.lng.absX;
+    },
+    set: ignoreWrite,
+  },
+  absY: {
+    get(this: Forwarding) {
+      return this.lng.absY;
+    },
+    set: ignoreWrite,
+  },
+  destroyed: {
+    get(this: Forwarding) {
+      return this.lng.destroyed;
+    },
+    set: ignoreWrite,
+  },
+});
 
 // The DOM renderer draws fontStretch; a rendered WebGL text node has no such
 // prop, and a @solidtv/renderer 2.0 node would take it as a field of its own.
