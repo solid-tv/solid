@@ -96,7 +96,7 @@ const [onHoldEnter, onHoldRelease] = useHold({
   performOnEnterImmediately: false,
 });
 
-<MyComponent onEnter={onHoldEnter} onRelease={onHoldRelease} />;
+<MyComponent onEnter={onHoldEnter} onEnterRelease={onHoldRelease} />;
 ```
 
 ---

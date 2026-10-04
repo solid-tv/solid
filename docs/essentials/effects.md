@@ -1,6 +1,6 @@
 # Shaders and Effects
 
-The shader prop allows you to specify a custom shader. Most of the common use ones have shortcuts like `borderRadius`, `border`, `linearGradient`. These shortcuts get combined to create one dynamic shader from the Renderer. The order that they are listed in the props / style object affect how it gets created and could change the UI. Typically you want borderRadius to be the last one. If you have a custom shader, you'll need to use the `shader` prop and create the directly. Check out this [example](https://github.com/lightning-js/renderer/blob/main/examples/tests/dynamic-shader.ts) from the renderer for more information.
+The shader prop allows you to specify a custom shader. Most of the common use ones have shortcuts like `borderRadius`, `border`, `linearGradient`. These shortcuts get combined to create one dynamic shader from the Renderer. The order that they are listed in the props / style object affect how it gets created and could change the UI. Typically you want borderRadius to be the last one. If you have a custom shader, you'll need to use the `shader` prop and create it directly. A shader type named in a `shader` tuple must be registered with the renderer first (Solid registers only `rounded`); renderer 2.0 draws nothing for an unregistered name and warns. Check out this [example](https://github.com/lightning-js/renderer/blob/main/examples/tests/dynamic-shader.ts) from the renderer for more information.
 
 ```jsx
 const RoundedRectangle = ['RoundedRectangle', { radius: 6 }];

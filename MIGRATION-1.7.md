@@ -36,7 +36,7 @@ with the renderer's numbered behaviour changes, is the renderer's
 | SDF text draws above a later quad without a `zIndex` (it used to be under a scrim drawn after it)                                                                      | to check on device                                                                                                  | Give the covering quad a `zIndex`.                                                                                                                                                                                                     |
 | The minimum browser is **Chrome 47** (1.9: Chrome 38). webOS 3.x (Chromium 38) is below the floor                                                                      | `BENCHMARKING.md` (`LGWhite`)                                                                                       | Target Chrome 47+.                                                                                                                                                                                                                     |
 | `renderer.stage.options` is gone                                                                                                                                       | `src/pages/Benchmark.tsx:28-36, 57-66, 97-108` (guarded, falls back)                                                | Read `renderer.settings`; write with `renderer.setOptions`.                                                                                                                                                                            |
-| `stage.txMemManager.getMemoryInfo()` is gone                                                                                                                           | none (Solid's `FPSCounter` is updated)                                                                              | `renderer.memoryInfo()`.                                                                                                                                                                                                               |
+| `stage.txMemManager.getMemoryInfo()` is gone                                                                                                                           | none in the web app (Solid's `FPSCounter` is updated); `nativescript/app/app.ts:54` calls it                        | `renderer.memoryInfo()`.                                                                                                                                                                                                               |
 | `el.lng.id` is the node's slot in the renderer's store (0 for the root, reused after a destroy, -1 once destroyed)                                                     | none found                                                                                                          | Use `el.lng.uid` for a stable id.                                                                                                                                                                                                      |
 | `loaded` for text arrives between the walks of the frame that lays it out; `idle` fires in the frame that drew the last change, and can fire while textures still load | `src/pages/Benchmark.tsx` (waits for idle)                                                                          | Wait for `renderer.pendingTextures === 0` at an `idle` to wait for every texture.                                                                                                                                                      |
 | `Image` with a placeholder: the image's download starts once the placeholder shows (1.6 started both at once)                                                          | none found                                                                                                          | None.                                                                                                                                                                                                                                  |
@@ -344,14 +344,17 @@ which change flex or scroll results. B18 (stream S) is pending.
 - **B6: `justifyContent="center"` with padding centres inside the padding**
   (it was shifted by `paddingStart`). Demo app: the status boxes of
   `pages/ImagePerformance.tsx:139-147`,
-  `pages/TextureCompressionPerformance.tsx:136-144` and
-  `pages/MixedImagePerformance.tsx:174-182` (`padding={[0, 20]}`): their text
+  `pages/TextureCompressionPerformance.tsx:136-144`,
+  `pages/MixedImagePerformance.tsx:174-182` and
+  `pages/LargeImagePerformance.tsx` (`padding={[0, 20]}`): their text
   moves 20 px left, now centred. Upgrade step: drop compensating offsets, if
   any.
 - **B7: cross-axis `alignItems`/`alignSelf` `center` and `flexEnd` stay inside
   the cross padding** (center was offset by `paddingTop`, flexEnd overflowed by
-  it). Demo app: none visible (rows use `padding={[0, N]}`, no vertical
-  padding). Upgrade step: none.
+  it). Demo app: the cards of `pages/ComplexFlex.tsx` and
+  `pages/ComplexFlexCaps.tsx` (a 180-wide column with `alignItems: center`
+  and `padding: [0, 10]`): their title and button move 10 px left, now centred
+  in the padded box. Upgrade step: drop compensating offsets, if any.
 - **B8: a `flexGrow` item is sized from its own size on every layout.** It
   shrinks back when a sibling grows and returns to its own size when no space
   is left (it kept its largest grown size). On a flexGrow item with a
