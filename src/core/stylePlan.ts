@@ -10,7 +10,7 @@
 export interface BlockPlan {
   /** The block's own enumerable keys, in its key order. */
   readonly keys: string[];
-  /** The value of each key, by position (a getter's as read at compile). */
+  /** The value of each key, by position (undefined for a getter). */
   readonly values: unknown[];
   /** By position: true for a getter, whose value is read from `block`. */
   readonly getters: boolean[];
@@ -88,9 +88,11 @@ export function compileBlock(block: Record<string, unknown>): BlockPlan {
   const index = Object.create(null) as Record<string, number | undefined>;
   for (let i = 0; i < keys.length; i++) {
     const key = keys[i]!;
-    const value = block[key];
+    // A getter is not read here: each apply reads it, as before 1.7.
+    const getter = isGetter(block, key);
+    const value = getter ? undefined : block[key];
     values.push(value);
-    getters.push(isGetter(block, key));
+    getters.push(getter);
     index[key] = i;
     if (SHADER_PREFIXES[key] !== undefined && isObject(value)) {
       // Pre-parse into shader keys, so the first apply finds it cached.

@@ -34,7 +34,12 @@ import {
   isFunction,
   spliceItem,
 } from './utils.js';
-import { compileBlock, shaderParse, type BlockPlan } from './stylePlan.js';
+import {
+  compileBlock,
+  shaderParse,
+  type BlockPlan,
+  type ShaderParse,
+} from './stylePlan.js';
 import { isDev, SHADERS_ENABLED } from './env.js';
 import { Config, isDomRendererActive } from './config.js';
 import type {
@@ -192,69 +197,244 @@ const parseAndAssignShaderProps = (
 const copyOf = (value: unknown): unknown =>
   isArray(value) ? value.slice() : value;
 
-/**
- * The value a shader prop has in a shader created without it, to write for
- * a sub-prop the new border or shadow object no longer names (B18). A
- * renderer v2 shader's type declares a default per prop; a prop that
- * resolves its value picks its default from `undefined` (a fresh copy). The
- * DOM renderer reads an absent sub-prop as its default: `undefined`.
- */
-function shaderPropDefault(shader: IRendererShader, name: string): unknown {
-  const type = shader.shaderType as unknown;
-  const defs = isObject(type) ? type.props : undefined;
+/** What the shader writes need of a renderer v2 shader type, built once per type. */
+interface ShaderTypeInfo {
+  /**
+   * Per declared prop and alias, the value a shader created without it
+   * holds: the props resolved from nothing in declaration order, then each
+   * alias read from them (`shadow-blur` is 5: the projection's default
+   * `[0, 0, 5, 5]`), as `createShader` builds them.
+   */
+  readonly fresh: Record<string, unknown>;
+  /** The props that resolve their value: a write of undefined gives their default. */
+  readonly resolves: Record<string, boolean | undefined>;
+  /** The aliases (an AdvancedProp with `set`): createShader writes them only when given. */
+  readonly alias: Record<string, boolean | undefined>;
+  /** Per alias, the prop it writes an element of (`shadow-x`: `shadow-projection`). */
+  readonly aliasOf: Record<string, string | undefined>;
+}
+
+const shaderTypeInfos = new WeakMap<object, ShaderTypeInfo | null>();
+
+/** A value no alias holds, to see which prop an alias writes. */
+const ALIAS_PROBE = -987654.321;
+
+/** A renderer `AdvancedProp`, as far as these writes read it. */
+interface AdvancedPropLike {
+  default?: unknown;
+  resolve?: (value: unknown, props: Record<string, unknown>) => unknown;
+  set?: (value: unknown, props: Record<string, unknown>) => void;
+  get?: (props: Record<string, unknown>) => unknown;
+}
+
+function buildShaderTypeInfo(defs: unknown): ShaderTypeInfo | null {
   if (!isObject(defs)) {
-    return undefined;
+    return null;
   }
-  const def = defs[name];
-  if (isObject(def) && def.default !== undefined) {
-    return def.resolve !== undefined ? undefined : copyOf(def.default);
+  const fresh = Object.create(null) as Record<string, unknown>;
+  const resolves = Object.create(null) as Record<string, boolean | undefined>;
+  const alias = Object.create(null) as Record<string, boolean | undefined>;
+  const aliasOf = Object.create(null) as Record<string, string | undefined>;
+  try {
+    for (const name in defs) {
+      const value = defs[name];
+      // An AdvancedProp has a default (the registry's test).
+      if (isObject(value) && value.default !== undefined) {
+        const def = value as AdvancedPropLike;
+        if (def.set !== undefined) {
+          alias[name] = true;
+        } else if (def.resolve !== undefined) {
+          resolves[name] = true;
+          fresh[name] = def.resolve(undefined, fresh);
+        } else {
+          fresh[name] = copyOf(def.default);
+        }
+      } else {
+        fresh[name] = copyOf(value);
+      }
+    }
+    for (const name in alias) {
+      const def = defs[name] as AdvancedPropLike;
+      fresh[name] = def.get !== undefined ? def.get(fresh) : def.default;
+      // Which prop does it write? Write a probe into a copy and compare.
+      const probe = Object.create(null) as Record<string, unknown>;
+      for (const k in fresh) {
+        probe[k] = copyOf(fresh[k]);
+      }
+      def.set!(ALIAS_PROBE, probe);
+      for (const k in fresh) {
+        const a = fresh[k];
+        const b = probe[k];
+        let changed = a !== b;
+        if (isArray(a) && isArray(b)) {
+          changed = false;
+          for (let i = 0; i < a.length; i++) {
+            if (a[i] !== b[i]) {
+              changed = true;
+            }
+          }
+        }
+        if (changed && k !== name) {
+          aliasOf[name] = k;
+        }
+      }
+    }
+  } catch (e) {
+    // A type whose props cannot be read this way: reset to undefined.
+    if (isDev) console.warn('shader props not read: ', e);
+    return null;
   }
-  return copyOf(def);
+  return { fresh, resolves, alias, aliasOf };
+}
+
+/** The info of a renderer v2 shader's type; null on the DOM renderer (a name). */
+function shaderTypeInfo(shader: IRendererShader): ShaderTypeInfo | null {
+  const type = shader.shaderType as unknown;
+  if (!isObject(type)) {
+    return null;
+  }
+  let info = shaderTypeInfos.get(type);
+  if (info === undefined) {
+    info = buildShaderTypeInfo(type.props);
+    shaderTypeInfos.set(type, info);
+  }
+  return info;
 }
 
 /**
+ * The value to reset sub-prop `name` to, so that it holds what a shader
+ * created without it holds (B18). Into the props directly, a prop that
+ * resolves its value takes undefined (it resolves its own fresh default, as
+ * in createShader); into an animation target it takes the fresh value (the
+ * animator makes no track for undefined). Undefined when the type is not
+ * known (the DOM renderer reads an absent sub-prop as its default) or does
+ * not declare `name`.
+ */
+function shaderResetValue(
+  info: ShaderTypeInfo | null,
+  name: string,
+  animated: boolean,
+): unknown {
+  if (info === null || (!animated && info.resolves[name] === true)) {
+    return undefined;
+  }
+  return copyOf(info.fresh[name]);
+}
+
+/** The style keys whose objects all write `border-*` shader props. */
+const BORDER_KEYS = [
+  'border',
+  'borderTop',
+  'borderRight',
+  'borderBottom',
+  'borderLeft',
+];
+
+/**
+ * Whether border accessor `key`'s sub-prop `name` is also set by another
+ * border accessor's object on this node (`border-color`, `border` itself):
+ * such a key is always written and never reset, as before 1.7, since a diff
+ * against `key`'s own previous object cannot know the other's writes.
+ */
+function sharedBorderProp(
+  effects: Record<string, unknown>,
+  key: string,
+  name: string,
+): boolean {
+  if (key === 'shadow') {
+    return false;
+  }
+  for (let i = 0; i < BORDER_KEYS.length; i++) {
+    const other = BORDER_KEYS[i]!;
+    if (other !== key) {
+      const obj = effects[other];
+      if (isObject(obj) && shaderParse(other, obj).index[name] !== undefined) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+/** Whether a write from `old` to `next` writes or resets sub-prop `name`. */
+function subPropChanges(
+  old: ShaderParse,
+  next: ShaderParse,
+  name: string,
+): boolean {
+  const a = old.index[name];
+  const b = next.index[name];
+  if (a === undefined) {
+    return b !== undefined;
+  }
+  return b === undefined || old.values[a] !== next.values[b];
+}
+
+/** writeShaderValue modes. */
+const INTO_BAG = 0;
+const INTO_PROPS = 1;
+const INTO_ANIMATION = 2;
+
+/**
  * Write a `border`/`borderTop`/.../`shadow` object (parsed once per object)
- * or a radius into a shader's props, or into a props bag for createShader.
- * The sub-props `prev` named and `value` does not are reset first (B18).
- * With `diff`, a sub-prop equal to `prev`'s is not written: a renderer v2
- * facade write repacks even when the value is unchanged. Returns whether
- * anything was written.
+ * or a radius: into a props bag for createShader (`INTO_BAG`: everything),
+ * into a shader's props (`INTO_PROPS`: only what changed, since a renderer
+ * v2 facade write repacks even when the value is unchanged), or into an
+ * animation target (`INTO_ANIMATION`: everything). The sub-props `prev`
+ * named and `value` does not are reset first to what a fresh shader holds
+ * (B18); a whole shadow removed goes transparent. `info` is the shader
+ * type's, null for a bag or the DOM renderer. Returns whether anything was
+ * written.
  */
 function writeShaderValue(
   target: Record<string, unknown>,
   key: string,
   value: unknown,
   prev: unknown,
-  shader: IRendererShader | null,
-  diff: boolean,
+  effects: Record<string, unknown>,
+  info: ShaderTypeInfo | null,
+  mode: number,
 ): boolean {
+  const animated = mode === INTO_ANIMATION;
   if (key === 'rounded' || typeof value === 'number') {
-    if (diff && value === prev) {
+    if (mode === INTO_PROPS && value === prev) {
       return false;
     }
-    target.radius = value;
+    target.radius =
+      animated && value === undefined
+        ? shaderResetValue(info, 'radius', true)
+        : value;
     return true;
   }
   const next = isObject(value) ? shaderParse(key, value) : null;
   const old = isObject(prev) ? shaderParse(key, prev) : null;
   let wrote = false;
   if (old !== null && old !== next) {
+    // A whole shadow removed: transparent, which Box neither draws nor grows
+    // the quad for (its other props back to a fresh shader's).
+    const noShadow = next === null && key === 'shadow' && info !== null;
     const oldKeys = old.keys;
     for (let i = 0; i < oldKeys.length; i++) {
       const name = oldKeys[i]!;
-      if (next === null || next.index[name] === undefined) {
+      if (
+        (next === null || next.index[name] === undefined) &&
+        !sharedBorderProp(effects, key, name)
+      ) {
         target[name] =
-          shader !== null ? shaderPropDefault(shader, name) : undefined;
+          noShadow && name === 'shadow-color'
+            ? 0x00000000
+            : shaderResetValue(info, name, animated);
         wrote = true;
       }
+    }
+    if (noShadow && old.index['shadow-color'] === undefined) {
+      target['shadow-color'] = 0x00000000;
     }
   }
   if (next === null) {
     return wrote;
   }
-  // After a reset (it may rewrite a vec4 that a written sub-prop is one
-  // element of), or with nothing to compare with, write every sub-prop.
-  const all = !diff || wrote || old === null || !next.cached;
+  const all = mode !== INTO_PROPS || old === null || !next.cached;
   const keys = next.keys;
   const values = next.values;
   for (let i = 0; i < keys.length; i++) {
@@ -262,8 +442,17 @@ function writeShaderValue(
     const v = values[i];
     if (!all) {
       const at = old!.index[name];
-      if (at !== undefined && old!.values[at] === v) {
-        continue;
+      if (
+        at !== undefined &&
+        old!.values[at] === v &&
+        !sharedBorderProp(effects, key, name)
+      ) {
+        // Unchanged: skipped, unless it is an element of a vec4 this write
+        // resets or writes (`shadow-y` of `shadow-projection`).
+        const of = info !== null ? info.aliasOf[name] : undefined;
+        if (of === undefined || !subPropChanges(old!, next, of)) {
+          continue;
+        }
       }
     }
     target[name] = v;
@@ -2055,25 +2244,23 @@ export function createRawShaderAccessor<T>(key: keyof StyleEffects) {
         // The gradient shader this accessor made: update it, not a new one,
         // to the props createShader would have built from `value`: a
         // declared prop `value` does not name takes its default.
-        const type = shader.shaderType as unknown;
-        const defs = isObject(type) ? type.props : undefined;
-        if (!isObject(defs)) {
+        const info = shaderTypeInfo(shader);
+        if (info === null) {
           // The DOM renderer keeps the given object as the props.
           shader.props = value as IRendererShaderProps;
         } else {
           const props = shader.props as Record<string, unknown>;
-          for (const name in defs) {
-            const def = defs[name];
+          // Props first, then aliases, each in declaration order (`fresh`
+          // holds them in that order), as createShader applies them.
+          for (const name in info.fresh) {
             const given = value[name];
             if (given !== undefined) {
               // createShader copies an array, unless the prop resolves it.
               props[name] =
-                isObject(def) && def.resolve !== undefined
-                  ? given
-                  : copyOf(given);
-            } else if (!isObject(def) || def.set === undefined) {
-              // An alias (`set`) only writes when given, as in createShader.
-              props[name] = shaderPropDefault(shader, name);
+                info.resolves[name] === true ? given : copyOf(given);
+            } else if (info.alias[name] !== true) {
+              // An alias only writes when given, as in createShader.
+              props[name] = shaderResetValue(info, name, false);
             }
           }
         }
@@ -2123,7 +2310,15 @@ export function shaderAccessor<T extends Record<string, any> | number>(
         if (transition && (transition === true || transition[transitionKey])) {
           // Animated: the full new props, in a target of their own.
           const target: Record<string, unknown> = {};
-          writeShaderValue(target, key, value, prev, shader!, false);
+          writeShaderValue(
+            target,
+            key,
+            value,
+            prev,
+            effects,
+            shaderTypeInfo(shader!),
+            INTO_ANIMATION,
+          );
           this._writeShaderTarget(target);
           const animationSettings =
             transition === true || transition[transitionKey] === true
@@ -2141,8 +2336,9 @@ export function shaderAccessor<T extends Record<string, any> | number>(
             key,
             value,
             prev,
-            shader!,
-            true,
+            effects,
+            shaderTypeInfo(shader!),
+            INTO_PROPS,
           )
         ) {
           this._writeShaderTarget(props);
@@ -2158,7 +2354,7 @@ export function shaderAccessor<T extends Record<string, any> | number>(
         shader != null && !this.rendered
           ? (shader as unknown as Record<string, unknown>)
           : {};
-      writeShaderValue(target, key, value, prev, null, false);
+      writeShaderValue(target, key, value, prev, effects, null, INTO_BAG);
       this._writeShaderTarget(target);
     },
     get(this: ElementNode) {

@@ -71,8 +71,10 @@ v.describe('compileBlock', () => {
   v.it(
     'marks a getter, so its value is read from the block on each apply',
     () => {
+      let reads = 0;
       const block = {
         get color() {
+          reads++;
           return RED;
         },
         alpha: 1,
@@ -81,6 +83,8 @@ v.describe('compileBlock', () => {
       v.expect(plan.keys).toEqual(['color', 'alpha']);
       v.expect(plan.getters).toEqual([true, false]);
       v.expect(plan.block).toBe(block);
+      // Not read at compile: the apply reads it, once.
+      v.expect(reads).toBe(0);
     },
   );
 
@@ -251,6 +255,44 @@ v.describe('shader-prop writes', () => {
     v.expect(shaderProps(node)).toEqual({ radius: 8 });
     dispose();
   });
+
+  v.it(
+    'after a reset, the sub-props the new object keeps unchanged are not written again',
+    () => {
+      const { node, dispose } = mount({
+        width: 100,
+        height: 100,
+        border: { width: 2, color: RED },
+        $focus: { border: { width: 2, color: RED, gap: 4 } },
+      });
+      const props = shaderProps(node);
+      const counts = countWrites(props, ['border-w', 'border-color']);
+      node.states.add('$focus');
+      v.expect(props['border-gap']).toBe(4);
+      node.states.remove('$focus');
+      v.expect(props['border-gap']).toBeUndefined();
+      v.expect(counts).toEqual({ 'border-w': 0, 'border-color': 0 });
+      dispose();
+    },
+  );
+
+  v.it(
+    'a sub-prop that border and a border side both set is always written, as before',
+    () => {
+      // border-color is written by `border` and by `borderTop`: diffing it
+      // against one accessor's previous object alone would skip this write.
+      const { node, dispose } = mount({
+        width: 100,
+        height: 100,
+        border: { width: 2, color: RED },
+      });
+      node.borderTop = { width: 4, color: GREEN };
+      v.expect(shaderProps(node)['border-color']).toBe(GREEN);
+      node.border = { width: 3, color: RED };
+      v.expect(shaderProps(node)['border-color']).toBe(RED);
+      dispose();
+    },
+  );
 
   v.it(
     'a gradient set again updates the shader it made instead of a new one',
