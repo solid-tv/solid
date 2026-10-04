@@ -976,7 +976,7 @@ v.test(
     const overlaps: number[][] = [];
     const sampled: number[] = [];
     const sample = () => {
-      const w = t.lng.w;
+      const w = t.lng.w as number;
       sampled.push(w);
       if (after.x < w + 10 - 0.001) {
         overlaps.push([w, after.x]);

@@ -1115,8 +1115,8 @@ describe('contract: Solid measures text before flex (1.7, stream T)', () => {
       <view display="flex" gap={10}>
         <text
           onEvent={{
-            loaded(_el: unknown, payload: { dimensions: unknown }) {
-              heard.push(payload.dimensions);
+            loaded(_el, payload) {
+              heard.push((payload as { dimensions: unknown }).dimensions);
             },
           }}
         >
