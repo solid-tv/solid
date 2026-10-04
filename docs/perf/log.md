@@ -528,3 +528,113 @@ the docs; nothing here sets a new value.
     second walk on scroll.
   - Renderer proposal P6: size the cache in bytes, or make it scan-resistant.
 - Numbers are desktop Node/V8, from single runs; TV hardware was not measured.
+
+### 2026-10-03: Stream S (compiled style plans, diffed state application, B18 shader-prop resets)
+
+Arm C is the `1.7-styles` worktree from `44e2b76`; arm B is the frozen lockstep
+port. Single 6x runs (alloc, count, time), profile 1-3 runs. Arm B's bundle
+charges framework and renderer both to `user`, so B's framework share is the sum
+of its sampled sites in the framework's line range of `user.js` (`toVec4`
+excluded: renderer code bundled there). "S's sites" are the functions this
+stream replaced. The framework bytes that remain in C are stream F's (the focus
+manager, `States` `merge`/`add`/species construction), not S's.
+
+- **S1: compiled style plans, diffed state application, shader-prop writes from
+  cached parses, B18 resets (`c8ed9df`, with `d6d59af`).** Scenarios
+  thumbnail-focus, navdrawer-toggle, rows-lr-noshift, portal-focus-text, arm B →
+  arm C at `d6d59af`.
+  - Allocation, KiB per op:
+
+    | scenario          | B total | C total | B framework | C framework | S's sites on B | S's sites on C |
+    | ----------------- | ------- | ------- | ----------- | ----------- | -------------- | -------------- |
+    | thumbnail-focus   | 12.29   | 10.95   | 2.63        | 1.52        | 1.34           | 0              |
+    | navdrawer-toggle  | 22.29   | 14.50   | 14.91       | 7.29        | 7.95           | 0              |
+    | rows-lr-noshift   | 3.45    | 3.20    | 1.72        | 1.53        | 0.23           | 0              |
+    | portal-focus-text | 25.93   | 25.77   | 1.58        | 1.67        | 0.21           | 0              |
+
+    S's sites on B: thumbnail-focus `parseAndAssignShaderProps` 0.48, its
+    `Object.entries`/`forEach` closure 0.63, `_stateChanged` 0.23;
+    navdrawer-toggle `_stateChanged` 3.91, its closures 1.24, the
+    `forwardStates` `slice()` (species `States` + `_super`) 2.80;
+    rows-lr-noshift and portal-focus-text `_stateChanged` only. No S function is
+    among C's sampled allocation sites in any scenario: state application and
+    shader-prop writes allocate nothing per press.
+
+  - Counts per op, B → C: node writes thumbnail-focus 0 → 0, navdrawer-toggle
+    25.0 → 23.0, rows-lr-noshift 2.0 → 2.0, portal-focus-text 6.0 → 6.0; shader
+    writes 6.2 → 8.2, 2.0 → 1.0, 0 → 0, 0 → 0; animations unchanged (2, 2, 0,
+    3). Thumbnail-focus shader writes go up by the B18 resets on blur
+    (`border-gap` 4 → 0 is a real change; `border-align` resolves to the value
+    it holds, so the v2 facade drops it without a repack). Every other
+    sub-prop there changes on each focus and blur, so the diff saves nothing in
+    that scenario; it saves writes where focus and base share sub-prop values
+    (navdrawer 2 → 1).
+  - Inclusive CPU of `_stateChanged`, µs per op, B → C (each sample weighted by
+    its run's median interval, because the sampler stalled 0.7-1.5 ms under
+    load): thumbnail-focus 49.0 → 37.6 (1 run), navdrawer-toggle 98.4 → 73.8 (1
+    run), rows-lr-noshift 13.8 → 12.1 (3 runs), portal-focus-text 14.2 → 11.4 (3
+    runs). Inside thumbnail-focus: B's `parseAndAssignShaderProps` 14.8, C's
+    `writeShaderValue` 12.5 (both include the renderer facade writes, which
+    dominate).
+  - Time, ms per press total, B → C: 0.648 → 0.653, 1.006 → 0.784, 0.535 →
+    0.631, 0.632 → 0.681. Not evidence either way: arm B alone ranged 0.63-0.95
+    on portal-focus-text across the day's runs.
+  - Targets (design 6): framework bytes per press from state application → 0,
+    met for S's part in all four scenarios. navdrawer-toggle ≤ 1 KiB framework:
+    7.29, none of it S's (`States.merge` through `forwardStates` is 3.5 KiB/op,
+    stream F's).
+  - **Kept.**
+
+- **Inline the single-use helpers terser turns into closures (`d6d59af`).**
+  navdrawer-toggle alloc, 1 run: C framework 7.97 → 7.29 KiB/op (`set states`
+  0.69 KiB/op → 0). With terser's default `reduce_funcs` a single-use helper
+  becomes a closure per call; the demo app builds with it off, other apps may
+  not. **Kept.**
+- **Gradient accessors reuse their shader (`a395219`).** Not measured: no
+  scenario sets a gradient twice. It removes a `createShader` (a shader, its
+  facade, its values, a program-slot lookup) per set after the first. Behaviour
+  checked against a fresh shader on renderer v2
+  (`tests/webgl/shader-props.test.tsx`). **Kept.**
+- **B18 fix rounds: base record, replay of the effective objects, targeted
+  fixes (`7044c7f`, `4229c56`, `18e3b93`, `b891864`, `baea932`, `51daf91`,
+  `9d5fffc`..`9ce36ee`, `f9aee19`..`e4ddeea`).** These change what a state undo
+  writes, not the hot path's shape. Each round re-ran the alloc check on arm C
+  (6x, 1 run), KiB per press, total (framework):
+
+  | run                | source    | thumbnail-focus | navdrawer-toggle |
+  | ------------------ | --------- | --------------- | ---------------- |
+  | `bench-S-s1-final` | `d6d59af` | 10.95 (1.52)    | 14.50 (7.29)     |
+  | `bench-S-fix1`     | `7044c7f` | n/a (1.51)      | n/a (7.30)       |
+  | `bench-S-fix2`     | `4229c56` | 11.13 (1.52)    | 14.53 (7.29)     |
+  | `bench-S-fix3b`    | `b891864` | 11.03 (1.51)    | 14.65 (7.27)     |
+  | `bench-S-r4`       | `baea932` | 11.07 (1.53)    | 14.65 (7.30)     |
+  | `bench-S-r5`       | `51daf91` | 10.97 (1.53)    | 14.66 (7.28)     |
+  | `bench-S-pb`       | `9ce36ee` | 10.92 (1.53)    | 14.70 (7.28)     |
+  | `bench-S-pb2`      | `e4ddeea` | 11.02 (1.52)    | 14.67 (7.28)     |
+
+  Arm B in the `bench-S-r4` run: 12.41 and 22.19 total. Counts, re-checked in
+  the first three rounds, stayed at 8.2 and 1.0 shader writes and 0 and 23 node
+  writes per press. In every run no S
+  function is among the sampled sites; the framework bytes are stream F's. Three
+  times the check caught a terser closure in a single-use helper (fixed by
+  inlining it or making it a method), and the bundle was checked for a `try`:
+  - `18e3b93`: 64 B per thumbnail-focus press in the border accessor and 64 B
+    in `writeShaderValue` (three round-3 helpers; framework 1.64), gone in
+    `b891864` (1.51).
+  - `baea932`: a single-use `borderOrder` inlined as a function expression in
+    `writeShaderGroup`, 64 B per press (framework 1.59), fixed by reading the
+    cache inline.
+  - `9ce36ee`: the group write after a state change, left with one call site
+    by the `_applyStates` split (`66630bd`), was a function expression in
+    `_applyStates`' `finally` (1.59, navdrawer 7.30); as the method
+    `_writeShaderGroups` it is 1.53 and 7.28.
+    The grep for `(function(` and `!function(` misses the
+    `0 !== mask && function(...) {...}(this, mask)` form.
+  - The bundle's `_stateChanged` has no `try`: `66630bd` moved the
+    `try`/`finally` that keeps the group write after a throwing setter into
+    `_applyStates`, because `_stateChanged` runs for every element of every
+    focus change and Crankshaft (the Chrome 47 floor) does not optimise a
+    function with `try`/`finally`.
+  - **Kept** (correctness: the undo equals a never-focused node, each case
+    checked against the 1.6 export; the differences from 1.6 are listed in
+    `MIGRATION-1.7.md`, B18).
