@@ -397,3 +397,99 @@ v.test(
     dispose();
   },
 );
+
+// Two border objects in one state (round 3, finding A). The undo removes
+// both before anything is rebuilt, so no animation keeps a removed
+// object's element. Pinned for both key orders, with and without a base.
+for (const topFirst of [false, true]) {
+  const order = topFirst ? 'borderTop first' : 'border first';
+  const focus = (style: NodeStyles['$focus']) => style;
+  const twoObjects = topFirst
+    ? focus({ borderTop: { width: 8 }, border: { color: BLUE, width: 4 } })
+    : focus({ border: { color: BLUE, width: 4 }, borderTop: { width: 8 } });
+
+  v.test(
+    `two border objects in $focus over none, ${order}, border transition: blur leaves no border`,
+    async () => {
+      const anims = watchAnimations();
+      const { changed, never, dispose } = await pair({
+        width: 100,
+        height: 100,
+        transition: { border: { duration: 120, easing: 'linear' } },
+        $focus: twoObjects,
+      });
+      changed.states.add('$focus');
+      await anims.done();
+      changed.states.remove('$focus');
+      await anims.done();
+      await settle();
+      v.expect(shaderOf(never)).toBeNull();
+      v.expect(shaderOf(changed).props['border-w']).toEqual([0, 0, 0, 0]);
+      v.expect(alphaOf(shaderOf(changed).props['border-color'])).toBe(0);
+      anims.restore();
+      dispose();
+    },
+  );
+
+  v.test(
+    `two border objects in $focus over a base border, ${order}, border transition: blur equals a never-focused node`,
+    async () => {
+      const anims = watchAnimations();
+      const { changed, never, dispose } = await pair({
+        width: 100,
+        height: 100,
+        border: { width: 2, color: RED },
+        transition: { border: { duration: 120, easing: 'linear' } },
+        $focus: twoObjects,
+      });
+      changed.states.add('$focus');
+      await anims.done();
+      changed.states.remove('$focus');
+      await anims.done();
+      await settle();
+      v.expect(declaredProps(changed)).toEqual(declaredProps(never));
+      anims.restore();
+      dispose();
+    },
+  );
+}
+
+// The object written last wins for what it names, as in 1.6 (round 3,
+// finding B); undo rebuilds from the objects that remain.
+v.test(
+  'a $focus border over a base borderBottom: the border wins while focused, the base after blur',
+  async () => {
+    const { changed, never, dispose } = await pair({
+      width: 100,
+      height: 100,
+      borderBottom: { width: 2, color: RED },
+      $focus: { border: { width: 4, color: BLUE } },
+    });
+    changed.states.add('$focus');
+    v.expect(shaderOf(changed).props['border-w']).toEqual([4, 4, 4, 4]);
+    v.expect(shaderOf(changed).props['border-color']).toBe(BLUE);
+    changed.states.remove('$focus');
+    v.expect(declaredProps(changed)).toEqual(declaredProps(never));
+    v.expect(shaderOf(changed).props['border-w']).toEqual([0, 0, 2, 0]);
+    dispose();
+  },
+);
+
+v.test(
+  'a $focus border naming top over a base borderTop: its top wins while focused, the base after blur',
+  async () => {
+    const { changed, never, dispose } = await pair({
+      width: 100,
+      height: 100,
+      borderTop: { width: 6, color: RED },
+      $focus: { border: { top: 3, color: BLUE } },
+    });
+    changed.states.add('$focus');
+    v.expect(shaderOf(changed).props['border-w']).toEqual([3, 0, 0, 0]);
+    v.expect(shaderOf(changed).props['border-color']).toBe(BLUE);
+    changed.states.remove('$focus');
+    v.expect(declaredProps(changed)).toEqual(declaredProps(never));
+    v.expect(shaderOf(changed).props['border-w']).toEqual([6, 0, 0, 0]);
+    dispose();
+  },
+);

@@ -380,7 +380,7 @@ function shaderResetValue(
   return n !== undefined ? n : copyOf(info.fresh[name]);
 }
 
-/** The style keys whose objects all write `border-*` shader props, in the order they win. */
+/** The style keys whose objects all write `border-*` shader props. */
 const BORDER_KEYS = [
   'border',
   'borderTop',
@@ -389,53 +389,54 @@ const BORDER_KEYS = [
   'borderLeft',
 ];
 
-/** No accessor object of the node names the sub-prop. */
+/** Whether a style key is one of BORDER_KEYS. */
+const IS_BORDER_KEY: Record<string, boolean | undefined> = {
+  border: true,
+  borderTop: true,
+  borderRight: true,
+  borderBottom: true,
+  borderLeft: true,
+};
+
+/** No object of the node names the sub-prop. */
 const NOT_SET = {};
 
+/** No state change is giving this border key a value. */
+const NOT_PENDING = {};
+
 /**
- * The value the node's border or shadow objects give sub-prop `name`: for
- * a border accessor the last of `border`, `borderTop`, ... that names it
- * (`skip` excluded; null for none), for `shadow` the shadow object;
- * NOT_SET when none does. `effects` holds the objects as just written.
+ * Per node with more than one border object: the order they were written
+ * in (last write wins, as before 1.7) and, while a state change writes
+ * several of them, the value it gives each.
  */
-function effectValue(
-  effects: Record<string, unknown>,
-  key: string,
-  name: string,
-  skip: string | null,
-): unknown {
-  if (key === 'shadow') {
-    const obj = effects.shadow;
-    if (skip === key || !isObject(obj)) {
-      return NOT_SET;
-    }
-    const parse = shaderParse(key, obj);
-    const at = parse.index[name];
-    return at === undefined ? NOT_SET : parse.values[at];
-  }
-  let found: unknown = NOT_SET;
-  for (let i = 0; i < BORDER_KEYS.length; i++) {
-    const k = BORDER_KEYS[i]!;
-    const obj = effects[k];
-    if (k !== skip && isObject(obj)) {
-      const parse = shaderParse(k, obj);
-      const at = parse.index[name];
-      if (at !== undefined) {
-        found = parse.values[at];
-      }
-    }
-  }
-  return found;
+interface BorderWrites {
+  /** Per border key, when its object was last written (a running count; 0: before this record). */
+  readonly seq: Record<string, number>;
+  /** Per border key, the object the running state change gives it, or NOT_PENDING. */
+  readonly next: Record<string, unknown>;
 }
 
-/** Whether a border object other than `key`'s is set on the node (never for `shadow`). */
+let borderWriteCount = 0;
+
+function borderWritesOf(node: ElementNode): BorderWrites {
+  let writes = node._borderWrites;
+  if (writes === undefined) {
+    const seq = Object.create(null) as Record<string, number>;
+    const next = Object.create(null) as Record<string, unknown>;
+    for (let i = 0; i < BORDER_KEYS.length; i++) {
+      seq[BORDER_KEYS[i]!] = 0;
+      next[BORDER_KEYS[i]!] = NOT_PENDING;
+    }
+    writes = node._borderWrites = { seq, next };
+  }
+  return writes;
+}
+
+/** Whether a border object other than `key`'s is set on the node. */
 function otherBorderSet(
   effects: Record<string, unknown>,
   key: string,
 ): boolean {
-  if (key === 'shadow') {
-    return false;
-  }
   for (let i = 0; i < BORDER_KEYS.length; i++) {
     const k = BORDER_KEYS[i]!;
     if (k !== key && isObject(effects[k])) {
@@ -443,6 +444,140 @@ function otherBorderSet(
     }
   }
   return false;
+}
+
+// One write's view of the node's objects for the key's group (the five
+// border keys, or the shadow alone), as they will be once the write and
+// the running state change are done: each parsed once, in the order they
+// were written, the object being written last. Module scratch: a write
+// does not nest.
+const groupParses: (ShaderParse | null)[] = [null, null, null, null, null];
+const groupOrder: number[] = [0, 1, 2, 3, 4];
+let groupSize = 0;
+let groupSelf = 0;
+
+function loadGroup(
+  key: string,
+  value: unknown,
+  effects: Record<string, unknown>,
+  writes: BorderWrites | undefined,
+): void {
+  if (IS_BORDER_KEY[key] !== true) {
+    groupParses[0] = isObject(value) ? shaderParse(key, value) : null;
+    groupOrder[0] = 0;
+    groupSize = 1;
+    groupSelf = 0;
+    return;
+  }
+  groupSize = BORDER_KEYS.length;
+  for (let i = 0; i < groupSize; i++) {
+    const k = BORDER_KEYS[i]!;
+    let obj: unknown;
+    if (k === key) {
+      obj = value;
+      groupSelf = i;
+    } else {
+      obj = writes !== undefined ? writes.next[k] : NOT_PENDING;
+      if (obj === NOT_PENDING) {
+        obj = effects[k];
+      }
+    }
+    groupParses[i] = isObject(obj) ? shaderParse(k, obj) : null;
+    // Insertion sort by write order; ties keep BORDER_KEYS order.
+    const s = groupSeq(i, writes);
+    let j = i - 1;
+    while (j >= 0 && groupSeq(groupOrder[j]!, writes) > s) {
+      groupOrder[j + 1] = groupOrder[j]!;
+      j--;
+    }
+    groupOrder[j + 1] = i;
+  }
+}
+
+function groupSeq(i: number, writes: BorderWrites | undefined): number {
+  if (i === groupSelf) {
+    return Infinity;
+  }
+  return writes !== undefined ? writes.seq[BORDER_KEYS[i]!]! : 0;
+}
+
+/** The value the latest other object of the group gives `name`, or NOT_SET. */
+function otherValue(name: string): unknown {
+  for (let o = groupSize - 1; o >= 0; o--) {
+    const i = groupOrder[o]!;
+    const parse = groupParses[i]!;
+    if (i !== groupSelf && parse !== null) {
+      const at = parse.index[name];
+      if (at !== undefined) {
+        return parse.values[at];
+      }
+    }
+  }
+  return NOT_SET;
+}
+
+/** Whether another object of the group remains. */
+function otherObjectSet(): boolean {
+  for (let i = 0; i < groupSize; i++) {
+    if (i !== groupSelf && groupParses[i]! !== null) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/** Whether another object of the group names any of `names`. */
+function otherNamesAny(names: string[]): boolean {
+  for (let i = 0; i < groupSize; i++) {
+    const parse = groupParses[i]!;
+    if (i !== groupSelf && parse !== null && familyNamed(parse, names)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Rebuild a vec4 family after one of its members was reset: the vec4 from
+ * the latest object that names it, else its reset value, then the element
+ * aliases the objects written after that one name (its own after the vec4,
+ * in its key order), in write order: the values the writes left, without
+ * the removed ones.
+ */
+function replayFamily(
+  target: Record<string, unknown>,
+  info: ShaderTypeInfo,
+  prop: string,
+  animated: boolean,
+): void {
+  let from = -1;
+  for (let o = groupSize - 1; o >= 0; o--) {
+    const parse = groupParses[groupOrder[o]!]!;
+    if (parse !== null && parse.index[prop] !== undefined) {
+      from = o;
+      break;
+    }
+  }
+  if (from === -1) {
+    target[prop] = shaderResetValue(info, prop, animated);
+  } else {
+    const parse = groupParses[groupOrder[from]!]!;
+    target[prop] = parse.values[parse.index[prop]!];
+  }
+  for (let o = from === -1 ? 0 : from; o < groupSize; o++) {
+    const parse = groupParses[groupOrder[o]!]!;
+    if (parse === null) {
+      continue;
+    }
+    const keys = parse.keys;
+    const start = o === from ? parse.index[prop]! + 1 : 0;
+    for (let j = start; j < keys.length; j++) {
+      const name = keys[j]!;
+      if (name !== prop && info.familyOf[name] === prop) {
+        target[name] = parse.values[j];
+      }
+    }
+  }
 }
 
 /** Whether a write from `old` to `next` changes any member of a family. */
@@ -465,6 +600,34 @@ function familyChanges(
   return false;
 }
 
+/** Whether `parse` names any of `names`. */
+function familyNamed(parse: ShaderParse, names: string[]): boolean {
+  for (let i = 0; i < names.length; i++) {
+    if (parse.index[names[i]!] !== undefined) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/** Whether `old` names a member of a family that `next` does not. */
+function familyResets(
+  old: ShaderParse,
+  next: ShaderParse | null,
+  names: string[],
+): boolean {
+  for (let i = 0; i < names.length; i++) {
+    const name = names[i]!;
+    if (
+      old.index[name] !== undefined &&
+      (next === null || next.index[name] === undefined)
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
 /** writeShaderValue modes. */
 const INTO_BAG = 0;
 const INTO_PROPS = 1;
@@ -475,24 +638,22 @@ const INTO_ANIMATION = 2;
  * or a radius: into a props bag for createShader (`INTO_BAG`: everything),
  * into a shader's props (`INTO_PROPS`: only what changed, since a renderer
  * v2 facade write repacks even when the value is unchanged), or into an
- * animation target (`INTO_ANIMATION`: everything). With a known shader
- * type (`info`), the result equals a shader created with the node's
- * objects as they now are (B18):
+ * animation target (`INTO_ANIMATION`: everything).
  *
- * - a sub-prop `prev` named and `value` does not takes the value another
- *   border object of the node gives it, else a fresh shader's;
- * - a vec4 and its element aliases (`border-w` and `border-top`) are
- *   written together when any of them changes: the vec4 from the node's
- *   objects (else fresh), then the aliases they name, as createShader
- *   applies props before aliases;
- * - a whole object removed leaves its colour transparent (its RGB kept, so
- *   a transition fades it), and an object written over none that does not
- *   name a colour gets the fresh one back;
- * - a sub-prop another border object also names is never skipped as
- *   unchanged.
- *
- * `current` is the shader's props (read for the colour a removal fades),
- * null for a bag. Returns whether anything was written.
+ * The object written wins for every sub-prop it names, in its key order
+ * (the last write wins, as before 1.7). A sub-prop `prev` named and
+ * `value` does not (an undo, B18) takes the value the latest remaining
+ * object of the node gives it, else a fresh shader's (`info`, the shader
+ * type's; null for a bag or the DOM renderer, which reset to undefined);
+ * a vec4 one of whose members is reset this way (`border-w` and its
+ * element `border-top`) is rebuilt from the remaining objects in write
+ * order. A removed object with no other object left leaves its colour
+ * transparent (RGB kept, so a transition fades it out); an object written
+ * over none that names no colour, with no other object naming one, gets
+ * the fresh colour back. A sub-prop another object also names is never
+ * skipped as unchanged. `current` is the shader's props (the colour a
+ * removal fades from), null for a bag. Returns whether anything was
+ * written.
  */
 function writeShaderValue(
   target: Record<string, unknown>,
@@ -500,6 +661,7 @@ function writeShaderValue(
   value: unknown,
   prev: unknown,
   effects: Record<string, unknown>,
+  writes: BorderWrites | undefined,
   info: ShaderTypeInfo | null,
   mode: number,
   current: Record<string, unknown> | null,
@@ -515,77 +677,84 @@ function writeShaderValue(
         : value;
     return true;
   }
-  const next = isObject(value) ? shaderParse(key, value) : null;
+  loadGroup(key, value, effects, writes);
+  const next = groupParses[groupSelf]!;
   const old = isObject(prev) ? shaderParse(key, prev) : null;
   if (old === next) {
     // The same object again (its parse is cached), or none over none.
     return false;
   }
   const colorKey = key === 'shadow' ? 'shadow-color' : 'border-color';
-  // The whole border (no other border object left) or shadow removed.
-  const gone = next === null && info !== null && !otherBorderSet(effects, key);
   let wrote = false;
 
-  // Sub-props outside the vec4 families: reset those only `prev` named.
+  // Sub-props outside the vec4 families that only `prev` named.
   if (old !== null) {
     const keys = old.keys;
     for (let i = 0; i < keys.length; i++) {
       const name = keys[i]!;
       if (
         (next !== null && next.index[name] !== undefined) ||
-        (info !== null && info.familyOf[name] !== undefined)
+        (info !== null && info.familyOf[name] !== undefined) ||
+        (name === colorKey && next === null && info !== null)
       ) {
         continue;
       }
-      if (gone && name === colorKey) {
-        continue;
-      }
-      const v = effectValue(effects, key, name, key);
+      const v = otherValue(name);
       target[name] = v !== NOT_SET ? v : shaderResetValue(info, name, animated);
       wrote = true;
     }
   }
-  if (gone) {
-    // Transparent, its RGB kept, so a transition fades it out; Box neither
-    // draws a transparent border or shadow nor grows the quad for it.
-    const c = current !== null ? current[colorKey] : undefined;
-    target[colorKey] =
-      typeof c === 'number' ? (c & 0xffffff00) >>> 0 : 0x00000000;
-    wrote = true;
+  if (next === null && info !== null) {
+    // Removed: the colour of the latest remaining object, else the fresh
+    // one when another object remains, else transparent with its RGB kept
+    // (a transition fades it out; Box neither draws a transparent border
+    // or shadow nor grows the quad for it).
+    let v = otherValue(colorKey);
+    if (v === NOT_SET) {
+      if (otherObjectSet()) {
+        v = old!.index[colorKey] !== undefined ? info.fresh[colorKey] : NOT_SET;
+      } else {
+        const c = current !== null ? current[colorKey] : undefined;
+        v = typeof c === 'number' ? (c & 0xffffff00) >>> 0 : 0x00000000;
+      }
+    }
+    if (v !== NOT_SET) {
+      target[colorKey] = v;
+      wrote = true;
+    }
   }
 
-  // The vec4 families this write touches, rebuilt as createShader would.
+  // The vec4 families (a vec4 and its element aliases).
   if (info !== null) {
-    // Into props, a family is rewritten only when it changes; otherwise (and
-    // for an object with a getter, whose old values cannot be compared)
-    // whenever `value` names a member.
     const force = mode !== INTO_PROPS || (next !== null && !next.cached);
     const families = info.families;
     for (let f = 0; f < families.length; f++) {
       const prop = families[f]!;
       const names = info.members[prop]!;
-      if (
-        !familyChanges(old, next, names) &&
-        !(force && next !== null && familyNamed(next, names))
+      if (old !== null && familyResets(old, next, names)) {
+        replayFamily(target, info, prop, animated);
+        wrote = true;
+      } else if (
+        next !== null &&
+        familyNamed(next, names) &&
+        (force || familyChanges(old, next, names) || otherNamesAny(names))
       ) {
-        continue;
-      }
-      let v = effectValue(effects, key, prop, null);
-      target[prop] = v !== NOT_SET ? v : shaderResetValue(info, prop, animated);
-      for (let i = 1; i < names.length; i++) {
-        v = effectValue(effects, key, names[i]!, null);
-        if (v !== NOT_SET) {
-          target[names[i]!] = v;
+        const keys = next.keys;
+        for (let j = 0; j < keys.length; j++) {
+          if (info.familyOf[keys[j]!] === prop) {
+            target[keys[j]!] = next.values[j];
+          }
         }
+        wrote = true;
       }
-      wrote = true;
     }
   }
 
   if (next === null) {
     return wrote;
   }
-  // The other sub-props `value` names: what changed (everything but into props).
+  // The other sub-props `value` names: what changed (everything but into
+  // props), and what another object also names.
   const diff = mode === INTO_PROPS && old !== null && next.cached;
   const keys = next.keys;
   const values = next.values;
@@ -600,7 +769,7 @@ function writeShaderValue(
       if (
         at !== undefined &&
         old.values[at] === v &&
-        effectValue(effects, key, name, key) === NOT_SET
+        otherValue(name) === NOT_SET
       ) {
         continue;
       }
@@ -608,14 +777,14 @@ function writeShaderValue(
     target[name] = v;
     wrote = true;
   }
-  // Over none, a colour it does not name is the fresh one (a removal left
-  // it transparent).
+  // Over none, a colour it does not name is the fresh one (a removal may
+  // have left it transparent).
   if (
     old === null &&
     info !== null &&
     mode !== INTO_BAG &&
     next.index[colorKey] === undefined &&
-    effectValue(effects, key, colorKey, key) === NOT_SET
+    otherValue(colorKey) === NOT_SET
   ) {
     const fresh = info.fresh[colorKey];
     if (fresh !== undefined) {
@@ -624,16 +793,6 @@ function writeShaderValue(
     }
   }
   return wrote;
-}
-
-/** Whether `parse` names any of `names`. */
-function familyNamed(parse: ShaderParse, names: string[]): boolean {
-  for (let i = 0; i < names.length; i++) {
-    if (parse.index[names[i]!] !== undefined) {
-      return true;
-    }
-  }
-  return false;
 }
 
 /** The gradient shaders the raw accessors made, by accessor key. */
@@ -676,7 +835,7 @@ function trackKeys(
 }
 
 /** The base value undo restores: theme[key], else style[key] (pinned). */
-function styleFallback(node: ElementNode, key: string): unknown {
+function styleFallback(node: ElementNode, key: string, warn = true): unknown {
   const theme = node._theme as Record<string, unknown> | undefined;
   let value = theme !== undefined ? theme[key] : undefined;
   if (value === undefined) {
@@ -685,7 +844,7 @@ function styleFallback(node: ElementNode, key: string): unknown {
       value = style[key];
     }
   }
-  if (isDev && value === undefined) {
+  if (isDev && warn && value === undefined) {
     console.warn('fallback style key not found: ', key);
   }
   return value;
@@ -701,6 +860,7 @@ function resolveStateValue(
   key: string,
   states: States,
   order: DollarString[] | undefined,
+  warn = true,
 ): unknown {
   let best = -2;
   let plan: BlockPlan | undefined;
@@ -722,10 +882,55 @@ function resolveStateValue(
     }
   }
   if (plan === undefined) {
-    return styleFallback(node, key);
+    return styleFallback(node, key, warn);
   }
   // A getter is read now, each time the state is applied (pinned).
   return plan.getters[at] === true ? plan.block[key] : plan.values[at];
+}
+
+/**
+ * When a state change writes two or more border objects, give each write
+ * the values the change gives the others (`_borderWrites.next`): an undo
+ * then removes them all before anything is rebuilt from what remains, so
+ * no animation keeps a removed object's element. Returns the record to
+ * clear after the writes, or undefined.
+ */
+function pendBorders(
+  node: ElementNode,
+  keys: string[],
+  count: number,
+  states: States | null,
+  order: DollarString[] | undefined,
+): BorderWrites | undefined {
+  let borders = 0;
+  for (let i = 0; i < count; i++) {
+    if (IS_BORDER_KEY[keys[i]!] === true) {
+      borders++;
+    }
+  }
+  if (borders < 2) {
+    return undefined;
+  }
+  const writes = borderWritesOf(node);
+  for (let i = 0; i < count; i++) {
+    const key = keys[i]!;
+    if (IS_BORDER_KEY[key] === true) {
+      writes.next[key] =
+        states === null
+          ? styleFallback(node, key, false)
+          : resolveStateValue(node, key, states, order, false);
+    }
+  }
+  return writes;
+}
+
+/** The end of a state change's border writes. */
+function unpendBorders(writes: BorderWrites | undefined): void {
+  if (writes !== undefined) {
+    for (let i = 0; i < BORDER_KEYS.length; i++) {
+      writes.next[BORDER_KEYS[i]!] = NOT_PENDING;
+    }
+  }
 }
 
 export function convertToShader(
@@ -865,6 +1070,8 @@ export interface ElementNode extends RendererNode, FocusNode {
   _undoCount: number;
   /** @internal Per key in `_undoStyles`, the value the last state change wrote. */
   _applied?: Record<string, unknown>;
+  /** @internal With two or more border objects: their write order, and a state change's values for them. */
+  _borderWrites?: BorderWrites;
   _display?: 'flex' | 'block';
   _onLayout?: (this: ElementNode, target: ElementNode) => void;
   _requiresLayout: boolean;
@@ -1351,6 +1558,7 @@ export class ElementNode {
     this._undoStyles = undefined;
     this._undoCount = 0;
     this._applied = undefined;
+    this._borderWrites = undefined;
     this._display = undefined;
     this._onLayout = undefined;
     this._requiresLayout = false;
@@ -2034,6 +2242,7 @@ export class ElementNode {
 
     if (n === 0) {
       // Undo every tracked key, in its order (`transition` too: pinned).
+      const pending = pendBorders(this, keys, count, null, undefined);
       for (let i = 0; i < count; i++) {
         const key = keys[i]!;
         const value = styleFallback(this, key);
@@ -2042,6 +2251,7 @@ export class ElementNode {
           this[key] = value;
         }
       }
+      unpendBorders(pending);
       this._undoCount = 0;
       return;
     }
@@ -2096,6 +2306,7 @@ export class ElementNode {
         break;
       }
     }
+    const pending = pendBorders(this, keys, count, states, order);
     for (let i = 0; i < count; i++) {
       const key = keys[i]!;
       const value = resolveStateValue(this, key, states, order);
@@ -2104,6 +2315,7 @@ export class ElementNode {
         this[key] = value;
       }
     }
+    unpendBorders(pending);
   }
 
   render(topNode?: boolean) {
@@ -2477,6 +2689,18 @@ export function shaderAccessor<T extends Record<string, any> | number>(
       }
       const prev: unknown = effects[key];
       effects[key] = value;
+      // The write order of the border objects, once there are two.
+      let writes = this._borderWrites;
+      if (
+        writes === undefined &&
+        IS_BORDER_KEY[key] === true &&
+        otherBorderSet(effects, key)
+      ) {
+        writes = borderWritesOf(this);
+      }
+      if (writes !== undefined && IS_BORDER_KEY[key] === true) {
+        writes.seq[key] = ++borderWriteCount;
+      }
 
       const shader = this.lng.shader as IRendererShader | null | undefined;
       const props = shader != null ? shader.props : undefined;
@@ -2491,6 +2715,7 @@ export function shaderAccessor<T extends Record<string, any> | number>(
             value,
             prev,
             effects,
+            writes,
             shaderTypeInfo(shader!),
             INTO_ANIMATION,
             props as Record<string, unknown>,
@@ -2513,6 +2738,7 @@ export function shaderAccessor<T extends Record<string, any> | number>(
             value,
             prev,
             effects,
+            writes,
             shaderTypeInfo(shader!),
             INTO_PROPS,
             props as Record<string, unknown>,
@@ -2531,7 +2757,17 @@ export function shaderAccessor<T extends Record<string, any> | number>(
         shader != null && !this.rendered
           ? (shader as unknown as Record<string, unknown>)
           : {};
-      writeShaderValue(target, key, value, prev, effects, null, INTO_BAG, null);
+      writeShaderValue(
+        target,
+        key,
+        value,
+        prev,
+        effects,
+        writes,
+        null,
+        INTO_BAG,
+        null,
+      );
       this._writeShaderTarget(target);
     },
     get(this: ElementNode) {
