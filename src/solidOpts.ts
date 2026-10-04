@@ -20,7 +20,7 @@ export default {
     log('Replace Text: ', node, value);
     node.text = value;
     const parent = node.parent;
-    // A removed node has no parent (removeChild clears it): no text to update.
+    // A text node never inserted has no parent.
     if (parent !== undefined) {
       parent.text = parent.getText();
     }
@@ -31,12 +31,7 @@ export default {
   insertNode(parent: ElementNode, node: SolidNode, anchor: SolidNode): void {
     log('INSERT: ', parent, node, anchor);
 
-    // Inserted before: in a parent now, or removed with its delete still
-    // pending (a removed node has no parent; removeNode counted -1 in
-    // _queueDelete). A preserved node never inserted has 0 there.
-    const queued = node instanceof ElementNode ? node._queueDelete : undefined;
-    const reinserted =
-      node.parent !== undefined || (queued !== undefined && queued < 0);
+    const prevParent = node.parent;
     parent.insertChild(node, anchor);
 
     if (node instanceof ElementNode) {
@@ -48,7 +43,7 @@ export default {
           parent._drawInOrder(node);
         }
       }
-      if (reinserted) {
+      if (prevParent !== undefined) {
         enqueueDelete(node, 1);
       }
     } else if (isElementText(parent)) {
@@ -79,7 +74,11 @@ export default {
   },
   getNextSibling(node: SolidNode): SolidNode | undefined {
     const parent = node.parent;
-    if (parent === undefined) {
+    // A removed node keeps its parent link, but has no sibling there.
+    if (
+      parent === undefined ||
+      (node instanceof ElementNode && node._detached)
+    ) {
       return undefined;
     }
     // From the end: Solid asks for the sibling after a list's last item.

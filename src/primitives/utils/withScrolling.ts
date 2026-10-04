@@ -93,7 +93,7 @@ export function withScrolling(isRow: boolean): Scroller {
     let endOffset = componentRef.endOffset;
     let screenOffset = componentRef._screenOffset;
     if (screenOffset === undefined) {
-      // A removed Row/Column has no parent (removeChild clears it).
+      // A Row/Column with no parent (a root) has no clipping parent.
       const p = componentRef.parent;
       if (p !== undefined && p !== null && p.clipping) {
         endOffset =

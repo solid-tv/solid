@@ -263,31 +263,43 @@ v.describe('B19: the DOM renderer draws children in children order', () => {
 });
 
 v.describe('child list', () => {
-  v.test('removeChild takes the child out and clears its parent', () => {
-    const parent = new ElementNode('view');
-    const [a, b, c] = ['a', 'b', 'c'].map((id) => {
-      const n = new ElementNode('view');
-      n.id = id;
-      parent.insertChild(n);
-      return n;
-    }) as [ElementNode, ElementNode, ElementNode];
+  // N3: a removed node keeps its parent link, as in 1.6 (keys and events
+  // from a removed focused subtree still bubble through it).
+  v.test(
+    'removeChild takes the child out and keeps its parent link (1.6)',
+    () => {
+      const parent = new ElementNode('view');
+      const [a, b, c] = ['a', 'b', 'c'].map((id) => {
+        const n = new ElementNode('view');
+        n.id = id;
+        parent.insertChild(n);
+        return n;
+      }) as [ElementNode, ElementNode, ElementNode];
 
-    parent.removeChild(b);
-    v.expect(ids(parent)).toEqual(['a', 'c']);
-    v.expect(b.parent).toBeUndefined();
-    v.expect(a.parent).toBe(parent);
+      parent.removeChild(b);
+      v.expect(ids(parent)).toEqual(['a', 'c']);
+      v.expect(b.parent).toBe(parent);
 
-    // Not a child: nothing changes.
-    parent.removeChild(b);
-    v.expect(ids(parent)).toEqual(['a', 'c']);
+      // Not a child: nothing changes.
+      parent.removeChild(b);
+      v.expect(ids(parent)).toEqual(['a', 'c']);
 
-    parent.removeChild(a);
-    parent.removeChild(c);
-    v.expect(ids(parent)).toEqual([]);
-    parent.insertChild(b);
-    v.expect(ids(parent)).toEqual(['b']);
-    v.expect(b.parent).toBe(parent);
-  });
+      // Re-inserted elsewhere: it is in one child list only.
+      const other = new ElementNode('view');
+      other.insertChild(b);
+      v.expect(ids(other)).toEqual(['b']);
+      v.expect(ids(parent)).toEqual(['a', 'c']);
+      v.expect(b.parent).toBe(other);
+
+      // Re-inserted where it was, before a sibling.
+      parent.removeChild(a);
+      v.expect(a.parent).toBe(parent);
+      parent.insertChild(a, c);
+      v.expect(ids(parent)).toEqual(['a', 'c']);
+      parent.insertChild(a, a);
+      v.expect(ids(parent)).toEqual(['a', 'c']);
+    },
+  );
 
   v.test('replaceText on a removed text child changes only its text', () => {
     const text = new ElementNode('text');
@@ -318,12 +330,14 @@ v.describe('child list', () => {
       await tick();
       v.expect(el.preserve).toBe(true);
 
+      const host = el.parent!;
       setShow(false);
       await tick();
-      v.expect(el.parent).toBeUndefined();
+      v.expect(host.children).not.toContain(el);
+      v.expect(el.parent).toBe(host);
       setShow(true);
       await tick();
-      v.expect(el.parent).toBeDefined();
+      v.expect(host.children).toContain(el);
       v.expect(el.preserve).toBe(true);
       v.expect(destroyed).toBe(0);
       dispose();
@@ -331,8 +345,8 @@ v.describe('child list', () => {
   );
 
   // A Row that is itself a removed root, with focus still in it, takes its
-  // first scroll: its parent is gone (removeChild clears it).
-  v.test('a removed Row scrolls without its parent', () => {
+  // first scroll (its parent link is kept, as in 1.6).
+  v.test('a removed Row still scrolls', () => {
     let host!: ElementNode;
     let row!: ElementNode;
     const dispose = renderer.render(() => (
@@ -345,7 +359,7 @@ v.describe('child list', () => {
       </view>
     ));
     host.removeChild(row);
-    v.expect(row.parent).toBeUndefined();
+    v.expect(row.parent).toBe(host);
     v.expect(() => scrollRow(1, row, undefined, 0)).not.toThrow();
     dispose();
   });
