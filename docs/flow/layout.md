@@ -15,19 +15,13 @@ The `<text>` element does not require any of these properties, as it will use th
 
 ## Flex
 
-A fundamental tool for layout is the Flex container. Currently, there is a minimal implementation of flex (`display: flex`) that supports the following properties: `flexDirection`, `justifyContent`, `alignItems`, `flexOrder`, `flexGrow` and `gap`. This is useful for laying out elements in rows and columns.
+A fundamental tool for layout is the Flex container (`display: flex`). SolidTV has one flex engine (`src/core/flexLayout.ts`), modelled on CSS flexbox. It supports `flexDirection`, `justifyContent`, `alignItems`, `alignSelf`, `flexOrder`, `flexGrow`, `flexShrink`, `flexBasis`, `flexWrap`, `gap`, `padding` (a number, an array, or per side) and `margin` (a number, an array, or per side). This is useful for laying out elements in rows and columns.
 
-### New Flex Engine Toggle
+The engine allocates nothing during a layout pass and writes only the values that changed, so a relayout that moves nothing writes nothing and starts no transition.
 
-The framework now includes a modern, high-performance, CSS-aligned flex engine alongside the legacy engine. To opt into the new flex engine, define the following environment variable during your Vite build process:
+### One flex engine
 
-```bash
-VITE_USE_NEW_FLEX=true
-```
-
-This will add `flexShrink`, `flexBasis` support and padding / margin full support with array syntax.
-
-Because the engines are conditionally evaluated at build time via `import.meta.env`, your bundler (e.g., Rollup) will automatically perform **Dead-Code Elimination (tree-shaking)**. This means whichever layout engine isn't selected will be completely omitted from your application's final production bundle.
+Before 1.7 there were two engines, a legacy one and a CSS-aligned one chosen at build time with the `VITE_USE_NEW_FLEX` environment variable. Since 1.7 there is only the CSS-aligned one, with everything below. The variable is ignored; delete it from your `.env`. If your app ran on the legacy engine, see `MIGRATION-1.7.md` in the repository for the layouts that change.
 
 ### Example
 
@@ -63,8 +57,8 @@ When a `<view>` with `display: flex` contains text nodes as children, it automat
 - **`flexItem`**: boolean (Set to `false` on a child to exclude it from flex calculations.)
 - **`flexOrder`**: number (Set the order on children to change the layout order.)
 - **`flexGrow`**: number (Set to number on children to specify how much room elements should take up.)
-- **`flexShrink`**: number (Set to number on children to specify how much an element should shrink proportionally if the container overflows. Defaults to 0.) Only in new flex engine.
-- **`flexBasis`**: number | 'auto' (Set the default size of an item before the remaining space is distributed. Overrides width/height.) Only in new flex engine.
+- **`flexShrink`**: number (Set to number on children to specify how much an element should shrink proportionally if the container overflows. Defaults to 0.) With two or more items, a `flexShrink` or `flexGrow` on any of them makes a container without a `flexBoundary` behave as `fixed`: it keeps its own size instead of sizing itself to its items.
+- **`flexBasis`**: number | 'auto' (Set the default size of an item before the remaining space is distributed. Overrides width/height for positioning.)
 - **`flexWrap`**: 'nowrap' | 'wrap' | 'wrap-reverse' (Set to `wrap` or `wrap-reverse` to have elements flow to the next line on overflow.)
 - **`gap`**: number
 - **`rowGap`**: number
@@ -99,22 +93,22 @@ We can also have multiple elements with flexGrow property. Flex will divide up t
 Produces:
 ![Flex Grow](../images/flexGrow-multiple.png)
 
-### Item-Specific Properties in flex containers
+### Padding and margin
 
-To control the layout further, you can use the following properties on individual items:
+`padding` is read from the flex container: it is the space between the container's edges and its items. `margin` is read from each item. Both take a number for all four sides, or a CSS-style array:
 
-- **`padding`**: number (Specifies padding on the element itself on main axis. Only in legacy flex engine.)
-
-- **`padding`**: number | [number, number, number, number] (Specifies padding on the element itself. Using an array aligns with the CSS `[Top, Right, Bottom, Left]` specification. Available in the new flex engine.)
-- **`paddingTop`**: number (Overrides the top value of the padding array. Available in the new flex engine.)
-- **`paddingRight`**: number (Overrides the right value of the padding array. Available in the new flex engine.)
-- **`paddingBottom`**: number (Overrides the bottom value of the padding array. Available in the new flex engine.)
-- **`paddingLeft`**: number (Overrides the left value of the padding array. Available in the new flex engine.)
-- **`margin`**: [number, number, number, number] (Specifies margins on the element using the `[Top, Right, Bottom, Left]` CSS array syntax. Available in the new flex engine.)
+- **`padding`**: number | [number, number] | [number, number, number] | [number, number, number, number] (Specifies the padding on the container. A four value array is `[Top, Right, Bottom, Left]`, as in CSS. Two values are `[vertical, horizontal]`, three are `[Top, horizontal, Bottom]`.) A padding applies to both axes: items start at the padding on the main axis and, with `alignItems`, `alignSelf` or wrapping, on the cross axis.
+- **`paddingTop`**: number (Overrides the top value of `padding`.)
+- **`paddingRight`**: number (Overrides the right value of `padding`.)
+- **`paddingBottom`**: number (Overrides the bottom value of `padding`.)
+- **`paddingLeft`**: number (Overrides the left value of `padding`.)
+- **`margin`**: number | [number, number] | [number, number, number] | [number, number, number, number] (Specifies the margins on an item, with the same array forms as `padding`.)
 - **`marginBottom`**: number
 - **`marginLeft`**: number
 - **`marginRight`**: number
 - **`marginTop`**: number
+
+A non-zero `marginTop`, `marginRight`, `marginBottom` or `marginLeft` takes precedence over the same side of `margin`.
 
 Note: `alignItems` supports `flexStart`, `flexEnd`, and `center`, but requires the container to have a height/width set.
 

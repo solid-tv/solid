@@ -40,8 +40,6 @@ Config.fontSettings.color = 0xffffffff;
 // Settings for SolidTV Renderer passed in for starting application
 Config.rendererOptions = {
   numImageWorkers: 1,
-  fontEngines: [SdfTextRenderer],
-  renderEngine: WebGlCoreRenderer,
   inspector: Inspector,
   // Set the resolution based on window height
   deviceLogicalPixelRatio: window.innerHeight / 1080,
@@ -53,7 +51,7 @@ Config.rendererOptions = {
 Here, we’re setting up a few important things:
 
 - We’re defaulting font settings for all `<text>` nodes.
-- The `rendererOptions` allow us to pass options to the SolidTV renderer, including the number of image workers, font engines, and pixel ratios.
+- The `rendererOptions` allow us to pass options to the SolidTV renderer, including the number of image workers and the pixel ratios. (Renderer 2.0 draws with WebGL and SDF text only, so there is no render engine or font engine to set.)
 - `boundsMargin` is the preload margin around the viewport, in logical pixels. It defaults to `200`, which is usually what you want — it loads textures ahead of a node scrolling into view.
 
 ## Routing with SolidJS Router
