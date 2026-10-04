@@ -949,6 +949,72 @@ v.test(
 );
 
 v.test(
+  'a fontSize transition on a text in a flex row moves its sibling every frame, and ends where the new size puts it',
+  async () => {
+    const [size, setSize] = s.createSignal(30);
+    let t!: ElementNode;
+    let after!: ElementNode;
+    let passes = 0;
+    const dispose = render(() => (
+      <view display="flex" gap={10} onLayout={() => void passes++}>
+        <text
+          ref={t}
+          fontSize={size()}
+          transition={{ fontSize: { duration: 600, easing: 'linear' } }}
+        >
+          After
+        </text>
+        <text ref={after}>After</text>
+      </view>
+    ));
+    await settle();
+    expectBox(t, 0, 0, 69.51, LINE_30);
+    expectBox(after, 79.51, 0, 69.51, LINE_30); // 69.51 + 10
+
+    // Before each frame's walk: the text's last layout and the sibling's
+    // last flex position, which must not overlap it.
+    const overlaps: number[][] = [];
+    const sampled: number[] = [];
+    const sample = () => {
+      const w = t.lng.w;
+      sampled.push(w);
+      if (after.x < w + 10 - 0.001) {
+        overlaps.push([w, after.x]);
+      }
+    };
+    renderer.on('frameTick', sample);
+    passes = 0;
+    try {
+      setSize(60);
+      // settle() does not wait for an animation (it requests no frame).
+      await new Promise((r) => setTimeout(r, 900));
+      await settle();
+    } finally {
+      renderer.off('frameTick', sample);
+    }
+    info(
+      `fontSize transition: frames ${sampled.length}, flex passes ${passes},` +
+        ` widths ${JSON.stringify(sampled.map((w) => Math.round(w)))}`,
+    );
+
+    // As 1.6 (the `loaded` listener re-ran flex on each animated layout).
+    expectBox(t, 0, 0, 139.02, 86.4); // twice the size
+    expectBox(after, 149.02, 0, 69.51, LINE_30); // 139.02 + 10
+    v.expect(overlaps).toEqual([]);
+    // It animated: some frames saw an intermediate width.
+    v.expect(sampled.some((w) => w > 70 && w < 139)).toBe(true);
+
+    // The animation is over: a text change walks once again (Solid stopped
+    // listening for the animated layouts).
+    const walks = await walksPerFrame(() => (t.text = 'Afterwards'));
+    v.expect(walks.length).toBeGreaterThan(0);
+    v.expect(walks.every((w) => w === 1)).toBe(true);
+
+    dispose();
+  },
+);
+
+v.test(
   'text whose font is loaded with renderer.loadFont (not loadFonts) lays out when the font arrives',
   async () => {
     let row!: ElementNode;

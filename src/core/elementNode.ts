@@ -105,9 +105,18 @@ let textMeasureCount = 0;
 // set fontWaitingDue; the layout phase then measures them.
 const fontWaiting: ElementNode[] = [];
 let fontWaitingDue = false;
-// Length at which the list is next swept of texts that no longer wait
-// (destroyed: nothing else takes them off while their font never loads).
+// Texts whose layout props animate (a `transition`, or animate()): the walk
+// lays out each animated value, so each hears `loaded` (a shared listener)
+// while its animations run, and the layout phase, in the frame, lays out the
+// parent of one whose size changed (1.6's result: two walks per frame while
+// it animates). `animatingTextsDue`: one of them heard `loaded`.
+const animatingTexts: ElementNode[] = [];
+let animatingTextsDue = false;
+// Lengths at which the two lists are next swept of texts that no longer
+// wait: destroyed (nothing else takes them off while their font never
+// loads), or whose animation stopped with no layout to tell.
 let fontWaitingSweepAt = 64;
+let animatingSweepAt = 64;
 // Re-measures in one layout phase before the rest waits for its next change:
 // a text whose size flex writes (flexGrow, flexShrink, minWidth) settles in
 // one or two, so more means a layout that does not converge.
@@ -168,6 +177,9 @@ function runPostMutation() {
   // Phase 2: layout
   if (fontWaitingDue === true) {
     measureFontWaiting();
+  }
+  if (animatingTextsDue === true) {
+    measureAnimatingTexts();
   }
   runLayoutQueue();
 
@@ -359,6 +371,65 @@ function sweepFontWaiting(): void {
   fontWaitingSweepAt = kept * 2 > 64 ? kept * 2 : 64;
 }
 
+/** `loaded` on an animating text (`_textLayoutAnimated`); shared by all. */
+function animatingTextHeard(): void {
+  animatingTextsDue = true;
+  schedulePostMutationInFrame();
+}
+
+/**
+ * The animating texts after a walk laid one out: the parent of each whose
+ * size changed is queued; one whose animations all stopped (or that was
+ * destroyed) stops listening and leaves the list.
+ */
+function measureAnimatingTexts(): void {
+  animatingTextsDue = false;
+  let kept = 0;
+  for (let i = 0; i < animatingTexts.length; i++) {
+    const t = animatingTexts[i]!;
+    if (t.destroyed !== true) {
+      if (t._textSizeChanged() === true) {
+        enqueueLayout(t._parent!);
+      }
+      if (t._textAnimating() === true) {
+        animatingTexts[kept++] = t;
+        continue;
+      }
+    }
+    t._stopTextAnimating();
+  }
+  animatingTexts.length = kept;
+}
+
+/** Drops the texts whose animations stopped without a layout to tell. */
+function sweepAnimating(): void {
+  let kept = 0;
+  for (let i = 0; i < animatingTexts.length; i++) {
+    const t = animatingTexts[i]!;
+    if (t.destroyed !== true && t._textAnimating() === true) {
+      animatingTexts[kept++] = t;
+    } else {
+      t._stopTextAnimating();
+    }
+  }
+  animatingTexts.length = kept;
+  animatingSweepAt = kept * 2 > 64 ? kept * 2 : 64;
+}
+
+/** The props a text's layout reads that an animation can change. */
+function animatesTextLayout(props: Partial<AnimateProps>): boolean {
+  return (
+    'fontSize' in props ||
+    'lineHeight' in props ||
+    'letterSpacing' in props ||
+    'maxWidth' in props ||
+    'maxHeight' in props ||
+    'maxLines' in props ||
+    'w' in props ||
+    'h' in props
+  );
+}
+
 /**
  * What Solid knows of a `<text>` it measures (`ElementNode._text`), made the
  * first time: only texts in a container that lays out have one. Its sizes
@@ -372,12 +443,18 @@ class TextMeasure {
   /** Width and height, as flex reads them, when last measured; NaN before. */
   w: number;
   h: number;
+  /** In `animatingTexts`, listening to `loaded` (`_textLayoutAnimated`). */
+  animating: boolean;
+  /** The animations of its layout props; null until it has had one. */
+  animations: IAnimationController[] | null;
 
   constructor() {
     this.due = false;
     this.waiting = false;
     this.w = NaN;
     this.h = NaN;
+    this.animating = false;
+    this.animations = null;
   }
 }
 
@@ -1315,11 +1392,21 @@ export class ElementNode {
       return true;
     }
 
-    (this.lng as INode).animateProp(
+    const controller = (this.lng as INode).animateProp(
       name,
       value,
       animationSettings || this.animationSettings || {},
     );
+    // A text's layout prop: its container follows the animated sizes.
+    if (
+      this._type === NodeType.TextNode &&
+      (name === 'fontSize' ||
+        name === 'lineHeight' ||
+        name === 'w' ||
+        name === 'h')
+    ) {
+      this._textLayoutAnimated(controller);
+    }
     this._fireAnimationEvents(name, value, animationSettings);
     return true;
   }
@@ -1349,10 +1436,14 @@ export class ElementNode {
       if (isDev) console.log('NOT RENDERED! CANNOT ANIMATE');
       return { start: () => {} } as IAnimationController;
     }
-    return (this.lng as IRendererNode).animate(
+    const controller = (this.lng as IRendererNode).animate(
       props,
       animationSettings || this.animationSettings || {},
     );
+    if (this._type === NodeType.TextNode && animatesTextLayout(props)) {
+      this._textLayoutAnimated(controller);
+    }
+    return controller;
   }
 
   chain(props: Partial<AnimateProps>, animationSettings?: AnimationSettings) {
@@ -1541,6 +1632,7 @@ export class ElementNode {
       m === undefined ||
       m.due === true ||
       m.waiting === true ||
+      m.animating === true ||
       m.w !== m.w ||
       this._parent === undefined ||
       this._parent._requiresLayout !== true
@@ -1550,7 +1642,7 @@ export class ElementNode {
     const lng = this.lng as IRendererTextNode;
     if ((lng.maxWidth || lng.w) !== m.w || (lng.maxHeight || lng.h) !== m.h) {
       console.warn(
-        '[solid] A text in a flex container was laid out at a size Solid did not measure (a text prop written on el.lng, or animated there, instead of on the element): its container keeps the old size.',
+        '[solid] A text in a flex container was laid out at a size Solid did not measure: a prop its layout reads was written, or animated, on its renderer node (el.lng) instead of on the element. Its container keeps the old size.',
         this,
       );
     }
@@ -1572,10 +1664,72 @@ export class ElementNode {
   }
 
   /**
-   * @internal After a layout Solid did not make (the DOM renderer's late
-   * re-measure): whether this text's size, as flex reads it, changed since
-   * Solid last saw it. If so, it is recorded and the caller lays the parent
-   * out. False while a measure is due.
+   * @internal An animation of a prop this text's layout reads started
+   * (`_sendToLightningAnimatable`, `animate()`): while it runs, each layout
+   * the walk makes of an animated value is heard (`loaded`), and its
+   * container laid out again in that frame, as 1.6's `loaded` listener did.
+   */
+  _textLayoutAnimated(controller: IAnimationController): void {
+    if (this.rendered !== true) {
+      return;
+    }
+    const parent = this._parent;
+    if (parent === undefined || parent._requiresLayout !== true) {
+      return;
+    }
+    let m = this._text;
+    if (m === undefined) {
+      m = new TextMeasure();
+      this._text = m;
+    }
+    let list = m.animations;
+    if (list === null) {
+      list = [];
+      m.animations = list;
+    }
+    if (list.indexOf(controller) === -1) {
+      list.push(controller);
+    }
+    if (m.animating === false) {
+      m.animating = true;
+      (this.lng as IRendererTextNode).on('loaded', animatingTextHeard);
+      if (animatingTexts.length >= animatingSweepAt) {
+        sweepAnimating();
+      }
+      animatingTexts.push(this);
+    }
+  }
+
+  /**
+   * @internal Whether an animation of this text's layout props has not
+   * stopped (running, scheduled or paused); drops the stopped ones.
+   */
+  _textAnimating(): boolean {
+    const list = this._text!.animations!;
+    let kept = 0;
+    for (let i = 0; i < list.length; i++) {
+      const c = list[i]!;
+      if (c.state !== 'stopped') {
+        list[kept++] = c;
+      }
+    }
+    list.length = kept;
+    return kept > 0;
+  }
+
+  /** @internal Stops hearing the animated layouts (`_textLayoutAnimated`). */
+  _stopTextAnimating(): void {
+    const m = this._text!;
+    m.animating = false;
+    m.animations!.length = 0;
+    (this.lng as IRendererTextNode).off('loaded', animatingTextHeard);
+  }
+
+  /**
+   * @internal After a layout Solid did not make (the walk's, of an animated
+   * value; the DOM renderer's late re-measure): whether this text's size, as
+   * flex reads it, changed since Solid last saw it. If so, it is recorded
+   * and the caller lays the parent out. False while a measure is due.
    */
   _textSizeChanged(): boolean {
     const m = this._text;
