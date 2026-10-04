@@ -1412,6 +1412,42 @@ export class DOMNode extends EventEmitter implements IRendererNode {
     updateNodeParent(this);
   }
 
+  /**
+   * Renderer v2's `Node.insertBefore`: makes `child` a child of this node,
+   * before `before` (`null`, or a node that is not a child, appends); a child
+   * of this node moves, and one placed before itself stays. The div order is
+   * the paint order among equal z-index, as v2's sibling order is its draw
+   * order.
+   */
+  insertBefore(child: IRendererNode, before: IRendererNode | null): void {
+    if (!(child instanceof DOMNode) || child === before) return;
+    const anchor =
+      before instanceof DOMNode && before.props.parent === this ? before : null;
+
+    // A new parent: adds it to this node's children and appends its div.
+    child.parent = this;
+
+    const children = this.children;
+    children.delete(child);
+    if (anchor === null) {
+      children.add(child);
+      this.div.appendChild(child.div);
+    } else {
+      // A Set keeps insertion order: re-add the anchor and what follows it.
+      const after: DOMNode[] = [];
+      let found = false;
+      for (const c of children) {
+        if (c === anchor) found = true;
+        if (found) after.push(c);
+      }
+      for (const c of after) children.delete(c);
+      children.add(child);
+      for (const c of after) children.add(c);
+      this.div.insertBefore(child.div, anchor.div);
+    }
+    this.markChildrenBoundsDirty();
+  }
+
   public markChildrenBoundsDirty() {
     for (const child of this.children) {
       child.boundsDirty = true;
