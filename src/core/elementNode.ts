@@ -1725,16 +1725,6 @@ export class ElementNode {
       node.lng = renderer.createNode(
         props as Partial<INodeProps> & Partial<IRendererNodeProps>,
       );
-
-      if (node._hasRenderedChildren) {
-        node._hasRenderedChildren = false;
-
-        for (const child of node.children) {
-          if (isElementNode(child) && isINode(child.lng)) {
-            child.lng.parent = node.lng as INode;
-          }
-        }
-      }
     }
 
     node.rendered = true;
@@ -1769,12 +1759,19 @@ export class ElementNode {
 
     if (node._type === NodeType.Element) {
       // only element nodes will have children that need rendering
+      // Children rendered before this node (moved in) are reparented here,
+      // in children order with the new ones (B19: v2 draws in that order).
+      const reparent = node._hasRenderedChildren === true;
+      node._hasRenderedChildren = false;
       const numChildren = node.children.length;
       for (let i = 0; i < numChildren; i++) {
         const c = node.children[i];
         if (isDev) assertTruthy(c, 'Child is undefined');
         // Text elements sneak in from Solid creating tracked nodes
         if (isElementNode(c)) {
+          if (reparent && isINode(c.lng)) {
+            c.lng.parent = node.lng as INode;
+          }
           c.render();
         }
       }

@@ -156,3 +156,32 @@ v.test(
     dispose();
   },
 );
+
+v.test(
+  'a parent rendered after it got rendered and new children draws them in order',
+  () => {
+    let host!: ElementNode;
+    let moved!: ElementNode;
+    const dispose = render(() => (
+      <view ref={host} width={300} height={100}>
+        <view ref={moved} id="moved" width={10} height={10} />
+      </view>
+    ));
+    const fresh = new ElementNode('view');
+    fresh.id = 'fresh';
+    const [n1, n2] = ['n1', 'n2'].map((id) => {
+      const n = new ElementNode('view');
+      n.id = id;
+      return n;
+    }) as [ElementNode, ElementNode];
+    fresh.insertChild(n1);
+    fresh.insertChild(moved);
+    fresh.insertChild(n2);
+    host.insertChild(fresh);
+    fresh.render(true);
+    v.expect(ids(fresh)).toEqual(['n1', 'moved', 'n2']);
+    v.expect(drawn(fresh)).toEqual(expected(fresh));
+    v.expect(drawn(host)).toEqual(['fresh']);
+    dispose();
+  },
+);
