@@ -66,23 +66,6 @@ interface HandlerNames {
 const mappedHandlerNames = new Map<string, HandlerNames>();
 const unmappedHandlerNames = new Map<string, HandlerNames>();
 
-// The first event of a key builds its names; dispatch looks them up itself
-// and calls this only then (a module function with one call site on every
-// event would be a closure per event under terser's default reduce_funcs).
-const internHandlerNames = (
-  mappedEvent: string | undefined,
-  base: string,
-): HandlerNames => {
-  const names: HandlerNames = {
-    on: mappedEvent ? 'on' + base : undefined,
-    onRelease: mappedEvent ? 'on' + base + 'Release' : undefined,
-    onCapture: 'onCapture' + base,
-    onCaptureRelease: 'onCapture' + base + 'Release',
-  };
-  (mappedEvent ? mappedHandlerNames : unmappedHandlerNames).set(base, names);
-  return names;
-};
-
 let needFocusDebugStyles = true;
 const addFocusDebug = (
   prevFocusPath: ElementNode[],
@@ -413,16 +396,22 @@ const propagateKeyPress = (
   const fp = focusPath();
   if (fp.length === 0) return false;
 
-  // The handler prop names for this key. The lookup, the two phases and
-  // the key above are written out here, not in helpers: each would have
-  // this one call site, which terser's default reduce_funcs turns into a
-  // closure per event.
+  // The handler prop names for this key, built at its first event. This,
+  // the two phases and the key above are written out here, not in helpers:
+  // each would have this one call site, which terser's default reduce_funcs
+  // turns into a closure per event (or, in a cold branch, a function
+  // literal there, which can keep V8's Maglev from unboxing the caller).
   const base = mappedEvent || e.key;
-  let names = (mappedEvent ? mappedHandlerNames : unmappedHandlerNames).get(
-    base,
-  );
+  const cache = mappedEvent ? mappedHandlerNames : unmappedHandlerNames;
+  let names = cache.get(base);
   if (names === undefined) {
-    names = internHandlerNames(mappedEvent, base);
+    names = {
+      on: mappedEvent ? 'on' + base : undefined,
+      onRelease: mappedEvent ? 'on' + base + 'Release' : undefined,
+      onCapture: 'onCapture' + base,
+      onCaptureRelease: 'onCapture' + base + 'Release',
+    };
+    cache.set(base, names);
   }
   // Only a repeat of the same key can be throttled, and only on key-down.
   const checkThrottle = !isUp && sameKey;
