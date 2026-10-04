@@ -97,6 +97,9 @@ const layoutBuckets: Array<Array<ElementNode | undefined>> = [];
 const layoutBucketSize: number[] = [];
 let layoutMaxDepth = -1; // deepest bucket that may hold a node
 let layoutSweepDepth = -1; // bucket the layout phase is on, -1 outside it
+// A node was queued since the layout phase last ran to its end (one that
+// threw leaves it set, so the entries it left run next time).
+let layoutPending = false;
 
 // Text measurement (design 3.4): a `<text>` whose parent lays out is sized by
 // the renderer's synchronous `measure()` before the parent's flex, not by the
@@ -174,11 +177,64 @@ function runPostMutation() {
     elementDeleteCount = 0;
   }
 
-  // Phase 2: layout
+  // Phase 2: layout. Inline, not a function of its own: terser's default
+  // `reduce_funcs` turns a module function with one call site into a
+  // closure per call (as with every helper on this path).
   if (fontWaitingDue === true) {
-    measureFontWaiting();
+    TextMeasure.measureFontWaiting();
   }
-  runLayoutQueue();
+  if (layoutPending === true || textMeasureCount > 0) {
+    measureQueuedTexts();
+    // Start from the deepest bucket there is, so entries a run that threw
+    // left behind are not stranded.
+    layoutMaxDepth = layoutBuckets.length - 1;
+    let textSweeps = 0;
+    while (layoutMaxDepth >= 0) {
+      let depth = layoutMaxDepth;
+      layoutMaxDepth = -1;
+      for (; depth >= 0; depth--) {
+        layoutSweepDepth = depth;
+        const bucket = layoutBuckets[depth]!;
+        // Read the size every time: a run can queue more at this depth.
+        for (let i = 0; i < layoutBucketSize[depth]!; i++) {
+          const node = bucket[i];
+          bucket[i] = undefined;
+          if (node !== undefined && node._layoutQueued === true) {
+            node.updateLayout();
+          }
+        }
+        layoutBucketSize[depth] = 0;
+      }
+      layoutSweepDepth = -1;
+      // Texts the sweep wrote (flex sizing a text, an onLayout): measured
+      // now, so the container of one that resized runs again in another
+      // sweep.
+      if (textMeasureCount > 0 && textSweeps < MAX_TEXT_SWEEPS) {
+        textSweeps++;
+        measureQueuedTexts();
+      }
+    }
+    if (textMeasureCount > 0) {
+      // Not converging: drop the rest (each is measured again at its next
+      // change), or the run its writes scheduled would start over.
+      for (let i = 0; i < textMeasureCount; i++) {
+        const t = textMeasureQueue[i];
+        textMeasureQueue[i] = undefined;
+        if (t !== undefined) {
+          t._text!.due = false;
+        }
+      }
+      textMeasureCount = 0;
+      if (isDev) {
+        console.warn(
+          '[solid] Text sizes did not settle in ' +
+            MAX_TEXT_SWEEPS +
+            ' layout passes (a layout that changes the size of a text it lays out); the rest waits for its next change.',
+        );
+      }
+    }
+    layoutPending = false;
+  }
 
   // Phase 3: focus.  setFocus() may have evaluated forwardFocus pre-render
   // (when no children existed yet); deferredFocusElement re-runs setFocus
@@ -197,6 +253,7 @@ function runPostMutation() {
 function enqueueLayout(node: ElementNode): void {
   if (node._layoutQueued === true) return;
   node._layoutQueued = true;
+  layoutPending = true;
   // The depth in its tree: a removed node's tree ends at it.
   let depth = 0;
   for (
@@ -228,57 +285,6 @@ function enqueueLayout(node: ElementNode): void {
 function queueLayout(node: ElementNode): void {
   enqueueLayout(node);
   schedulePostMutation();
-}
-
-function runLayoutQueue(): void {
-  measureQueuedTexts();
-  // Start from the deepest bucket there is, so entries a run that threw left
-  // behind are not stranded.
-  layoutMaxDepth = layoutBuckets.length - 1;
-  let textSweeps = 0;
-  while (layoutMaxDepth >= 0) {
-    let depth = layoutMaxDepth;
-    layoutMaxDepth = -1;
-    for (; depth >= 0; depth--) {
-      layoutSweepDepth = depth;
-      const bucket = layoutBuckets[depth]!;
-      // Read the size every time: a run can queue more at this depth.
-      for (let i = 0; i < layoutBucketSize[depth]!; i++) {
-        const node = bucket[i];
-        bucket[i] = undefined;
-        if (node !== undefined && node._layoutQueued === true) {
-          node.updateLayout();
-        }
-      }
-      layoutBucketSize[depth] = 0;
-    }
-    layoutSweepDepth = -1;
-    // Texts the sweep wrote (flex sizing a text, an onLayout): measured now,
-    // so the container of one that resized runs again in another sweep.
-    if (textMeasureCount > 0 && textSweeps < MAX_TEXT_SWEEPS) {
-      textSweeps++;
-      measureQueuedTexts();
-    }
-  }
-  if (textMeasureCount > 0) {
-    // Not converging: drop the rest (each is measured again at its next
-    // change), or the run its writes scheduled would start over.
-    for (let i = 0; i < textMeasureCount; i++) {
-      const t = textMeasureQueue[i];
-      textMeasureQueue[i] = undefined;
-      if (t !== undefined) {
-        t._text!.due = false;
-      }
-    }
-    textMeasureCount = 0;
-    if (isDev) {
-      console.warn(
-        '[solid] Text sizes did not settle in ' +
-          MAX_TEXT_SWEEPS +
-          ' layout passes (a layout that changes the size of a text it lays out); the rest waits for its next change.',
-      );
-    }
-  }
 }
 
 /**
@@ -324,55 +330,6 @@ function measureQueuedTexts(): void {
 function fontWaitHeard(): void {
   fontWaitingDue = true;
   schedulePostMutationInFrame();
-}
-
-/**
- * Measures the texts that waited for a font (`_waitForFont`): one whose font
- * is there now stops waiting and, if its size changed, queues its parent; one
- * whose font is still missing waits again.
- */
-function measureFontWaiting(): void {
-  fontWaitingDue = false;
-  const n = fontWaiting.length;
-  // A text whose font is still missing is appended again (_waitForFont),
-  // which must not sweep the list under this loop.
-  measuringFontWaiting = true;
-  try {
-    for (let i = 0; i < n; i++) {
-      const t = fontWaiting[i]!;
-      const m = t._text!;
-      if (m.waiting !== true) {
-        continue; // measured meanwhile
-      }
-      // Off first, so a measure() now queues no `loaded` for it.
-      (t.lng as IRendererTextNode).off('loaded', fontWaitHeard);
-      m.waiting = false;
-      if (t.destroyed === true) {
-        continue;
-      }
-      const parent = t._parent;
-      if (
-        parent === undefined ||
-        t._detached === true ||
-        parent._requiresLayout !== true
-      ) {
-        m.w = NaN;
-        continue;
-      }
-      // Waits again (appended past n) while the font is still missing.
-      if (t._measureText() === true) {
-        enqueueLayout(parent);
-      }
-    }
-  } finally {
-    measuringFontWaiting = false;
-  }
-  // Keep the entries appended meanwhile, without allocating.
-  const length = fontWaiting.length;
-  for (let i = n; i < length; i++) {
-    fontWaiting[i - n] = fontWaiting[i]!;
-  }
-  fontWaiting.length = length - n;
 }
 
 /** Drops the texts that no longer wait for a font (destroyed ones). */
@@ -427,6 +384,58 @@ class TextMeasure {
     this.w = NaN;
     this.h = NaN;
     this.listening = false;
+  }
+
+  /**
+   * Measures the texts that waited for a font (`_waitForFont`): one whose
+   * font is there now stops waiting and, if its size changed, queues its
+   * parent; one whose font is still missing waits again. A method, not a
+   * module function: the post-mutation pass is its one caller, and terser's
+   * default `reduce_funcs` turns such a function into a closure per call.
+   * (Its own: the try would keep that pass from being optimized.)
+   */
+  static measureFontWaiting(): void {
+    fontWaitingDue = false;
+    const n = fontWaiting.length;
+    // A text whose font is still missing is appended again (_waitForFont),
+    // which must not sweep the list under this loop.
+    measuringFontWaiting = true;
+    try {
+      for (let i = 0; i < n; i++) {
+        const t = fontWaiting[i]!;
+        const m = t._text!;
+        if (m.waiting !== true) {
+          continue; // measured meanwhile
+        }
+        // Off first, so a measure() now queues no `loaded` for it.
+        (t.lng as IRendererTextNode).off('loaded', fontWaitHeard);
+        m.waiting = false;
+        if (t.destroyed === true) {
+          continue;
+        }
+        const parent = t._parent;
+        if (
+          parent === undefined ||
+          t._detached === true ||
+          parent._requiresLayout !== true
+        ) {
+          m.w = NaN;
+          continue;
+        }
+        // Waits again (appended past n) while the font is still missing.
+        if (t._measureText() === true) {
+          enqueueLayout(parent);
+        }
+      }
+    } finally {
+      measuringFontWaiting = false;
+    }
+    // Keep the entries appended meanwhile, without allocating.
+    const length = fontWaiting.length;
+    for (let i = n; i < length; i++) {
+      fontWaiting[i - n] = fontWaiting[i]!;
+    }
+    fontWaiting.length = length - n;
   }
 }
 
