@@ -1343,6 +1343,8 @@ export interface ElementNode extends RendererNode, FocusNode {
   _shaderBase?: ShaderBase;
   /** @internal Per border/shadow key in `_undoStyles` (SHADER_BIT), whether its value comes from a state block. */
   _stateShaderBits: number;
+  /** @internal The border/shadow groups (SHADER_BIT) the running state change wrote, for `_applyStates`. */
+  _shaderMask: number;
   _display?: 'flex' | 'block';
   _onLayout?: (this: ElementNode, target: ElementNode) => void;
   _requiresLayout: boolean;
@@ -1831,6 +1833,7 @@ export class ElementNode {
     this._applied = undefined;
     this._shaderBase = undefined;
     this._stateShaderBits = 0;
+    this._shaderMask = 0;
     this._display = undefined;
     this._onLayout = undefined;
     this._requiresLayout = false;
@@ -2499,7 +2502,7 @@ export class ElementNode {
     }
 
     const n = states.length;
-    let count = this._undoCount;
+    const count = this._undoCount;
     if (count === 0) {
       // Nothing to undo: done unless an active state has a block. This runs
       // on every path element of every focus change.
@@ -2512,49 +2515,76 @@ export class ElementNode {
       }
     }
 
-    let keys = this._undoStyles;
-    if (keys === undefined) {
-      keys = this._undoStyles = [];
+    if (this._undoStyles === undefined) {
+      this._undoStyles = [];
     }
-    let applied = this._applied;
-    if (applied === undefined) {
-      applied = this._applied = Object.create(null) as Record<string, unknown>;
+    if (this._applied === undefined) {
+      this._applied = Object.create(null) as Record<string, unknown>;
     }
+    this._applyStates(n);
+  }
+
+  /**
+   * Write the state styles (`_writeStates`), then the border and shadow
+   * groups they touched (`_shaderMask`), even when a setter threw: the
+   * keys applied before the throw keep their effect, as before 1.7 (N6). A
+   * thin wrapper on purpose: Chrome 47's Crankshaft never optimises a
+   * function holding a `try`, so neither `_stateChanged` (every path
+   * element of every focus change) nor the loops hold one.
+   */
+  _applyStates(n: number) {
+    this._shaderMask = 0;
+    try {
+      this._writeStates(n);
+    } finally {
+      const mask = this._shaderMask;
+      if (mask !== 0) {
+        writeShaderGroups(this, mask);
+      }
+    }
+  }
+
+  /**
+   * The state-style loops of `_stateChanged`, for `n` active states. A
+   * border or shadow key's value goes to `_effects` (the getter) and its
+   * group's bit to `_shaderMask`, written by `_applyStates` once after the
+   * loop: an undo of several objects removes them all before anything is
+   * rebuilt, and one change makes one animation per group.
+   * `_stateShaderBits` records whether the key's value comes from a block.
+   */
+  _writeStates(n: number) {
+    const states = this._states!;
+    const keys = this._undoStyles!;
+    const applied = this._applied!;
     const diff = this.rendered;
+    let count = this._undoCount;
+    let mask = 0;
 
     if (n === 0) {
-      // Undo every tracked key, in its order (`transition` too: pinned). A
-      // border or shadow key's fallback goes to `_effects` (the getter), and
-      // its group is recomputed once after the loop (writeShaderGroups),
-      // whether or not the fallback equals the last write: with no state on
-      // the display is the base record (B18, N2). A setter that throws
-      // leaves the keys after it for the next change, as before 1.7, but the
-      // groups of the keys before it are still written (N6).
-      let mask = 0;
-      try {
-        for (let i = 0; i < count; i++) {
-          const key = keys[i]!;
-          const value = styleFallback(this, key);
-          const bit = SHADER_BIT[key];
-          if (!diff || value !== applied[key]) {
-            applied[key] = value;
-            if (bit === undefined) {
-              this[key] = value;
-            } else {
-              (this._effects || (this._effects = {}))[key] = value;
-            }
-          }
-          if (bit !== undefined) {
-            mask |= bit;
+      // Undo every tracked key, in its order (`transition` too: pinned).
+      // Every border or shadow group is recomputed, whether or not the
+      // fallback equals the last write: with no state on the display is the
+      // base record (B18, N2). A setter that throws leaves the keys after it
+      // for the next change, as before 1.7.
+      for (let i = 0; i < count; i++) {
+        const key = keys[i]!;
+        const value = styleFallback(this, key);
+        const bit = SHADER_BIT[key];
+        if (!diff || value !== applied[key]) {
+          applied[key] = value;
+          if (bit === undefined) {
+            this[key] = value;
+          } else {
+            (this._effects || (this._effects = {}))[key] = value;
           }
         }
-        this._undoCount = 0;
-        this._stateShaderBits = 0;
-      } finally {
-        if (mask !== 0) {
-          writeShaderGroups(this, mask);
+        if (bit !== undefined) {
+          mask |= bit;
+          this._shaderMask = mask;
         }
       }
+      this._undoCount = 0;
+      this._stateShaderBits = 0;
       return;
     }
 
@@ -2596,51 +2626,38 @@ export class ElementNode {
     }
     this._undoCount = count;
 
-    // The groups of the border and shadow keys written are recomputed once,
-    // after the loop (writeShaderGroups), from the base record and the
-    // objects the active states give (`_applied`, flagged in
-    // `_stateShaderBits`): an undo of several objects removes them all
-    // before anything is rebuilt, and one change makes one animation per
-    // group. In a `finally`, so that a setter that throws after a border key
-    // does not lose that key's effect (N6), as before 1.7.
+    // `transition` first, so the other keys animate with it (pinned); one
+    // that resolves to undefined is written in its place.
+    for (let i = 0; i < count; i++) {
+      if (keys[i] === 'transition') {
+        const value = resolveStateValue(this, 'transition', states, order);
+        if (value !== undefined && (!diff || value !== applied.transition)) {
+          applied.transition = value;
+          this.transition = value as ElementNode['transition'];
+        }
+        break;
+      }
+    }
     let bits = this._stateShaderBits;
-    let mask = 0;
-    try {
-      // `transition` first, so the other keys animate with it (pinned); one
-      // that resolves to undefined is written in its place.
-      for (let i = 0; i < count; i++) {
-        if (keys[i] === 'transition') {
-          const value = resolveStateValue(this, 'transition', states, order);
-          if (value !== undefined && (!diff || value !== applied.transition)) {
-            applied.transition = value;
-            this.transition = value as ElementNode['transition'];
-          }
-          break;
-        }
+    for (let i = 0; i < count; i++) {
+      const key = keys[i]!;
+      const value = resolveStateValue(this, key, states, order);
+      const bit = SHADER_BIT[key];
+      if (bit !== undefined) {
+        // From a block, or the fallback: then the key adds nothing to the
+        // display (the base record holds the style's object).
+        bits = resolvedFromState ? bits | bit : bits & ~bit;
+        this._stateShaderBits = bits;
       }
-      for (let i = 0; i < count; i++) {
-        const key = keys[i]!;
-        const value = resolveStateValue(this, key, states, order);
-        const bit = SHADER_BIT[key];
-        if (bit !== undefined) {
-          // From a block, or the fallback: then the key adds nothing to the
-          // display (the base record holds the style's object).
-          bits = resolvedFromState ? bits | bit : bits & ~bit;
+      if (!diff || value !== applied[key]) {
+        applied[key] = value;
+        if (bit === undefined) {
+          this[key] = value;
+        } else {
+          (this._effects || (this._effects = {}))[key] = value;
+          mask |= bit;
+          this._shaderMask = mask;
         }
-        if (!diff || value !== applied[key]) {
-          applied[key] = value;
-          if (bit === undefined) {
-            this[key] = value;
-          } else {
-            (this._effects || (this._effects = {}))[key] = value;
-            mask |= bit;
-          }
-        }
-      }
-    } finally {
-      this._stateShaderBits = bits;
-      if (mask !== 0) {
-        writeShaderGroups(this, mask);
       }
     }
   }
