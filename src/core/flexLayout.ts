@@ -17,12 +17,6 @@ const FROM_RECORD = 1; // the main size came from the flexGrow record (B8)
 const GROWN = 2;
 const SHRUNK = 4;
 
-/** A child's resolved `alignSelf || alignItems`. */
-const ALIGN_NONE = 0;
-const ALIGN_START = 1;
-const ALIGN_CENTER = 2;
-const ALIGN_END = 3;
-
 let capacity = 0;
 let childIndex = new Int32Array(0); // slot -> index in node.children
 let order = new Int32Array(0); // layout position -> slot
@@ -40,8 +34,6 @@ let growFactor = new Float64Array(0);
 let shrinkFactor = new Float64Array(0);
 let orderKey = new Float64Array(0);
 let lineStart = new Float64Array(0);
-let mainPos = new Float64Array(0);
-let alignCode = new Uint8Array(0);
 
 function ensureCapacity(n: number): void {
   if (n <= capacity) {
@@ -68,8 +60,6 @@ function ensureCapacity(n: number): void {
   shrinkFactor = new Float64Array(c);
   orderKey = new Float64Array(c);
   lineStart = new Float64Array(c);
-  mainPos = new Float64Array(c);
-  alignCode = new Uint8Array(c);
 }
 
 /** A `padding`/`margin` side from a number or a 2-4 value array. */
@@ -160,6 +150,32 @@ function setPos(c: ElementNode, isX: boolean, v: number): void {
   }
 }
 
+/**
+ * Places child `c` (slot `k`) on the cross axis of a line that starts at
+ * `start` and is `size` long.
+ */
+function alignCross(
+  c: ElementNode,
+  k: number,
+  isRow: boolean,
+  align: string | undefined,
+  start: number,
+  size: number,
+): void {
+  const alignSelf = c.alignSelf || align;
+  if (alignSelf === 'flexStart') {
+    setPos(c, !isRow, start + marginCrossStart[k]!);
+  } else if (alignSelf === 'center') {
+    setPos(
+      c,
+      !isRow,
+      start + (size - crossSize[k]!) / 2 + marginCrossStart[k]!,
+    );
+  } else if (alignSelf === 'flexEnd') {
+    setPos(c, !isRow, start + size - crossSize[k]! - marginCrossEnd[k]!);
+  }
+}
+
 let passDepth = 0;
 
 /**
@@ -201,8 +217,6 @@ function nestedLayout(node: ElementNode): boolean {
   const sShrinkFactor = shrinkFactor;
   const sOrderKey = orderKey;
   const sLineStart = lineStart;
-  const sMainPos = mainPos;
-  const sAlignCode = alignCode;
   capacity = 0;
   passDepth++;
   try {
@@ -226,8 +240,6 @@ function nestedLayout(node: ElementNode): boolean {
     shrinkFactor = sShrinkFactor;
     orderKey = sOrderKey;
     lineStart = sLineStart;
-    mainPos = sMainPos;
-    alignCode = sAlignCode;
   }
 }
 
@@ -376,15 +388,6 @@ function layout(node: ElementNode): boolean {
     growFactor[k] = grow;
     shrinkFactor[k] = flexShrink || 0;
     orderKey[k] = flexOrder || 0;
-    const alignSelf = c.alignSelf || align;
-    alignCode[k] =
-      alignSelf === 'flexStart'
-        ? ALIGN_START
-        : alignSelf === 'center'
-          ? ALIGN_CENTER
-          : alignSelf === 'flexEnd'
-            ? ALIGN_END
-            : ALIGN_NONE;
   }
 
   if (n === 0) {
@@ -581,150 +584,169 @@ function layout(node: ElementNode): boolean {
   // B7: center and flexEnd align inside the padded box, not the full size.
   const crossBox = containerCrossSize - paddingCrossStart - paddingCrossEnd;
 
-  // Main-axis positions go to mainPos; one loop below writes them with the
-  // cross-axis ones.
-  const wrapped = justify === 'flexStart' && wrapping;
-  let placed = true;
   let currentPos = paddingStart;
-  let line = paddingCrossStart; // wrap: the start of the last line
-  let lineSize = 0;
-  if (wrapped) {
-    lineSize = crossSize[order[0]!]!;
-    const crossGap = isRow ? (node.columnGap ?? gap) : (node.rowGap ?? gap);
-    for (let p = 0; p < n; p++) {
-      const k = order[p]!;
-      if (
-        currentPos + totalMain[k]! > containerSize &&
-        currentPos > paddingStart
-      ) {
-        currentPos = paddingStart;
-        line += lineSize + crossGap;
+  if (justify === 'flexStart') {
+    if (wrapping) {
+      const lineSize = crossSize[order[0]!]!;
+      const crossGap = isRow ? (node.columnGap ?? gap) : (node.rowGap ?? gap);
+      let line = paddingCrossStart;
+
+      for (let p = 0; p < n; p++) {
+        const k = order[p]!;
+        if (
+          currentPos + totalMain[k]! > containerSize &&
+          currentPos > paddingStart
+        ) {
+          currentPos = paddingStart;
+          line += lineSize + crossGap;
+        }
+        setPos(
+          children[childIndex[k]!] as ElementNode,
+          isRow,
+          currentPos + marginStart[k]!,
+        );
+        currentPos += totalMain[k]! + gap;
+        lineStart[k] = line;
       }
-      mainPos[k] = currentPos + marginStart[k]!;
-      currentPos += totalMain[k]! + gap;
-      lineStart[k] = line;
+
+      // Each item is aligned from its line's start; center and flexEnd
+      // measure against the container's cross size (B7: less its padding),
+      // as before 1.7. B9: a container with no cross size places its items
+      // too, against the line. B10: wrap-reverse mirrors the lines, so the
+      // first one is at the end.
+      const alignSize = crossAlign ? crossBox : lineSize;
+      for (let p = 0; p < n; p++) {
+        const k = order[p]!;
+        alignCross(
+          children[childIndex[k]!] as ElementNode,
+          k,
+          isRow,
+          align,
+          isWrapReverse
+            ? line + paddingCrossStart - lineStart[k]!
+            : lineStart[k]!,
+          alignSize,
+        );
+      }
+
+      const finalCrossSize = line + lineSize + paddingCrossEnd;
+      if (isRow) {
+        const height = node.height;
+        if (
+          (height !== finalCrossSize || node.transition) &&
+          writeSize(node, false, height, finalCrossSize)
+        ) {
+          node.preFlexheight = height;
+          containerUpdated = true;
+        }
+      } else {
+        const width = node.width;
+        if (
+          (width !== finalCrossSize || node.transition) &&
+          writeSize(node, true, width, finalCrossSize)
+        ) {
+          node.preFlexwidth = width;
+          containerUpdated = true;
+        }
+      }
+    } else {
+      for (let p = 0; p < n; p++) {
+        const k = order[p]!;
+        const c = children[childIndex[k]!] as ElementNode;
+        setPos(c, isRow, currentPos + marginStart[k]!);
+        currentPos += totalMain[k]! + gap;
+        if (crossAlign) {
+          alignCross(c, k, isRow, align, paddingCrossStart, crossBox);
+        }
+      }
     }
-  } else if (justify === 'flexStart') {
-    for (let p = 0; p < n; p++) {
-      const k = order[p]!;
-      mainPos[k] = currentPos + marginStart[k]!;
-      currentPos += totalMain[k]! + gap;
+
+    // Update container size
+    if (node.flexBoundary !== 'fixed' && !wrapping) {
+      let calculatedSize = currentPos - gap + paddingEnd;
+      const minSize = (isRow ? node.minWidth : node.minHeight) || 0;
+      if (calculatedSize < minSize) {
+        calculatedSize = minSize;
+      }
+      const current = nodeMain || 0;
+      if (
+        (calculatedSize !== current || node.transition) &&
+        writeSize(node, isRow, current, calculatedSize)
+      ) {
+        if (isRow) {
+          node.preFlexwidth = containerSize;
+        } else {
+          node.preFlexheight = containerSize;
+        }
+        return true;
+      }
     }
   } else if (justify === 'flexEnd') {
     currentPos = containerSize - paddingEnd;
     for (let p = n - 1; p >= 0; p--) {
       const k = order[p]!;
-      mainPos[k] = currentPos - mainSize[k]! - marginEnd[k]!;
+      const c = children[childIndex[k]!] as ElementNode;
+      setPos(c, isRow, currentPos - mainSize[k]! - marginEnd[k]!);
       currentPos -= totalMain[k]! + gap;
+      if (crossAlign) {
+        alignCross(c, k, isRow, align, paddingCrossStart, crossBox);
+      }
     }
-  } else if (
-    justify === 'center' ||
-    justify === 'spaceBetween' ||
-    justify === 'spaceAround' ||
-    justify === 'spaceEvenly'
-  ) {
-    let space = gap;
-    if (justify === 'center') {
-      // B6: centred inside the padded box.
-      currentPos =
-        (containerSize -
-          paddingStart -
-          paddingEnd -
-          (totalItemSize + gap * (n - 1))) /
-          2 +
-        paddingStart;
-    } else if (justify === 'spaceBetween') {
-      space =
-        n > 1
-          ? (containerSize - totalItemSize - nodePaddingTotal) / (n - 1)
-          : 0;
-    } else if (justify === 'spaceAround') {
-      space = (containerSize - totalItemSize - nodePaddingTotal) / n;
-      currentPos = paddingStart + space / 2;
-    } else {
-      space = (containerSize - totalItemSize - nodePaddingTotal) / (n + 1);
-      currentPos = space + paddingStart;
-    }
-    for (let p = 0; p < n; p++) {
-      const k = order[p]!;
-      mainPos[k] = currentPos + marginStart[k]!;
-      currentPos += totalMain[k]! + space;
-    }
-  } else {
-    placed = false; // an unknown justifyContent places nothing
-  }
-
-  if (placed) {
-    // Cross axis. Wrapped: from each item's line start (B9: also when the
-    // container has no cross size, then against the line; B10: lines
-    // mirrored for wrap-reverse), center and flexEnd against the cross
-    // size less its padding (B7), as before 1.7. Otherwise from the cross
-    // padding, only when the container had a cross size.
-    const alignAll = wrapped || crossAlign;
-    const alignSize = wrapped && !crossAlign ? lineSize : crossBox;
+  } else if (justify === 'center') {
+    // B6: centred inside the padded box.
+    currentPos =
+      (containerSize -
+        paddingStart -
+        paddingEnd -
+        (totalItemSize + gap * (n - 1))) /
+        2 +
+      paddingStart;
     for (let p = 0; p < n; p++) {
       const k = order[p]!;
       const c = children[childIndex[k]!] as ElementNode;
-      setPos(c, isRow, mainPos[k]!);
-      const a = alignCode[k]!;
-      if (alignAll && a !== ALIGN_NONE) {
-        const start = wrapped
-          ? isWrapReverse
-            ? line + paddingCrossStart - lineStart[k]!
-            : lineStart[k]!
-          : paddingCrossStart;
-        setPos(
-          c,
-          !isRow,
-          a === ALIGN_START
-            ? start + marginCrossStart[k]!
-            : a === ALIGN_CENTER
-              ? start + (alignSize - crossSize[k]!) / 2 + marginCrossStart[k]!
-              : start + alignSize - crossSize[k]! - marginCrossEnd[k]!,
-        );
+      setPos(c, isRow, currentPos + marginStart[k]!);
+      currentPos += totalMain[k]! + gap;
+      if (crossAlign) {
+        alignCross(c, k, isRow, align, paddingCrossStart, crossBox);
       }
     }
-  }
-
-  if (wrapped) {
-    const finalCrossSize = line + lineSize + paddingCrossEnd;
-    if (isRow) {
-      const height = node.height;
-      if (
-        (height !== finalCrossSize || node.transition) &&
-        writeSize(node, false, height, finalCrossSize)
-      ) {
-        node.preFlexheight = height;
-        containerUpdated = true;
-      }
-    } else {
-      const width = node.width;
-      if (
-        (width !== finalCrossSize || node.transition) &&
-        writeSize(node, true, width, finalCrossSize)
-      ) {
-        node.preFlexwidth = width;
-        containerUpdated = true;
+  } else if (justify === 'spaceBetween') {
+    const spaceBetween =
+      n > 1 ? (containerSize - totalItemSize - nodePaddingTotal) / (n - 1) : 0;
+    currentPos = paddingStart;
+    for (let p = 0; p < n; p++) {
+      const k = order[p]!;
+      const c = children[childIndex[k]!] as ElementNode;
+      setPos(c, isRow, currentPos + marginStart[k]!);
+      currentPos += totalMain[k]! + spaceBetween;
+      if (crossAlign) {
+        alignCross(c, k, isRow, align, paddingCrossStart, crossBox);
       }
     }
-  } else if (justify === 'flexStart' && node.flexBoundary !== 'fixed') {
-    // Update container size
-    let calculatedSize = currentPos - gap + paddingEnd;
-    const minSize = (isRow ? node.minWidth : node.minHeight) || 0;
-    if (calculatedSize < minSize) {
-      calculatedSize = minSize;
-    }
-    const current = nodeMain || 0;
-    if (
-      (calculatedSize !== current || node.transition) &&
-      writeSize(node, isRow, current, calculatedSize)
-    ) {
-      if (isRow) {
-        node.preFlexwidth = containerSize;
-      } else {
-        node.preFlexheight = containerSize;
+  } else if (justify === 'spaceAround') {
+    const spaceAround = (containerSize - totalItemSize - nodePaddingTotal) / n;
+    currentPos = paddingStart + spaceAround / 2;
+    for (let p = 0; p < n; p++) {
+      const k = order[p]!;
+      const c = children[childIndex[k]!] as ElementNode;
+      setPos(c, isRow, currentPos + marginStart[k]!);
+      currentPos += totalMain[k]! + spaceAround;
+      if (crossAlign) {
+        alignCross(c, k, isRow, align, paddingCrossStart, crossBox);
       }
-      return true;
+    }
+  } else if (justify === 'spaceEvenly') {
+    const spaceEvenly =
+      (containerSize - totalItemSize - nodePaddingTotal) / (n + 1);
+    currentPos = spaceEvenly + paddingStart;
+    for (let p = 0; p < n; p++) {
+      const k = order[p]!;
+      const c = children[childIndex[k]!] as ElementNode;
+      setPos(c, isRow, currentPos + marginStart[k]!);
+      currentPos += totalMain[k]! + spaceEvenly;
+      if (crossAlign) {
+        alignCross(c, k, isRow, align, paddingCrossStart, crossBox);
+      }
     }
   }
 
