@@ -397,6 +397,11 @@ export interface ElementNode extends RendererNode, FocusNode {
   _flexBase?: number;
   /** @internal flexGrow record (B8): the size the last growth wrote. */
   _flexGrown?: number;
+  /** @internal the last x, y, width, height flex wrote with a transition */
+  _flexX?: number;
+  _flexY?: number;
+  _flexW?: number;
+  _flexH?: number;
   /** @internal in the layout queue (queueLayout) */
   _layoutQueued: boolean;
   _hasRenderedChildren?: boolean;
@@ -466,12 +471,10 @@ export interface ElementNode extends RendererNode, FocusNode {
   /**
    * Defines the ability for a flex item to shrink if necessary.
    * Defaults to 0 since existing legacy implementations did not shrink layout boxes.
-   * Only available in NEW flex layout.
    */
   flexShrink?: number;
   /**
    * Defines the default size of an element before the remaining space is distributed.
-   * Only available in NEW flex layout.
    */
   flexBasis?: number | string;
   /**
@@ -885,6 +888,10 @@ export class ElementNode {
     this._containsFlexGrow = undefined;
     this._flexBase = undefined;
     this._flexGrown = undefined;
+    this._flexX = undefined;
+    this._flexY = undefined;
+    this._flexW = undefined;
+    this._flexH = undefined;
     this._hasRenderedChildren = undefined;
     this._effects = undefined;
     this._fontFamily = undefined;

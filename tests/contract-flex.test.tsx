@@ -800,7 +800,10 @@ const cases: FlexCase[] = [
     container: { width: 250, gap: 10, flexWrap: 'wrap' },
     kids: [view(100, 50), view(100, 50), view(100, 50)],
     // B9: before the fix y was never written (both engines), so the wrapped
-    // item overlapped the first line.
+    // item overlapped the first line. With alignItems center or flexEnd,
+    // wrapped items align against the container's cross size, which the pass
+    // then sets to the content: a second pass gives other positions (as
+    // before 1.7, see 'flexWrap + alignItems center').
     expected: res(true, { w: 250, h: 110 }, [
       { x: 0, y: 0, w: 100, h: 50 },
       { x: 110, y: 0, w: 100, h: 50 },
@@ -836,6 +839,30 @@ const cases: FlexCase[] = [
       { x: 120, y: 70, w: 100, h: 50 },
       { x: 10, y: 10, w: 100, h: 50 },
     ]),
+  },
+
+  // --- flexShrink, flexBasis (5.3: flex.ts read neither) -------------------
+  {
+    name: 'flexShrink: overflowing items shrink by shrink x size; the container keeps its width',
+    container: { width: 90, height: 100 },
+    kids: [A({ width: 40, flexShrink: 1 }), B({ flexShrink: 1 })],
+    // 100 wanted, 90 available: 40 - 0.4 * 10, 60 - 0.6 * 10.
+    expected: res(false, { w: 90, h: 100 }, [
+      { x: 0, y: U, w: 36, h: 50 },
+      { x: 36, y: U, w: 54, h: 40 },
+    ]),
+    // flex.ts (default build until 1.7) ignored flexShrink: widths 40 and
+    // 60, x 0 and 40, and the container auto-sized to 100 (returned true).
+  },
+  {
+    name: 'flexBasis: the basis replaces the width for positions; the width itself is not written',
+    container: { width: 300 },
+    kids: [A({ flexBasis: 80 }), B()],
+    expected: res(true, { w: 140, h: U }, [
+      { x: 0, y: U, w: 50, h: 50 },
+      { x: 80, y: U, w: 60, h: 40 },
+    ]),
+    // flex.ts (default build until 1.7) ignored flexBasis: x 0 and 50, w 110.
   },
 
   // --- flexOrder ------------------------------------------------------------
@@ -1040,6 +1067,51 @@ describe('contract: flex props, details', () => {
     expect(node.flexBoundary).toBeUndefined();
     calculateFlex(node);
     expect(node.flexBoundary).toBe('fixed');
+  });
+
+  // 5.3: flex.ts only did this for flexGrow; a container whose items only
+  // have flexShrink gets it too now.
+  it('flexShrink: the container gets flexBoundary "fixed" written onto it', () => {
+    const { node } = build({ width: 300 }, [A({ flexShrink: 1 }), B()]);
+    calculateFlex(node);
+    expect(node.flexBoundary).toBe('fixed');
+  });
+
+  it('a pass started while another runs (an app callback on a write) leaves the outer pass intact', () => {
+    const other = build({ width: 900, gap: 7 }, [
+      view(11, 11),
+      view(13, 13),
+      view(17, 17),
+      view(19, 19),
+    ]);
+    const { node, children } = build({ width: 300, gap: 10 }, [A(), B(), A()]);
+    const first = children[0] as ElementNode;
+    const desc = Object.getOwnPropertyDescriptor(
+      Object.getPrototypeOf(first),
+      'x',
+    )!;
+    let nested = 0;
+    Object.defineProperty(first, 'x', {
+      configurable: true,
+      get: desc.get,
+      set(v: number) {
+        desc.set!.call(this, v);
+        // e.g. onAnimation.animating calling updateLayout on another node
+        nested++;
+        calculateFlex(other.node);
+      },
+    });
+    expect(snapshot(node, children, calculateFlex(node))).toEqual(
+      res(true, { w: 180, h: U }, [
+        { x: 0, y: U, w: 50, h: 50 },
+        { x: 60, y: U, w: 60, h: 40 },
+        { x: 130, y: U, w: 50, h: 50 },
+      ]),
+    );
+    expect(nested).toBe(1);
+    expect(other.children.map((c) => (c as ElementNode).x)).toEqual([
+      0, 18, 38, 62,
+    ]);
   });
 
   // 5.3: flex.ts (default build until 1.7) called console.warn here, in
@@ -1348,100 +1420,72 @@ describe('contract: flex through the renderer', () => {
     dispose();
   });
 
-  it('onLayout: called once after the first flex pass, with this = node and (node) as the only argument, after children are placed', async () => {
-    const calls: Array<{ self: unknown; args: unknown[]; secondX: unknown }> =
-      [];
+  it('transition: a node moved by one layout and back by the next, before its animation advances, is sent back', async () => {
+    const [w, setW] = s.createSignal(50);
+    const [transition, setTransition] = s.createSignal<
+      lng.ElementNode['transition'] | undefined
+    >(undefined);
     let row!: lng.ElementNode;
-    let second!: lng.ElementNode;
+    let moving!: lng.ElementNode;
     const dispose = renderer.render(() => (
-      <view
-        ref={row}
-        display="flex"
-        gap={10}
-        onLayout={function (this: lng.ElementNode, ...args: unknown[]) {
-          calls.push({ self: this, args, secondX: second.x });
-        }}
-      >
-        <view width={50} height={50} />
-        <view ref={second} width={60} height={40} />
+      <view ref={row} display="flex">
+        <view width={w()} height={50} />
+        <view ref={moving} width={50} height={50} transition={transition()} />
       </view>
     ));
     await waitForUpdate();
-    expect(calls).toHaveLength(1);
-    expect(calls[0]!.self).toBe(row);
-    expect(calls[0]!.args).toEqual([row]);
-    expect(calls[0]!.secondX).toBe(60);
+    expect(moving.x).toBe(50);
+    setTransition({ x: { duration: 1000 } });
+    const animate = vi.spyOn(moving, 'animate');
+
+    setW(100);
+    row.updateLayout(); // moving: 50 -> 100, animated; it still reads 50
+    setW(50);
+    row.updateLayout(); // back to 50 before any animation frame
+    // The second layout retargets the animation (before 1.7 every layout
+    // wrote): skipping it because x still reads 50 would leave it on 100.
+    expect(animate.mock.calls.map((c) => c[0])).toEqual([
+      { x: 100 },
+      { x: 50 },
+    ]);
+
+    row.updateLayout(); // nothing moved since: no write, no restart
+    expect(animate).toHaveBeenCalledTimes(2);
     dispose();
   });
 
-  it('onLayout: fires again when a child is added or removed, and on updateLayout() (synchronously)', async () => {
-    const [show, setShow] = s.createSignal(true);
-    let count = 0;
+  it('transition (B8): a grown item with a width transition goes back to its own size when no space is left, before its animation advances', async () => {
+    const [w, setW] = s.createSignal(60);
+    const [transition, setTransition] = s.createSignal<
+      lng.ElementNode['transition'] | undefined
+    >(undefined);
     let row!: lng.ElementNode;
-    let last!: lng.ElementNode;
+    let grow!: lng.ElementNode;
     const dispose = renderer.render(() => (
-      <view ref={row} display="flex" onLayout={() => void count++}>
-        <s.Show when={show()}>
-          <view width={50} height={50} />
-        </s.Show>
-        <view ref={last} width={60} height={40} />
+      <view ref={row} display="flex" width={300} height={50} gap={10}>
+        <view
+          ref={grow}
+          width={50}
+          height={50}
+          flexGrow={1}
+          transition={transition()}
+        />
+        <view width={w()} height={50} />
       </view>
     ));
     await waitForUpdate();
-    expect(count).toBe(1);
-    expect(last.x).toBe(50);
+    expect(grow.width).toBe(230);
+    setTransition({ width: { duration: 1000 } });
+    const animate = vi.spyOn(grow, 'animate');
 
-    setShow(false);
-    await waitForUpdate();
-    expect(count).toBe(2);
-    expect(last.x).toBe(0);
-    expect(row.width).toBe(60);
-
-    row.updateLayout();
-    expect(count).toBe(3);
-    dispose();
-  });
-
-  it('onLayout: fires on a non-flex view with children; never on a view without children', async () => {
-    let withKids = 0;
-    let withoutKids = 0;
-    const dispose = renderer.render(() => (
-      <view>
-        <view onLayout={() => void withKids++}>
-          <view width={10} height={10} />
-        </view>
-        <view onLayout={() => void withoutKids++} />
-      </view>
-    ));
-    await waitForUpdate();
-    expect(withKids).toBe(1);
-    expect(withoutKids).toBe(0);
-    dispose();
-  });
-
-  it('onLayout: a truthy return value queues the parent layout; a falsy one does not', async () => {
-    let parentCount = 0;
-    let returnValue = false;
-    let child!: lng.ElementNode;
-    const dispose = renderer.render(() => (
-      <view display="flex" onLayout={() => void parentCount++}>
-        <view ref={child} width={50} height={50} onLayout={() => returnValue}>
-          <view width={10} height={10} />
-        </view>
-      </view>
-    ));
-    await waitForUpdate();
-    const afterRender = parentCount;
-    expect(afterRender).toBeGreaterThanOrEqual(1);
-
-    child.updateLayout();
-    await waitForUpdate();
-    expect(parentCount).toBe(afterRender);
-
-    returnValue = true;
-    child.updateLayout();
-    await waitForUpdate();
-    expect(parentCount).toBe(afterRender + 1);
+    setW(100);
+    row.updateLayout(); // 230 -> 190, animated; it still reads 230
+    setW(280);
+    row.updateLayout(); // no space left: back to its own 50
+    expect(animate.mock.calls.map((c) => c[0])).toEqual([
+      { w: 190 },
+      { w: 50 },
+    ]);
     dispose();
   });
 
