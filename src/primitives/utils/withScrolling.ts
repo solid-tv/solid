@@ -85,8 +85,9 @@ export function withScrolling(isRow: boolean): Scroller {
       lastSelected === undefined || lastSelected - 1 !== selected;
 
     if (componentRef._screenOffset === undefined) {
-      if (componentRef.parent!.clipping) {
-        const p = componentRef.parent!;
+      // A removed Row/Column has no parent (removeChild clears it).
+      const p = componentRef.parent;
+      if (p !== undefined && p !== null && p.clipping) {
         componentRef.endOffset =
           componentRef.endOffset ??
           screenSize - ((isRow ? p.absX : p.absY) || 0) - p[dimension];
