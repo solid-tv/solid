@@ -201,28 +201,19 @@ not reflow its flex parent) changes nothing.
 
 ### Nodes
 
-- **A removed element's `parent` is `undefined`.**
-  - **What changes:** `parent.removeChild(node)`, and every removal Solid
-    makes, now clears `node.parent`, as the DOM does. Code that read
-    `el.parent` of a node it had removed (a `Preserve`/`KeepAlive` root while
-    hidden, an element dropped by `<Show>`) now gets `undefined` instead of
-    the old parent; `onRemove` handlers still see it.
-  - **Gain:** part of an allocation-free child list: the `spliceItem`
-    allocations (121, 401 and 440 B/op) are gone from virtual-row,
-    virtual-grid and poster-swap.
-  - **Demo app:** the only `.parent` reader is a position walk
-    (`src/pages/KeepAlive.tsx:93`), which runs on live elements, so no change.
-  - **Upgrade step:** keep your own reference to the old parent if you need it.
-- **Events and focus inside a removed subtree stop at its root.**
-  - **What changes:** (a consequence of the entry above.) `emit()` bubbling
-    from an element inside a removed subtree, and a focus path built for an
-    element there (focus stranded in content a `<Show>` or `KeepAlive` took
-    out), used to continue through the stale parent into the live tree. They
-    now stop at the removed root, so handlers above it no longer see them; an
-    app-level `onBack` or `onLeft`, for example. The live tree is unaffected.
-  - **Demo app:** none found.
-  - **Upgrade step:** move focus out of content before removing it (the usual
-    pattern), or handle the key inside the removed content.
+- **A removed element does not lay out its old parent.**
+  - **What changes:** in 1.6, when a removed element that was not yet
+    destroyed changed size (most often a text inside a hidden
+    `Preserve`/`KeepAlive` root finishing its load and resizing that flex
+    root; also a texture or text loading on an element an app removed
+    itself), its old parent's flex layout and `onLayout` ran. Now the old
+    parent is not queued. Its layout result is the same, since the removed
+    element is no longer among its children; only its `onLayout` (and what
+    chains from it, such as a Row's scroll or a Marquee's clip width) runs
+    less often. A removed element still keeps its `parent`, and keys and
+    events from a removed subtree still bubble through it, as in 1.6.
+  - **Demo app:** none found (`onLayout` users lay out live children).
+  - **Upgrade step:** none.
 - **Prop accessors and `TextNode` fields (design 3.6.5, 3.6.6): no
   app-visible change.** The accessor names on `ElementNode.prototype` are the
   same and still non-enumerable; `TextNode` has the same three own fields in
