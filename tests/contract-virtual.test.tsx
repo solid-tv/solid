@@ -493,9 +493,10 @@ v.describe('VirtualRow: window and scroll modes', () => {
         const expected: Record<string, number[]> = {
           plain: [50, 50, 50, 50, 50, 50, 50, 50, 50],
           wrap: [50, 50, 50, 50, 50, 50, 50, 50, 50],
-          // Not constant: an initial `selected` makes the first and fifth
-          // press move the focused item one slot right, with or without
-          // factorScale. A separate bug from before 1.7 (out of scope here).
+          // Not constant, with or without factorScale. The first press moving
+          // the focused item one slot right is a bug from before 1.7 with an
+          // initial `selected` (out of scope here). The fifth press is the
+          // end of the list: the window stops and the focus moves right.
           selected: [50, 280, 280, 280, 280, 510, 510, 510, 510],
         };
         for (const factorScale of [true, false]) {
