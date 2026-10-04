@@ -28,12 +28,7 @@ import {
   logRenderTree,
   isFunction,
 } from './utils.js';
-import {
-  compileBlock,
-  shaderParse,
-  type BlockPlan,
-  type ShaderParse,
-} from './stylePlan.js';
+import { compileBlock, shaderParse, type BlockPlan } from './stylePlan.js';
 import { isDev, SHADERS_ENABLED } from './env.js';
 import { Config, isDomRendererActive } from './config.js';
 import type {
@@ -517,6 +512,18 @@ const gradientShaders = new WeakMap<object, string>();
 
 /** Marks a key a state change tracks but has not written yet. */
 const UNWRITTEN = {};
+
+/**
+ * The border family: the style keys whose objects write the `border-*`
+ * shader props (a `border` write sets all four widths, a side its own).
+ */
+const BORDER_FAMILY: Record<string, boolean | undefined> = {
+  border: true,
+  borderTop: true,
+  borderRight: true,
+  borderBottom: true,
+  borderLeft: true,
+};
 
 /**
  * Append the keys of the `$state` block `block` that `keys` does not hold
@@ -2305,6 +2312,15 @@ export class ElementNode {
     const diff = this.rendered;
     let count = this._undoCount;
 
+    // The border family's keys write one set of shader props. When a change
+    // writes some of the tracked family keys and skips the others as
+    // unchanged, a written one may have overwritten what a skipped one holds
+    // (a `border` sets all four widths): then the family is written again,
+    // every tracked key in tracked order, the order 1.6 wrote the merged
+    // object in, so the later key wins as it did. (The shadow is one key.)
+    let borderKeys = 0;
+    let borderWrites = 0;
+
     if (n === 0) {
       // Undo every tracked key, in its order (`transition` too: pinned), to
       // its base value. A setter that throws leaves the keys after it for
@@ -2312,10 +2328,20 @@ export class ElementNode {
       for (let i = 0; i < count; i++) {
         const key = keys[i]!;
         const value = styleFallback(this, key);
+        const border = BORDER_FAMILY[key] === true;
+        if (border) {
+          borderKeys++;
+        }
         if (!diff || value !== applied[key]) {
           applied[key] = value;
           this[key] = value;
+          if (border) {
+            borderWrites++;
+          }
         }
+      }
+      if (borderWrites !== 0 && borderWrites !== borderKeys) {
+        this._rewriteBorderKeys(count);
       }
       this._undoCount = 0;
       return;
@@ -2374,9 +2400,34 @@ export class ElementNode {
     for (let i = 0; i < count; i++) {
       const key = keys[i]!;
       const value = resolveStateValue(this, key, states, order);
+      const border = BORDER_FAMILY[key] === true;
+      if (border) {
+        borderKeys++;
+      }
       if (!diff || value !== applied[key]) {
         applied[key] = value;
         this[key] = value;
+        if (border) {
+          borderWrites++;
+        }
+      }
+    }
+    if (borderWrites !== 0 && borderWrites !== borderKeys) {
+      this._rewriteBorderKeys(count);
+    }
+  }
+
+  /**
+   * Write every tracked border-family key again, in tracked order, with the
+   * value the state change resolved for it (`_applied`): see `_writeStates`.
+   */
+  _rewriteBorderKeys(count: number) {
+    const keys = this._undoStyles!;
+    const applied = this._applied!;
+    for (let i = 0; i < count; i++) {
+      const key = keys[i]!;
+      if (BORDER_FAMILY[key] === true) {
+        this[key] = applied[key];
       }
     }
   }
@@ -3513,11 +3564,15 @@ export function shaderAccessor<T extends Record<string, any> | number>(
             : {};
       }
       if (radius) {
-        // Into the shader's props only when it changed.
+        // Into the shader's props only when it changed. An animated undo to
+        // no radius animates to 0, which is what 1.6.4 showed: renderer 1.9
+        // made a track for undefined and resolved it to [0, 0, 0, 0];
+        // renderer 2.0 makes no track for undefined.
         if (target === props && value === prev) {
           return;
         }
-        target.radius = value;
+        target.radius =
+          value === undefined && animationSettings !== undefined ? 0 : value;
       } else if (isObject(value)) {
         parseAndAssignShaderProps(key, value, target);
       }

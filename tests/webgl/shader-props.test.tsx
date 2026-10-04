@@ -71,6 +71,9 @@ const nextFrame = () =>
     requestAnimationFrame(() => resolve());
   });
 
+const wait = (ms: number) =>
+  new Promise<void>((resolve) => setTimeout(resolve, ms));
+
 /** Every declared prop of a node's shader, as the shader resolved it. */
 function declaredProps(node: ElementNode): Record<string, unknown> {
   const shader = shaderOf(node);
@@ -539,6 +542,70 @@ v.test(
   },
 );
 
+// Two states whose border objects overlap: 1.6 wrote every key of the merged
+// object on each change, the later key winning. A change that writes one key
+// of the family and leaves another unchanged writes the family again in that
+// order, so a state's own side is not lost to another state's border.
+
+v.test(
+  'M1: a $focus border and borderTop with an $active border: each change shows the merged object, as 1.6',
+  async () => {
+    const { changed, dispose } = await pair({
+      width: 100,
+      height: 100,
+      $focus: { border: { width: 4, color: BLUE }, borderTop: { width: 8 } },
+      $active: { border: { width: 6, color: BLUE } },
+    });
+    changed.states.add('$focus');
+    v.expect(shaderOf(changed).props['border-w']).toEqual([8, 4, 4, 4]);
+    changed.states.add('$active');
+    v.expect(shaderOf(changed).props['border-w']).toEqual([8, 6, 6, 6]);
+    changed.states.remove('$active');
+    v.expect(shaderOf(changed).props['border-w']).toEqual([8, 4, 4, 4]);
+    changed.states.remove('$focus');
+    // No fallback for either key: the undo writes nothing (1.6; B18).
+    v.expect(shaderOf(changed).props['border-w']).toEqual([8, 4, 4, 4]);
+    dispose();
+  },
+);
+
+v.test(
+  'ST2: a $focus border removed while an $active borderTop stays on keeps the top over the base border, as 1.6',
+  async () => {
+    let throwOnApply = true;
+    const { changed, never, dispose } = await pair({
+      width: 100,
+      height: 100,
+      border: { width: 2, color: RED },
+      $focus: {
+        border: { width: 4, color: BLUE },
+        myThrow: 1,
+      } as NodeStyles['$focus'],
+      $active: { borderTop: { width: 8 } },
+    });
+    Object.defineProperty(changed, 'myThrow', {
+      configurable: true,
+      get: () => undefined,
+      set(v: unknown) {
+        if (throwOnApply && v === 1) {
+          throwOnApply = false;
+          throw new Error('boom');
+        }
+      },
+    });
+    v.expect(() => changed.states.add('$focus')).toThrow('boom');
+    v.expect(borderOf(changed)).toEqual([BLUE, [4, 4, 4, 4]]);
+    changed.states.add('$active');
+    v.expect(borderOf(changed)).toEqual([BLUE, [8, 4, 4, 4]]);
+    changed.states.remove('$focus');
+    v.expect(borderOf(changed)).toEqual([RED, [8, 2, 2, 2]]);
+    changed.states.remove('$active');
+    v.expect(borderOf(changed)).toEqual([RED, [2, 2, 2, 2]]);
+    v.expect(declaredProps(changed)).toEqual(declaredProps(never));
+    dispose();
+  },
+);
+
 // Values set through the `shader` prop, written into the shader's props, or
 // mid-animation: a direct write goes over them, as 1.6 wrote it.
 
@@ -661,6 +728,36 @@ v.test(
     changed.borderTop = { width: 6 };
     v.expect(shaderOf(changed).props['border-gap']).toBe(4);
     v.expect(borderOf(changed)).toEqual([RED, [6, 2, 2, 2]]);
+    dispose();
+  },
+);
+
+v.test(
+  'an animated undo of borderRadius shrinks the radius and ends at none, as 1.6.4 did on renderer 1.9',
+  async () => {
+    // 1.6.4's animator made a track for `undefined` and the template
+    // resolved it to [0, 0, 0, 0]; renderer 2.0 makes no track for it, so
+    // the undo animates to 0 explicitly.
+    const anims = watchAnimations();
+    const { changed, never, dispose } = await pair({
+      width: 100,
+      height: 100,
+      border: { width: 2, color: RED },
+      transition: { borderRadius: { duration: 400, easing: 'linear' } },
+      $focus: { borderRadius: 20 },
+    });
+    changed.states.add('$focus');
+    await anims.done();
+    v.expect(shaderOf(changed).props.radius).toEqual([20, 20, 20, 20]);
+    changed.states.remove('$focus');
+    await wait(150);
+    const r = (shaderOf(changed).props.radius as number[])[0]!;
+    v.expect(r).toBeGreaterThan(0);
+    v.expect(r).toBeLessThan(20);
+    await anims.done();
+    v.expect(shaderOf(changed).props.radius).toEqual([0, 0, 0, 0]);
+    v.expect(declaredProps(changed)).toEqual(declaredProps(never));
+    anims.restore();
     dispose();
   },
 );
