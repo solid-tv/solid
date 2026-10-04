@@ -113,15 +113,11 @@ function setSize(c: ElementNode, isWidth: boolean, v: number): void {
   }
 }
 
-// Hands a value to the transition paths below without passing the double as
-// an argument: a second boxed use of it in the small, inlined writers would
-// make TurboFan box it on every call, transition or not.
-const handoff = new Float64Array(2);
-
 /**
  * Writes a size the engine computed, unless `current` (read from the node)
- * is already `v`. Returns whether it wrote. A node with a transition takes
- * writeSizeAnimated.
+ * is already `v` and, with a transition on it (`current` is then the
+ * animated value), `v` is also what this engine last wrote. Returns whether
+ * it wrote. `v` is only boxed on the write path.
  */
 function writeSize(
   c: ElementNode,
@@ -129,72 +125,36 @@ function writeSize(
   current: number,
   v: number,
 ): boolean {
-  if (c.transition) {
-    handoff[0] = current;
-    handoff[1] = v;
-    return writeSizeAnimated(c, isWidth);
-  }
-  if (current === v) {
+  const animated = c.transition
+    ? isWidth
+      ? animates(c, 'w', 'width')
+      : animates(c, 'h', 'height')
+    : false;
+  if (current === v && (!animated || (isWidth ? c._flexW : c._flexH) === v)) {
     return false;
   }
-  setSize(c, isWidth, v);
-  return true;
-}
-
-/**
- * With a transition, the current value is the animated one, not the target:
- * write unless it is the new value and that is also what this engine last
- * wrote. Reads current and new value from `handoff`.
- */
-function writeSizeAnimated(c: ElementNode, isWidth: boolean): boolean {
-  const current = handoff[0]!;
-  const v = handoff[1]!;
-  if (isWidth) {
-    if (animates(c, 'w', 'width')) {
-      if (current === v && c._flexW === v) return false;
+  if (animated) {
+    if (isWidth) {
       c._flexW = v;
-    } else if (current === v) {
-      return false;
+    } else {
+      c._flexH = v;
     }
-  } else if (animates(c, 'h', 'height')) {
-    if (current === v && c._flexH === v) return false;
-    c._flexH = v;
-  } else if (current === v) {
-    return false;
   }
   setSize(c, isWidth, v);
   return true;
 }
 
+/** Writes x or y as writeSize writes a size. */
 function setPos(c: ElementNode, isX: boolean, v: number): void {
-  if (c.transition) {
-    handoff[1] = v;
-    setPosAnimated(c, isX);
-  } else if (isX) {
-    if (c.x !== v) c.x = v;
-  } else if (c.y !== v) {
-    c.y = v;
-  }
-}
-
-/** setPos for a node with a transition (see writeSizeAnimated). */
-function setPosAnimated(c: ElementNode, isX: boolean): void {
-  const v = handoff[1]!;
   if (isX) {
-    if (animates(c, 'x', 'x')) {
-      if (c.x === v && c._flexX === v) return;
-      c._flexX = v;
-    } else if (c.x === v) {
-      return;
-    }
+    const animated = c.transition ? animates(c, 'x', 'x') : false;
+    if (c.x === v && (!animated || c._flexX === v)) return;
+    if (animated) c._flexX = v;
     c.x = v;
   } else {
-    if (animates(c, 'y', 'y')) {
-      if (c.y === v && c._flexY === v) return;
-      c._flexY = v;
-    } else if (c.y === v) {
-      return;
-    }
+    const animated = c.transition ? animates(c, 'y', 'y') : false;
+    if (c.y === v && (!animated || c._flexY === v)) return;
+    if (animated) c._flexY = v;
     c.y = v;
   }
 }
