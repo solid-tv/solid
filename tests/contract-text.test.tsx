@@ -48,6 +48,12 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+// The DOM renderer re-measures a changed text in a microtask and emits
+// `loaded`; the handler queues the flex pass for the post-mutation microtask
+// after that (design 3.4.4), which `waitForUpdate` (a few microtasks) can
+// miss. A macrotask is after both.
+const nextTask = () => new Promise<void>((r) => setTimeout(r, 0));
+
 describe('contract: text children concatenated from several JSX expressions', () => {
   it('static text and several expressions concatenate into el.text and el.lng.text', () => {
     const [name] = s.createSignal('Bob');
@@ -132,24 +138,10 @@ describe('contract: text props reach the renderer node (el.lng)', () => {
     dispose();
   });
 
-  it('contain "width" without a width: maxWidth = parent width - x (marginRight is ignored today)', () => {
-    let t!: lng.ElementNode;
-    const dispose = renderer.render(() => (
-      <view width={800} height={600}>
-        <text ref={t} contain="width" x={100} marginRight={40}>
-          B
-        </text>
-      </view>
-    ));
-    expect(raw(t).maxWidth).toBe(700);
-    expect(raw(t).maxLines).toBe(99);
-    dispose();
-  });
-
-  // BUG: src/core/elementNode.ts:1612 (and :1617 for marginBottom) reads
-  // marginRight from the renderer props bag, where it is never stored (margins
-  // live on the ElementNode), so the subtraction is always 0.
-  it.skip('BUG: contain "width" without a width subtracts marginRight from maxWidth', () => {
+  // B11: before the fix marginRight was read from the renderer props bag,
+  // where it is never stored (margins live on the ElementNode), so the
+  // subtraction was always 0 (maxWidth 700).
+  it('contain "width" without a width: maxWidth = parent width - x - marginRight', () => {
     let t!: lng.ElementNode;
     const dispose = renderer.render(() => (
       <view width={800} height={600}>
@@ -159,6 +151,44 @@ describe('contract: text props reach the renderer node (el.lng)', () => {
       </view>
     ));
     expect(raw(t).maxWidth).toBe(660);
+    expect(raw(t).maxLines).toBe(99);
+    dispose();
+  });
+
+  // B11: the margin array counts as in flex ([top, right, bottom, left]).
+  it('contain "both" without a size: the margin array counts too', () => {
+    let t!: lng.ElementNode;
+    const dispose = renderer.render(() => (
+      <view width={800} height={600}>
+        <text ref={t} contain="both" x={100} y={50} margin={[0, 40, 30, 0]}>
+          B
+        </text>
+      </view>
+    ));
+    expect(raw(t).maxWidth).toBe(660);
+    expect(raw(t).maxHeight).toBe(520);
+    dispose();
+  });
+
+  // B11: as above for marginBottom (maxHeight was 550).
+  it('contain "both" without a size: maxHeight = parent height - y - marginBottom', () => {
+    let t!: lng.ElementNode;
+    const dispose = renderer.render(() => (
+      <view width={800} height={600}>
+        <text
+          ref={t}
+          contain="both"
+          x={100}
+          y={50}
+          marginRight={40}
+          marginBottom={30}
+        >
+          B
+        </text>
+      </view>
+    ));
+    expect(raw(t).maxWidth).toBe(660);
+    expect(raw(t).maxHeight).toBe(520);
     dispose();
   });
 
@@ -224,6 +254,30 @@ describe('contract: text props reach the renderer node (el.lng)', () => {
     expect(raw(withLineHeight).maxHeight).toBe(40);
     expect(withLineHeight.height).toBe(40);
     expect(raw(withFontSize).maxHeight).toBe(30);
+    dispose();
+  });
+
+  // B12: a lineHeight at or below 3 is a multiplier of the font size (as the
+  // renderer reads it). Before the fix maxHeight was the bare multiplier
+  // (1.2 px), so the text was 1.2 px high in flex.
+  it('maxLines={1} with contain and a multiplier lineHeight: maxHeight = lineHeight * fontSize', () => {
+    let t!: lng.ElementNode;
+    const dispose = renderer.render(() => (
+      <view width={800} height={600}>
+        <text
+          ref={t}
+          contain="width"
+          width={300}
+          maxLines={1}
+          lineHeight={1.2}
+          fontSize={30}
+        >
+          E
+        </text>
+      </view>
+    ));
+    expect(raw(t).maxHeight).toBe(36);
+    expect(t.height).toBe(36);
     dispose();
   });
 
@@ -433,7 +487,7 @@ describe('contract: font defaults from Config.fontSettings', () => {
 });
 
 describe('contract: autosize', () => {
-  it('autosize reaches the renderer node; a loaded event on an autosize flex child relays out its parent synchronously', async () => {
+  it('autosize reaches the renderer node; a loaded event on an autosize flex child relays out its parent', async () => {
     let count = 0;
     let row!: lng.ElementNode;
     let auto!: lng.ElementNode;
@@ -457,6 +511,12 @@ describe('contract: autosize', () => {
       type: 'texture',
       dimensions: { w: 120, h: 50 },
     });
+    // Design 3.4.4: the loaded handler queues the parent for the
+    // post-mutation pass (in the renderer frame, between its walks) instead of
+    // laying it out synchronously, so several loads in a frame cost one pass.
+    // Until 1.7 the count was 2 right after emit.
+    expect(count).toBe(1);
+    await waitForUpdate();
     expect(count).toBe(2);
     expect(last.x).toBe(140);
     expect(row.width).toBe(190);
@@ -532,8 +592,8 @@ describe('contract: text in a flex container (DOM renderer)', () => {
     expect(loaded).toEqual([
       [t, t, { type: 'text', dimensions: { w: 50, h: 20 } }],
     ]);
-    // The loaded handler runs the first flex pass and takes the container off
-    // the layout queue, so onLayout fires once.
+    // The loaded handler queues the container, which render() already queued:
+    // one flex pass, so onLayout fires once.
     expect(count).toBe(1);
     dispose();
   });
@@ -581,6 +641,7 @@ describe('contract: text in a flex container (DOM renderer)', () => {
       mockTextMeasure();
       fontsReady();
       await waitForUpdate();
+      await nextTask();
       expect(raw(t).loaded).toBe(true);
       expect(t.width).toBe(50);
       expect(last.x).toBe(60);
@@ -616,6 +677,7 @@ describe('contract: text in a flex container (DOM renderer)', () => {
     expect(t.text).toBe('Hello world');
     expect(last.x).toBe(60); // stale until the renderer re-measures
     await waitForUpdate();
+    await nextTask();
     expect(t.width).toBe(110);
     expect(last.x).toBe(120);
     expect(row.width).toBe(170);
@@ -708,7 +770,7 @@ describe('contract: text in a flex container (DOM renderer)', () => {
     dispose();
   });
 
-  it('flexGrow next to a text (docs example): the grow item takes the rest; it never shrinks back when the text grows', async () => {
+  it('flexGrow next to a text (docs example): the grow item takes the rest and follows the text size', async () => {
     mockTextMeasure();
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const [label, setLabel] = s.createSignal('Flex Grow');
@@ -727,42 +789,23 @@ describe('contract: text in a flex container (DOM renderer)', () => {
     expect(grow.width).toBe(490);
     expect(row.width).toBe(600);
 
-    // Today the grown width is the item's base on the next pass, so it keeps
-    // 490 and the row overflows (200 + 490 = 690 > 600).
+    // B8: the grow item shrinks to 600 - 180 - 20 = 400. Before the fix the
+    // grown width was the item's base on the next pass, so it kept 490 and
+    // the row overflowed (200 + 490 = 690 > 600).
     setLabel('Flex Grow Longer!!');
     await waitForUpdate();
+    await nextTask();
     expect(t.width).toBe(180);
     expect(grow.x).toBe(200);
-    expect(grow.width).toBe(490);
+    expect(grow.width).toBe(400);
 
     // A shorter text lets it grow again.
     setLabel('Flex');
     await waitForUpdate();
+    await nextTask();
     expect(grow.x).toBe(60);
     expect(grow.width).toBe(540);
     expect(warn).not.toHaveBeenCalled();
-    dispose();
-  });
-
-  // BUG: flexGrow should be computed from the item's own size each pass, so
-  // the grow item shrinks to 600 - 180 - 20 = 400 when the text grows.
-  // flex.ts:146 / flexLayout.ts:199 add the free space to the current
-  // (already grown) width.
-  it.skip('BUG: a flexGrow item shrinks back when a text sibling grows', async () => {
-    mockTextMeasure();
-    const [label, setLabel] = s.createSignal('Flex Grow');
-    let grow!: lng.ElementNode;
-    const dispose = renderer.render(() => (
-      <view width={600} display="flex" gap={20} height={42}>
-        <text>{label()}</text>
-        <view ref={grow} flexGrow={1} height={4} />
-      </view>
-    ));
-    await waitForUpdate();
-    setLabel('Flex Grow Longer!!');
-    await waitForUpdate();
-    expect(grow.x).toBe(200);
-    expect(grow.width).toBe(400);
     dispose();
   });
 });
