@@ -420,6 +420,36 @@ describe('contract: font defaults from Config.fontSettings', () => {
     dispose();
   });
 
+  // B17 follow-up: a $focus fontWeight undone on blur, on a text whose family
+  // comes from Config.fontSettings, wrote no family at all (`undefined`,
+  // which renderer v2 turns into 'sans-serif'); before 1.7 it wrote
+  // "<family>undefined". Either way the font was lost.
+  it('a $focus fontWeight undone on blur gives back the Config family (B17)', async () => {
+    let a!: lng.ElementNode;
+    let b!: lng.ElementNode;
+    const dispose = renderer.render(() => (
+      <view>
+        <text ref={a} style={{ $focus: { fontWeight: 'bold' } }}>
+          a
+        </text>
+        <text ref={b}>b</text>
+      </view>
+    ));
+    const family = raw(a).fontFamily;
+    expect(family).toBe(lng.Config.fontSettings.fontFamily);
+
+    a.setFocus();
+    await waitForUpdate();
+    expect(a.states.has('$focus')).toBe(true);
+    expect(raw(a).fontFamily).toBe(`${family}700`);
+
+    b.setFocus();
+    await waitForUpdate();
+    expect(a.states.has('$focus')).toBe(false);
+    expect(raw(a).fontFamily).toBe(family);
+    dispose();
+  });
+
   it('Config.fontSettings is read once, at the first text render: later changes are ignored', () => {
     // Documented at src/core/elementNode.ts (font template comment):
     // fontSettings is expected to be set at app startup and not change.
