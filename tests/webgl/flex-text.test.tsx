@@ -3,8 +3,9 @@
  *
  * Runs in Vitest browser mode (headless Chromium through Playwright, WebGL
  * on SwiftShader) against @solidtv/renderer with SDF text, not the DOM
- * renderer: SDF measurement differs from the DOM's, and text sizes arrive
- * through the renderer's `loaded` event, so these numbers only hold here.
+ * renderer: SDF measurement differs from the DOM's, and text sizes come from
+ * the renderer's `TextNode.measure()` (its `loaded` event while a font is
+ * missing), so these numbers only hold here.
  *
  *   pnpm test:webgl
  *   npx vitest run --config=vitest.webgl.config.ts
@@ -25,10 +26,11 @@
  * engines summed child sizes in Float32Arrays, so arm B's positions carry
  * float32 rounding (109.70999908 for 109.71); 1.7 sums in Float64Arrays.
  *
- * Only final states are asserted. Intermediate ones (a container before its
- * texts have sizes, the number of frames, walks, `loaded` events and flex
- * passes) are printed with console.info for information: a rewrite may
- * change them. Add `--reporter=verbose` if the reporter hides them.
+ * Final states are asserted, and from 1.7 (stream T, text measured before
+ * the frame) the walks per drawn frame and flex passes of a text change.
+ * Other intermediate ones (a container before its texts have sizes, the
+ * number of frames and `loaded` events) are printed with console.info for
+ * information. Add `--reporter=verbose` if the reporter hides them.
  */
 import * as v from 'vitest';
 import * as s from 'solid-js';
@@ -64,6 +66,27 @@ const info = (...args: unknown[]) =>
 
 // Lato at the default size 30: a line is 43.2 high.
 const LINE_30 = 43.2;
+
+/**
+ * Runs `change`, waits for the layout to settle, and returns the walks of
+ * every frame the renderer drew meanwhile (`updateIterations` after each
+ * `update()`): 1 unless a write landed between a frame's walks.
+ */
+async function walksPerFrame(change: () => void): Promise<number[]> {
+  const walks: number[] = [];
+  const update = renderer.update;
+  renderer.update = function (this: typeof renderer) {
+    update.call(this);
+    walks.push(this.updateIterations);
+  };
+  try {
+    change();
+    await settle();
+  } finally {
+    delete (renderer as { update?: unknown }).update;
+  }
+  return walks;
+}
 
 v.test('a row of text children with gap and padding', async () => {
   let row!: ElementNode;
@@ -339,6 +362,9 @@ v.test(
     ));
     await settle();
     info('3 texts, first render: flex passes on the row', flexPasses);
+    // The app's listener hears the first layout, once (1.7: the layout
+    // measure() makes before the frame; the walk reuses it).
+    v.expect(loaded).toBe(1);
 
     expectBox(prev, 0, 0, 61.11, LINE_30);
     expectBox(middle, 81.11, 0, 72.54, LINE_30); // 61.11 + 20
@@ -349,13 +375,20 @@ v.test(
       loaded = 0;
       flexPasses = 0;
       const f0 = frameCount();
-      setLabel(text);
-      await settle();
+      const walks = await walksPerFrame(() => setLabel(text));
       info(
         `text change to "${text}": frames ${frameCount() - f0},` +
-          ` walks in the last frame ${renderer.updateIterations},` +
+          ` walks per drawn frame ${JSON.stringify(walks)},` +
           ` loaded events ${loaded}, flex passes on the row ${flexPasses}`,
       );
+      // 1.7 (stream T): Solid measures the text before the frame, so the
+      // frame walks once (arm B: 2, the flex of `loaded` wrote between the
+      // walks), the row is laid out once, and the app's listener hears the
+      // one layout once.
+      v.expect(walks.length).toBeGreaterThan(0);
+      v.expect(walks.every((w) => w === 1)).toBe(true);
+      v.expect(flexPasses).toBe(1);
+      v.expect(loaded).toBe(1);
     };
 
     await measure('A much longer label');
@@ -614,7 +647,7 @@ v.test(
 );
 
 v.test(
-  'text in a row hidden with alpha 0 lays out when the row is shown',
+  'text in a row hidden with alpha 0 is laid out while hidden (5.2), and the row shown in one walk',
   async () => {
     const [alpha, setAlpha] = s.createSignal(0);
     let row!: ElementNode;
@@ -628,25 +661,289 @@ v.test(
       </view>
     ));
     await settle();
-    info(
-      'under alpha 0: row',
-      [row.width, row.height],
-      'texts',
-      [one, two].map((t) => [t.x, t.width, t.height]),
-    );
+    // 5.2 (1.7): text under a culled ancestor is measured at mount, so the
+    // row is laid out while hidden (arm B left it unlaid until shown).
+    expectBox(one, 0, 0, 56.34, LINE_30);
+    expectBox(two, 66.34, 0, 55.26, LINE_30);
+    expectBox(row, 0, 0, 121.6, LINE_30);
 
     const f0 = frameCount();
-    setAlpha(1);
-    await settle();
+    const walks = await walksPerFrame(() => setAlpha(1));
     info(
       `shown: frames ${frameCount() - f0},` +
-        ` walks in the last frame ${renderer.updateIterations}`,
+        ` walks per drawn frame ${JSON.stringify(walks)}`,
     );
+    // Nothing is left to lay out when it is shown: one walk.
+    v.expect(walks.every((w) => w === 1)).toBe(true);
 
     expectBox(one, 0, 0, 56.34, LINE_30);
     expectBox(two, 66.34, 0, 55.26, LINE_30); // 56.34 + 10
     expectBox(row, 0, 0, 121.6, LINE_30);
 
     dispose();
+  },
+);
+
+v.test(
+  'texts changed in nested flex containers: one walk per drawn frame, each container laid out once',
+  async () => {
+    const [n, setN] = s.createSignal(0);
+    const DATA = [
+      { title: 'First title', year: '2001', rating: 'PG', cast: 'Ann, Bob' },
+      {
+        title: 'A second, longer title',
+        year: '1999',
+        rating: 'TV-MA',
+        cast: 'Cy',
+      },
+    ];
+    const item = () => DATA[n() % 2]!;
+    const passes: string[] = [];
+    let panel!: ElementNode;
+    let meta!: ElementNode;
+    let badge!: ElementNode;
+    let cast!: ElementNode;
+
+    const dispose = render(() => (
+      <view
+        ref={panel}
+        display="flex"
+        flexDirection="column"
+        gap={10}
+        onLayout={() => void passes.push('panel')}
+      >
+        <text>{item().title}</text>
+        <view
+          ref={meta}
+          display="flex"
+          gap={14}
+          onLayout={() => void passes.push('meta')}
+        >
+          <text>{item().year}</text>
+          <view
+            ref={badge}
+            display="flex"
+            padding={6}
+            onLayout={() => void passes.push('badge')}
+          >
+            <text fontSize={20}>{item().rating}</text>
+          </view>
+        </view>
+        <text ref={cast}>{item().cast}</text>
+      </view>
+    ));
+    await settle();
+    const before = {
+      badge: badge.width,
+      meta: meta.width,
+      panel: panel.height,
+      cast: cast.y,
+    };
+
+    passes.length = 0;
+    const walks = await walksPerFrame(() => setN(1));
+    info(
+      `nested change: walks per drawn frame ${JSON.stringify(walks)},` +
+        ` flex passes ${JSON.stringify(passes)}`,
+    );
+    v.expect(walks.length).toBeGreaterThan(0);
+    v.expect(walks.every((w) => w === 1)).toBe(true);
+    // Deepest first, each once (the title row does not hold the panel's
+    // width: a column fills its parent).
+    v.expect(passes).toEqual(['badge', 'meta', 'panel']);
+    v.expect(badge.width).not.toBe(before.badge);
+    v.expect(meta.width).not.toBe(before.meta);
+
+    passes.length = 0;
+    await walksPerFrame(() => setN(2));
+    // Back to the first item: the same sizes as at mount.
+    v.expect(badge.width).toBeCloseTo(before.badge, 3);
+    v.expect(meta.width).toBeCloseTo(before.meta, 3);
+    v.expect(panel.height).toBeCloseTo(before.panel, 3);
+    v.expect(cast.y).toBeCloseTo(before.cast, 3);
+    v.expect(passes).toEqual(['badge', 'meta', 'panel']);
+
+    dispose();
+  },
+);
+
+v.test(
+  'text in a flex row out of bounds is laid out while out of bounds (5.2)',
+  async () => {
+    let row!: ElementNode;
+    let one!: ElementNode;
+    let two!: ElementNode;
+
+    // A fixed size, so the row has an area entirely past the bounds margin.
+    const dispose = render(() => (
+      <view
+        ref={row}
+        display="flex"
+        flexBoundary="fixed"
+        gap={10}
+        x={3000}
+        width={400}
+        height={50}
+      >
+        <text ref={one}>One</text>
+        <text ref={two}>Two</text>
+      </view>
+    ));
+    await settle();
+
+    expectBox(one, 0, 0, 56.34, LINE_30);
+    expectBox(two, 66.34, 0, 55.26, LINE_30);
+    v.expect([row.x, row.width]).toEqual([3000, 400]);
+
+    dispose();
+  },
+);
+
+v.test(
+  'text under hidden and out-of-bounds flex rows, rendered before its font loads, is laid out when the font loads',
+  async () => {
+    let hidden!: ElementNode;
+    let away!: ElementNode;
+    const texts: ElementNode[] = [];
+
+    // A family nothing has loaded yet; no walk visits these texts.
+    const dispose = render(() => (
+      <>
+        <view ref={hidden} display="flex" gap={10} alpha={0}>
+          <text ref={texts[0]} fontFamily="LatoCulled">
+            One
+          </text>
+          <text ref={texts[1]} fontFamily="LatoCulled">
+            Two
+          </text>
+        </view>
+        <view ref={away} display="flex" gap={10} x={3000}>
+          <text ref={texts[2]} fontFamily="LatoCulled">
+            One
+          </text>
+          <text ref={texts[3]} fontFamily="LatoCulled">
+            Two
+          </text>
+        </view>
+      </>
+    ));
+    await settle();
+    info(
+      'culled, before the font: rows',
+      [hidden.width, away.width],
+      'texts',
+      texts.map((t) => [t.x, t.width]),
+    );
+
+    await loadFonts([latoFont('LatoCulled')]);
+    await settle();
+
+    // Still hidden and out of bounds, laid out as when shown.
+    expectBox(texts[0]!, 0, 0, 56.34, LINE_30);
+    expectBox(texts[1]!, 66.34, 0, 55.26, LINE_30);
+    expectBox(hidden, 0, 0, 121.6, LINE_30);
+    expectBox(texts[2]!, 0, 0, 56.34, LINE_30);
+    expectBox(texts[3]!, 66.34, 0, 55.26, LINE_30);
+    expectBox(away, 3000, 0, 121.6, LINE_30);
+
+    dispose();
+  },
+);
+
+v.test('flex writing a text child’s width settles', async () => {
+  let minRow!: ElementNode;
+  let minText!: ElementNode;
+  let minAfter!: ElementNode;
+  let shrinkRow!: ElementNode;
+  let shrinkText!: ElementNode;
+  let shrinkAfter!: ElementNode;
+  let shrinkPasses = 0;
+
+  const dispose = render(() => (
+    <>
+      <view ref={minRow} display="flex" gap={10}>
+        <text ref={minText} minWidth={200}>
+          Hi
+        </text>
+        <text ref={minAfter}>After</text>
+      </view>
+      <view
+        ref={shrinkRow}
+        display="flex"
+        flexBoundary="fixed"
+        width={300}
+        y={200}
+        onLayout={() => void shrinkPasses++}
+      >
+        <text ref={shrinkText} flexShrink={1}>
+          A text too long for its row
+        </text>
+        <view ref={shrinkAfter} width={100} height={20} />
+      </view>
+    </>
+  ));
+  // settle() throws if the layout does not settle in 300 frames.
+  await settle();
+  info(
+    'flex-written text widths: min',
+    [minText.width, minText.height],
+    'shrink',
+    [shrinkText.width, shrinkText.height, shrinkText.lng.w],
+    'row',
+    [shrinkRow.width, shrinkRow.height],
+    'passes',
+    shrinkPasses,
+  );
+
+  // minWidth: the flex write sets the text's width (its maxWidth).
+  expectBox(minText, 0, 0, 200, LINE_30);
+  expectBox(minAfter, 210, 0, 69.51, LINE_30); // 200 + 10
+  // flexShrink: the text takes what the view leaves (300 - 100), which wraps
+  // it onto two lines; the row then takes the two lines' height. Two passes:
+  // the one that shrank the text, and one after it was measured again.
+  expectBox(shrinkText, 0, 0, 200, 2 * LINE_30);
+  v.expect(shrinkText.lng.w).toBeCloseTo(191.01, 3); // the longer line
+  v.expect(shrinkAfter.x).toBeCloseTo(200, 3);
+  v.expect(shrinkRow.width).toBe(300);
+  v.expect(shrinkRow.height).toBeCloseTo(2 * LINE_30, 3);
+  v.expect(shrinkPasses).toBe(2);
+
+  dispose();
+});
+
+v.test(
+  'a text layout Solid did not measure (a raw renderer write) warns in development',
+  async () => {
+    const warn = v.vi.spyOn(console, 'warn').mockImplementation(() => {});
+    let row!: ElementNode;
+    let t!: ElementNode;
+    const [label, setLabel] = s.createSignal('Short');
+    try {
+      const dispose = render(() => (
+        <view ref={row} display="flex" gap={10}>
+          <text ref={t}>{label()}</text>
+          <text>After</text>
+        </view>
+      ));
+      await settle();
+      // Writes through Solid are measured: no warning.
+      setLabel('A longer label');
+      await settle();
+      v.expect(warn).not.toHaveBeenCalled();
+
+      // A layout prop written on the renderer node bypasses Solid.
+      (t.lng as unknown as { text: string }).text = 'Bypassed Solid';
+      await settle();
+      if (import.meta.env.DEV) {
+        v.expect(warn).toHaveBeenCalledTimes(1);
+        v.expect(String(warn.mock.calls[0]![0])).toContain('measure');
+      } else {
+        v.expect(warn).not.toHaveBeenCalled();
+      }
+      void row;
+      dispose();
+    } finally {
+      warn.mockRestore();
+    }
   },
 );

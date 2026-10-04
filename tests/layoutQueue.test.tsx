@@ -4,9 +4,13 @@
  * Within one post-mutation run, flex containers are laid out deepest first,
  * each at most once unless a child's size changed after its pass; a
  * container queues its parent only when its own size changed. The run is
- * scheduled as a microtask; only a `loaded` handler (the text fallback until
- * Solid measures text itself) also asks the renderer to run it inside the
- * frame, between its walks.
+ * scheduled as a microtask; only a `loaded` handler (an autosize node's, or
+ * a text's while its font loads: Solid measures text itself from 1.7) also
+ * asks the renderer to run it inside the frame, between its walks.
+ *
+ * The `loaded` cases use an autosize view: until stream T a text's size
+ * reached flex through `loaded` too (tests/contract-text.test.tsx has the
+ * text cases now).
  *
  * DOM renderer (jsdom) with the text measurement mocked as in
  * contract-text.test.tsx: 10px per character, 20px per line.
@@ -177,13 +181,12 @@ describe('layout queue', () => {
   });
 
   it('a loaded event that reports an unchanged size does not lay the container out again', async () => {
-    mockTextMeasure();
     let count = 0;
     let t!: lng.ElementNode;
     let last!: lng.ElementNode;
     const dispose = renderer.render(() => (
       <view display="flex" gap={10} onLayout={() => void count++}>
-        <text ref={t}>Hello</text>
+        <view ref={t} autosize width={50} height={20} />
         <view ref={last} width={50} height={50} />
       </view>
     ));
@@ -192,7 +195,7 @@ describe('layout queue', () => {
     count = 0;
 
     emitter(t).emit('loaded', {
-      type: 'text',
+      type: 'texture',
       dimensions: { w: 50, h: 20 },
     });
     await settle();
@@ -201,13 +204,12 @@ describe('layout queue', () => {
   });
 
   it('a loaded event that reports a new size lays the container out in the post-mutation pass', async () => {
-    mockTextMeasure();
     let count = 0;
     let t!: lng.ElementNode;
     let last!: lng.ElementNode;
     const dispose = renderer.render(() => (
       <view display="flex" gap={10} onLayout={() => void count++}>
-        <text ref={t}>Hello</text>
+        <view ref={t} autosize width={50} height={20} />
         <view ref={last} width={50} height={50} />
       </view>
     ));
@@ -216,7 +218,7 @@ describe('layout queue', () => {
 
     t.lng.w = 80;
     emitter(t).emit('loaded', {
-      type: 'text',
+      type: 'texture',
       dimensions: { w: 80, h: 20 },
     });
     expect(count).toBe(0); // not synchronously
@@ -288,15 +290,14 @@ describe('layout queue: more cases', () => {
     dispose();
   });
 
-  it('a loaded event on a text removed from its container does not throw, and the container stays laid out', async () => {
-    mockTextMeasure();
+  it('a loaded event on an autosize node removed from its container does not throw, and the container stays laid out', async () => {
     const [show, setShow] = s.createSignal(true);
     let t!: lng.ElementNode;
     let last!: lng.ElementNode;
     const dispose = renderer.render(() => (
       <view display="flex" gap={10}>
         <s.Show when={show()}>
-          <text ref={t}>Hello</text>
+          <view ref={t} autosize width={50} height={20} />
         </s.Show>
         <view ref={last} width={50} height={50} />
       </view>
@@ -310,7 +311,7 @@ describe('layout queue: more cases', () => {
     t.lng.w = 90;
     expect(() =>
       emitter(t).emit('loaded', {
-        type: 'text',
+        type: 'texture',
         dimensions: { w: 90, h: 20 },
       }),
     ).not.toThrow();
@@ -383,17 +384,19 @@ describe('post-mutation scheduling', () => {
       let last!: lng.ElementNode;
       const dispose = renderer.render(() => (
         <view display="flex" gap={10}>
-          <text ref={t}>Hello</text>
+          <text>Hi</text>
+          <view ref={t} autosize width={50} height={20} />
           <view ref={last} width={50} height={50} />
         </view>
       ));
       await settle();
-      expect(last.x).toBe(60);
+      expect(last.x).toBe(90); // 20 + 10 + 50 + 10
+      // A text measured by Solid needs no frame either (1.7, stream T).
       expect(reprocess).not.toHaveBeenCalled();
 
       t.lng.w = 80;
       emitter(t).emit('loaded', {
-        type: 'text',
+        type: 'texture',
         dimensions: { w: 80, h: 20 },
       });
       expect(reprocess).toHaveBeenCalledTimes(1);
@@ -401,7 +404,7 @@ describe('post-mutation scheduling', () => {
       // The renderer runs the callback between its walks: the layout lands
       // in the same frame.
       reprocess.mock.calls[0]![0]();
-      expect(last.x).toBe(90);
+      expect(last.x).toBe(120); // 20 + 10 + 80 + 10
       dispose();
     } finally {
       if (saved === undefined) {

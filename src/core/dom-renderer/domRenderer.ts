@@ -1153,6 +1153,32 @@ function updateDOMTextSize(node: DOMText, emitLoaded = true): void {
   }
 }
 
+/**
+ * Whether the text's font is loaded, as `document.fonts.check` says (a
+ * family no font face names counts as loaded: a system font). Without a
+ * FontFaceSet, or for a font string it cannot parse, it is taken as loaded.
+ */
+function isFontLoaded(props: IRendererTextNodeProps): boolean {
+  if (typeof document === 'undefined') {
+    return true;
+  }
+  const fonts = document.fonts as FontFaceSet | undefined;
+  if (
+    fonts === undefined ||
+    fonts === null ||
+    typeof fonts.check !== 'function'
+  ) {
+    return true;
+  }
+  try {
+    return fonts.check(
+      `${props.fontStyle} ${props.fontWeight} ${props.fontSize}px "${props.fontFamily}"`,
+    );
+  } catch {
+    return true;
+  }
+}
+
 function updateDOMTextMeasurements() {
   textNodesToMeasure.forEach((node) => updateDOMTextSize(node));
   textNodesToMeasure.clear();
@@ -1377,6 +1403,11 @@ export class DOMNode extends EventEmitter implements IRendererNode {
     updateNodeParent(this);
     updateNodeStyles(this);
     updateNodeData(this);
+  }
+
+  /** Renderer v2's `Node.destroyed`. */
+  get destroyed(): boolean {
+    return !elMap.has(this);
   }
 
   destroy(): void {
@@ -1922,6 +1953,21 @@ class DOMText extends DOMNode {
     textNodesToMeasure.delete(this);
     containTextNodes.delete(this);
     super.destroy();
+  }
+
+  /**
+   * Renderer v2's `TextNode.measure()`: sizes the text now, synchronously
+   * (`getBoundingClientRect`), when its font is loaded, and returns true.
+   * While it is not (document.fonts.check), returns false and measures
+   * nothing: the async measurement emits `loaded` once it is. False for a
+   * destroyed node too.
+   */
+  measure(): boolean {
+    if (!elMap.has(this) || !isFontLoaded(this.props)) {
+      return false;
+    }
+    updateDOMTextSize(this, false);
+    return true;
   }
 
   get text() {

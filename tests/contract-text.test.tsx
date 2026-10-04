@@ -6,8 +6,11 @@
  * (getBoundingClientRect). Tests that need real sizes install
  * `mockTextMeasure()`: 10px per character, 20px per line, for text divs only.
  * The DOM renderer measures a text once when it is created (synchronously)
- * and again after `document.fonts.ready`, when it emits `loaded`.
- * Real-WebGL text-in-flex is covered elsewhere.
+ * and again after `document.fonts.ready`, when it emits `loaded`. From 1.7
+ * Solid also measures a text in a flex container itself (`measure()`, which
+ * the DOM renderer answers synchronously while `document.fonts.check` says
+ * its font is loaded) before laying the container out.
+ * Real-WebGL text-in-flex is covered elsewhere (tests/webgl/flex-text).
  */
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import * as s from 'solid-js';
@@ -640,7 +643,20 @@ describe('contract: text in a flex container (DOM renderer)', () => {
     dispose();
   });
 
-  it('flex waits for the text size: nothing is placed until the text is measured, then loaded relays out', async () => {
+  // 1.7 (stream T): Solid measures a flex text itself; it waits for
+  // `loaded` (once) only while the text's font is not loaded, which the DOM
+  // renderer reads from document.fonts.check. Until 1.7 every flex text
+  // waited for `loaded`, the font loaded or not.
+  it('flex waits for the text size: nothing is placed until the font loads and the text is measured, then loaded relays out', async () => {
+    const fontSet = document.fonts as unknown as {
+      check: (font: string) => boolean;
+    };
+    const savedCheck = fontSet.check;
+    const checked: string[] = [];
+    fontSet.check = (font: string) => {
+      checked.push(font);
+      return false;
+    };
     const spy = mockTextMeasure();
     // Hold the font-ready measurement and report 0 x 0 until then.
     spy.mockImplementation(
@@ -679,8 +695,14 @@ describe('contract: text in a flex container (DOM renderer)', () => {
       expect(row.width).toBe(0);
       expect(count).toBe(1);
 
+      // The text's font, as CSS reads it.
+      expect(checked[0]).toBe(
+        `normal normal ${lng.Config.fontSettings.fontSize}px "${lng.Config.fontSettings.fontFamily}"`,
+      );
+
       spy.mockRestore();
       mockTextMeasure();
+      fontSet.check = savedCheck;
       fontsReady();
       await waitForUpdate();
       await nextTask();
@@ -691,6 +713,7 @@ describe('contract: text in a flex container (DOM renderer)', () => {
       expect(row.height).toBe(50);
       expect(count).toBe(2);
     } finally {
+      fontSet.check = savedCheck;
       fontsReady();
       fonts.ready = savedReady;
       await waitForUpdate();
@@ -849,5 +872,228 @@ describe('contract: text in a flex container (DOM renderer)', () => {
     expect(grow.width).toBe(540);
     expect(warn).not.toHaveBeenCalled();
     dispose();
+  });
+});
+
+/**
+ * A text size from the text and its font props, as the renderers' layouts
+ * read them: `fontSize / 2` per character plus `letterSpacing` (twice that
+ * in a family named 'Wide'), and a line of `lineHeight || fontSize`, wrapped
+ * at `maxWidth` (contain="width").
+ */
+function mockFontMeasure() {
+  return vi
+    .spyOn(Element.prototype, 'getBoundingClientRect')
+    .mockImplementation(function (this: Element) {
+      const props = (
+        this as unknown as { _node?: { props?: Record<string, unknown> } }
+      )._node?.props;
+      const text = props?.text;
+      let width = 0;
+      let height = 0;
+      if (typeof text === 'string' && props !== undefined) {
+        const size = props.fontSize as number;
+        const wide = props.fontFamily === 'Wide' ? 2 : 1;
+        const char = (size / 2) * wide + (props.letterSpacing as number);
+        const line = (props.lineHeight as number) || size;
+        width = text.length * char;
+        height = line;
+        const max = props.maxWidth as number;
+        if (props.contain === 'width' && max > 0 && width > max) {
+          height = Math.ceil(width / max) * line;
+          width = max;
+        }
+      }
+      return {
+        x: 0,
+        y: 0,
+        top: 0,
+        left: 0,
+        right: width,
+        bottom: height,
+        width,
+        height,
+        toJSON() {},
+      } as DOMRect;
+    });
+}
+
+/** After the post-mutation microtask that a write queued (nothing else). */
+const microtask = () => Promise.resolve();
+
+describe('contract: Solid measures text before flex (1.7, stream T)', () => {
+  it('a text change is measured and laid out in the post-mutation microtask, once', async () => {
+    mockTextMeasure();
+    const [label, setLabel] = s.createSignal('Hello');
+    let count = 0;
+    let t!: lng.ElementNode;
+    let last!: lng.ElementNode;
+    const dispose = renderer.render(() => (
+      <view display="flex" gap={10} onLayout={() => void count++}>
+        <text ref={t}>{label()}</text>
+        <view ref={last} width={50} height={50} />
+      </view>
+    ));
+    await nextTask();
+    expect(last.x).toBe(60);
+    count = 0;
+
+    setLabel('Hello world');
+    expect(last.x).toBe(60); // not synchronously
+    await microtask();
+    // Until 1.7: after the DOM renderer's own re-measure (a timer) and its
+    // `loaded`.
+    expect(t.width).toBe(110);
+    expect(last.x).toBe(120);
+    expect(count).toBe(1);
+    await nextTask();
+    expect(count).toBe(1);
+    dispose();
+  });
+
+  it('updateLayout() right after a text change measures the text first', () => {
+    mockTextMeasure();
+    const [label, setLabel] = s.createSignal('Hello');
+    let row!: lng.ElementNode;
+    let last!: lng.ElementNode;
+    const dispose = renderer.render(() => (
+      <view ref={row} display="flex" gap={10}>
+        <text>{label()}</text>
+        <view ref={last} width={50} height={50} />
+      </view>
+    ));
+    row.updateLayout();
+    expect(last.x).toBe(60);
+
+    setLabel('Hello world');
+    row.updateLayout();
+    expect(last.x).toBe(120);
+    dispose();
+  });
+
+  it('a text change that keeps the measured size lays nothing out', async () => {
+    mockTextMeasure();
+    const [label, setLabel] = s.createSignal('Hello');
+    let count = 0;
+    let last!: lng.ElementNode;
+    const dispose = renderer.render(() => (
+      <view display="flex" gap={10} onLayout={() => void count++}>
+        <text>{label()}</text>
+        <view ref={last} width={50} height={50} />
+      </view>
+    ));
+    await nextTask();
+    count = 0;
+
+    setLabel('World'); // 5 characters, as before
+    await nextTask();
+    expect(count).toBe(0);
+    expect(last.x).toBe(60);
+    dispose();
+  });
+
+  it('every font prop the text layout reads lays the container out again: fontSize, lineHeight, letterSpacing, fontFamily, fontWeight', async () => {
+    mockFontMeasure();
+    const [size, setSize] = s.createSignal(20);
+    const [lineHeight, setLineHeight] = s.createSignal(0);
+    const [spacing, setSpacing] = s.createSignal(0);
+    const [family, setFamily] = s.createSignal('Narrow');
+    let count = 0;
+    let row!: lng.ElementNode;
+    let t!: lng.ElementNode;
+    let last!: lng.ElementNode;
+    const dispose = renderer.render(() => (
+      <view ref={row} display="flex" gap={10} onLayout={() => void count++}>
+        <text
+          ref={t}
+          fontSize={size()}
+          lineHeight={lineHeight()}
+          letterSpacing={spacing()}
+          fontFamily={family()}
+        >
+          Hello
+        </text>
+        <view ref={last} width={50} height={10} />
+      </view>
+    ));
+    await nextTask();
+    expect(last.x).toBe(60); // 5 * 10 + 10
+    expect(row.height).toBe(20);
+
+    const step = async (change: () => void, x: number, height: number) => {
+      count = 0;
+      change();
+      await microtask();
+      expect([last.x, row.height, count]).toEqual([x, height, 1]);
+    };
+    await step(() => setSize(40), 110, 40); // 5 * 20 + 10
+    await step(() => setLineHeight(50), 110, 50);
+    await step(() => setSpacing(2), 120, 50); // 5 * 22 + 10
+    await step(() => setFamily('Wide'), 220, 50); // 5 * 42 + 10
+    // fontWeight renames the family ('Wide700'): no longer wide.
+    await step(() => (t.fontWeight = 'bold'), 120, 50);
+    dispose();
+  });
+
+  it('a maxWidth change on a contained text lays the container out again', async () => {
+    mockFontMeasure();
+    const [width, setWidth] = s.createSignal(300);
+    let count = 0;
+    let row!: lng.ElementNode;
+    let last!: lng.ElementNode;
+    const dispose = renderer.render(() => (
+      <view
+        ref={row}
+        display="flex"
+        flexDirection="column"
+        onLayout={() => void count++}
+      >
+        <text contain="width" maxWidth={width()} fontSize={20}>
+          Hello world, twice
+        </text>
+        <view ref={last} width={50} height={10} />
+      </view>
+    ));
+    await nextTask();
+    expect(last.y).toBe(20); // 18 * 10 = 180: one line of 20
+    count = 0;
+
+    setWidth(100); // two lines
+    await microtask();
+    expect(last.y).toBe(40);
+    expect(count).toBe(1);
+    dispose();
+  });
+
+  it('a new text in a flex container is measured once, in the post-mutation pass, with the writes of its tick; text in a plain view is not measured by Solid', async () => {
+    let first!: lng.ElementNode;
+    const d1 = renderer.render(() => <text ref={first}>a</text>);
+    const proto = Object.getPrototypeOf(first.lng) as { measure(): boolean };
+    d1();
+    const measure = vi.spyOn(proto, 'measure');
+
+    const [label, setLabel] = s.createSignal('Hello');
+    let inFlex!: lng.ElementNode;
+    const d2 = renderer.render(() => (
+      <view display="flex">
+        <text ref={inFlex}>{label()}</text>
+      </view>
+    ));
+    setLabel('Hello again');
+    expect(measure).not.toHaveBeenCalled();
+    await microtask();
+    expect(measure).toHaveBeenCalledTimes(1);
+    expect(measure.mock.contexts[0]).toBe(inFlex.lng);
+    d2();
+
+    measure.mockClear();
+    const d3 = renderer.render(() => (
+      <view>
+        <text>Hello</text>
+      </view>
+    ));
+    await nextTask();
+    expect(measure).not.toHaveBeenCalled();
+    d3();
   });
 });
