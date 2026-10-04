@@ -230,6 +230,35 @@ v.describe('B19: the DOM renderer draws children in children order', () => {
       dispose();
     },
   );
+
+  // As renderer v2: a destroyed child is left alone, a destroyed anchor
+  // appends (its div is gone from the parent's).
+  v.test('DOM renderer insertBefore with a destroyed child or anchor', () => {
+    let parent!: ElementNode;
+    let a!: ElementNode;
+    let b!: ElementNode;
+    const dispose = renderer.render(() => (
+      <view ref={parent} width={300} height={100}>
+        <view ref={a} id="a" width={10} height={10} />
+        <view ref={b} id="b" width={10} height={10} />
+      </view>
+    ));
+    type Insert = {
+      insertBefore: (child: unknown, before: unknown) => void;
+      destroy: () => void;
+    };
+    const lngOf = (el: ElementNode) => el.lng as unknown as Insert;
+    lngOf(a).destroy();
+    lngOf(parent).insertBefore(lngOf(a), null);
+    v.expect(painted(parent)).toEqual(['b']);
+    v.expect(listed(parent)).toEqual(['b']);
+    v.expect(() =>
+      lngOf(parent).insertBefore(lngOf(b), lngOf(a)),
+    ).not.toThrow();
+    v.expect(painted(parent)).toEqual(['b']);
+    v.expect(listed(parent)).toEqual(['b']);
+    dispose();
+  });
 });
 
 v.describe('child list', () => {
