@@ -61,7 +61,7 @@ Stores the currently focused element. If the element is already active, it does 
 
 ### `restoreFocus(): boolean`
 
-Restores focus to the last stored element and removes it from the stack.
+Restores focus to the last stored element and removes it from the stack. Elements destroyed since they were stored are removed and skipped, so focus goes to the most recent element that still exists.
 
 - Returns `true` if focus was successfully restored, otherwise `false`.
 

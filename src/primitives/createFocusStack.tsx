@@ -14,7 +14,7 @@
  *
  * Functions:
  * - `storeFocus(element: ElementNode, prevElement?: ElementNode)`: Stores the provided element in the focus stack.
- * - `restoreFocus()`: Restores focus to the last stored element and removes it from the stack. Returns `true` if successful, `false` otherwise.
+ * - `restoreFocus()`: Restores focus to the last stored element and removes it from the stack, skipping (and removing) destroyed elements. Returns `true` if successful, `false` otherwise.
  * - `clearFocusStack()`: Empties the focus stack.
  */
 import * as s from 'solid-js';
@@ -41,7 +41,11 @@ export function FocusStackProvider(props: { children: s.JSX.Element}) {
   function restoreFocus(): boolean {
     let wasFocused = false;
     setFocusStack((stack) => {
-      const prevElement = stack.pop();
+      let prevElement = stack.pop();
+      // Skip elements destroyed since they were stored
+      while (prevElement?.destroyed) {
+        prevElement = stack.pop();
+      }
       if (prevElement && typeof prevElement.setFocus === 'function') {
         prevElement.setFocus();
         wasFocused = true;
