@@ -30,7 +30,7 @@ const relaxedTypedRules = {
 
 export default tseslint.config(
   {
-    ignores: ['dist/**', 'node_modules/**'],
+    ignores: ['dist/**', 'node_modules/**', 'bench/.arms/**', 'bench/dist/**'],
   },
   eslint.configs.recommended,
   {
@@ -57,6 +57,17 @@ export default tseslint.config(
           varsIgnorePattern: '^_',
         },
       ],
+    },
+  },
+  {
+    // The benchmark harness's Node scripts, which also hold functions that
+    // run in the page (Playwright's evaluate).
+    files: ['bench/**/*.mjs'],
+    languageOptions: {
+      globals: {
+        ...globals.node,
+        ...globals.browser,
+      },
     },
   },
   prettierConfig,
