@@ -1786,7 +1786,11 @@ export class ElementNode {
     this.onRender?.(this);
 
     if (node.onEvent) {
-      for (const [name, handler] of Object.entries(node.onEvent)) {
+      const onEvent = node.onEvent;
+      // Own enumerable keys in order, as Object.entries gave them.
+      for (const name in onEvent) {
+        if (!hasOwnProperty.call(onEvent, name)) continue;
+        const handler = onEvent[name as keyof OnEvent]!;
         if (typeof node.lng.on === 'function') {
           node.lng.on(name, (_inode, data) => handler.call(node, node, data));
         }
