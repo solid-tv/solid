@@ -222,17 +222,17 @@ export type {
 } from '@solidtv/solid';
 
 // @solidtv/solid: the renderer's names, via `export type * from
-// '@solidtv/renderer'` in src/core/index.ts: 99 on the installed
-// @solidtv/renderer 1.9 (AnimationSettings is Solid's own). Some are values
+// '@solidtv/renderer'` in src/core/index.ts: 100 on the installed
+// @solidtv/renderer 1.10 (AnimationSettings is Solid's own). Some are values
 // in the renderer but type-only here. A renderer-side rename or removal is a
 // break inherited from the renderer.
 export type {
   AdvShaderProp,
   AdvancedShaderProp,
   AnimationControllerState,
-  AnimationTickPayload,
   BorderProps,
   BorderTemplate,
+  BoundsMargin,
   CompressedData,
   CoreNodeRenderState,
   CoreShaderNode,
@@ -323,6 +323,7 @@ export type {
   getShadowProps,
   isAdvancedShaderProp,
   isTextureError,
+  normalizeBoundsMargin,
   prefetchFont,
   resolveShaderProps,
   resolveTargetFPS,
