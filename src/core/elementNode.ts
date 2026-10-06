@@ -31,7 +31,6 @@ import {
   isElementText,
   logRenderTree,
   isFunction,
-  spliceItem,
 } from './utils.js';
 import { isDev, SHADERS_ENABLED } from './env.js';
 import { Config, isDomRendererActive } from './config.js';
@@ -140,6 +139,23 @@ function runPostMutation() {
 function addToLayoutQueue(node: ElementNode) {
   layoutQueue.add(node);
   schedulePostMutation();
+}
+
+/**
+ * Removes the first `item` from `arr` in place, as `splice(index, 1)` did,
+ * without the array of removed items splice returns. Returns its index, or
+ * -1 when it is not there.
+ */
+function removeItem<T>(arr: T[], item: T): number {
+  const index = arr.indexOf(item);
+  if (index > -1) {
+    const last = arr.length - 1;
+    for (let i = index; i < last; i++) {
+      arr[i] = arr[i + 1]!;
+    }
+    arr.pop();
+  }
+  return index;
 }
 
 // Text-default template, built once on first use.  Config.fontSettings is
@@ -978,8 +994,16 @@ export class ElementNode {
     if (beforeNode) {
       // SolidJS can move nodes around in the children array.
       // We need to insert following DOM insertBefore which moves elements.
-      spliceItem(this.children, node as ElementNode, 1);
-      if (spliceItem(this.children, beforeNode as ElementNode, 0, node) > -1) {
+      const children = this.children;
+      removeItem(children, node as ElementNode);
+      const index = children.indexOf(beforeNode as ElementNode);
+      if (index > -1) {
+        // In front of beforeNode, the rest moved up one: splice(index, 0,
+        // node) without its argument list and result array.
+        for (let i = children.length; i > index; i--) {
+          children[i] = children[i - 1]!;
+        }
+        children[index] = node as ElementNode;
         return;
       }
     }
@@ -988,7 +1012,7 @@ export class ElementNode {
   }
 
   removeChild(node: ElementNode | ElementText | TextNode) {
-    if (spliceItem(this.children, node, 1) > -1) {
+    if (removeItem(this.children, node as ElementNode) > -1) {
       if (isElementNode(node) && node.onRemove) {
         node.onRemove.call(node, node);
       }
