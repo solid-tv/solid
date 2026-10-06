@@ -129,4 +129,34 @@ v.describe('Config.preventDefaultOnHandledKeys', () => {
 
     dispose();
   });
+
+  v.test('answers each event when a handler raises another', async () => {
+    Config.preventDefaultOnHandledKeys = true;
+    const target = new FakeTarget();
+    let innerPreventDefault: ReturnType<typeof v.vi.fn> | undefined;
+    let innerConsumed = false;
+    const onRight = v.vi.fn(() => innerConsumed);
+    const dispose = await setup(target, {
+      onEnter: () => {
+        innerPreventDefault = target.press('keydown', 'ArrowRight');
+        return !innerConsumed;
+      },
+      onRight,
+    });
+
+    // The outer press is consumed, the one raised inside it is not.
+    let outerPreventDefault = target.press('keydown', 'Enter');
+    v.assert.equal(onRight.mock.calls.length, 1);
+    v.assert.equal(outerPreventDefault.mock.calls.length, 1);
+    v.assert.equal(innerPreventDefault!.mock.calls.length, 0);
+
+    // And the other way round.
+    innerConsumed = true;
+    outerPreventDefault = target.press('keydown', 'Enter');
+    v.assert.equal(onRight.mock.calls.length, 2);
+    v.assert.equal(outerPreventDefault.mock.calls.length, 0);
+    v.assert.equal(innerPreventDefault!.mock.calls.length, 1);
+
+    dispose();
+  });
 });
