@@ -38,12 +38,11 @@ import { Config, isDomRendererActive } from './config.js';
 import type {
   RendererMain,
   INode,
-  INodeAnimateProps,
+  AnimateProps,
   IAnimationController,
   LinearGradientProps,
   RadialGradientProps,
   ShadowProps,
-  CoreShaderNode,
   ITextNodeProps,
   INodeProps,
 } from '@solidtv/renderer';
@@ -211,7 +210,10 @@ export function convertToShader(
   let type = 'rounded';
   if (v.border) type += 'WithBorder';
   if (v.shadow) type += 'WithShadow';
-  return renderer.createShader(type, v);
+  return renderer.createShader(
+    type,
+    v as Record<string, unknown>,
+  ) as IRendererShader;
 }
 
 function getPropertyAlias(name: string) {
@@ -322,7 +324,7 @@ export interface ElementNode extends RendererNode, FocusNode {
   _queueDelete?: number;
   _animationQueue?:
     | Array<{
-        props: Partial<INodeAnimateProps<CoreShaderNode>>;
+        props: Partial<AnimateProps>;
         animationSettings?: AnimationSettings;
       }>
     | undefined;
@@ -1057,7 +1059,7 @@ export class ElementNode {
   }
 
   animate(
-    props: Partial<INodeAnimateProps<CoreShaderNode>>,
+    props: Partial<AnimateProps>,
     animationSettings?: AnimationSettings,
   ): IAnimationController {
     if (!this.rendered) {
@@ -1070,10 +1072,7 @@ export class ElementNode {
     );
   }
 
-  chain(
-    props: Partial<INodeAnimateProps<CoreShaderNode>>,
-    animationSettings?: AnimationSettings,
-  ) {
+  chain(props: Partial<AnimateProps>, animationSettings?: AnimationSettings) {
     if (this._animationRunning) {
       this._animationQueue = [];
       this._animationRunning = false;
@@ -1714,7 +1713,7 @@ export class ElementNode {
       if (isDev) log('Rendering: ', this, props);
 
       node.lng = renderer.createNode(
-        props as Partial<INodeProps<any>> & Partial<IRendererNodeProps>,
+        props as Partial<INodeProps> & Partial<IRendererNodeProps>,
       );
 
       if (node._hasRenderedChildren) {

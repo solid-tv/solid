@@ -47,45 +47,22 @@ const pendingFontLoads: PendingFontLoad[] = [];
 function attachFonts(fonts: FontLoadOptions[]) {
   // Inlined so the loadFontToDom branch + import tree-shake in WebGL builds.
   const enableDomRenderer = DOM_RENDERING && Config.domRendererEnabled;
-  const hasCanvas =
-    !enableDomRenderer &&
-    'textRenderers' in renderer.stage &&
-    !!(renderer.stage as lng.Stage).textRenderers.canvas;
   return Promise.all(
     fonts.map((font) => {
-      // WebGL — SDF
+      // WebGL — SDF (renderer 2.x renders SDF text only)
       if (
-        renderer.stage.renderer.mode === 'webgl' &&
+        !enableDomRenderer &&
         'type' in font &&
         (font.type === 'msdf' || font.type === 'ssdf')
       ) {
-        return renderer.stage.loadFont('sdf', font);
+        return renderer.stage.loadFont('sdf', font as lng.FontLoadOptions);
       }
-      // Canvas — Web
-      if ('fontUrl' in font) {
-        if (enableDomRenderer) {
-          loadFontToDom(font);
-        } else if (hasCanvas) {
-          return renderer.stage.loadFont('canvas', font);
-        }
+      // DOM — Web
+      if ('fontUrl' in font && enableDomRenderer) {
+        loadFontToDom(font);
       }
     }),
   );
-}
-
-/**
- * Whether the app will run an SDF text engine. Read from the renderer options
- * rather than the stage, because this has to be answerable before the renderer
- * is constructed. Unknown (no `fontEngines` configured yet) is treated as
- * "maybe", matching the stage's own SDF-first preference order.
- */
-function mayUseSdf() {
-  const engines = (Config.rendererOptions as lng.RendererMainSettings)
-    ?.fontEngines;
-  if (engines === undefined || engines.length === 0) {
-    return true;
-  }
-  return engines.some((engine) => engine.type === 'sdf');
 }
 
 function flushPendingFonts() {
@@ -120,7 +97,6 @@ export async function loadFonts(fonts: FontLoadOptions[]) {
 
   // Inlined so the loadFontToDom branch + import tree-shake in WebGL builds.
   const enableDomRenderer = DOM_RENDERING && Config.domRendererEnabled;
-  const preferSdf = mayUseSdf();
   const deferred: FontLoadOptions[] = [];
 
   for (let i = 0; i < fonts.length; i++) {
@@ -137,7 +113,7 @@ export async function loadFonts(fonts: FontLoadOptions[]) {
 
     // Starts the download now; the stage-dependent half is owed until
     // `createRenderer()` runs and `flushPendingFonts()` attaches it.
-    prefetchFont(preferSdf ? font : { ...font, type: 'canvas' });
+    prefetchFont(font as lng.FontPrefetchOptions);
     deferred.push(font);
   }
 

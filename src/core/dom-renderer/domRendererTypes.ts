@@ -27,7 +27,7 @@ export interface IRendererStage {
     registerAnimation: (anim: any) => void;
     unregisterAnimation: (anim: any) => void;
   };
-  loadFont: lng.Stage['loadFont'];
+  loadFont: lng.RendererMain['loadFont'];
   reprocessUpdates?: (callback?: () => void) => void;
   requestRender: () => void;
   cleanup(full: boolean): void;
@@ -48,8 +48,8 @@ export type IRendererShaderProps = Partial<ShaderBorderPrefixedProps> &
   Partial<ShaderRadialGradientProps> &
   Partial<ShaderLinearGradientProps>;
 
-/** Based on {@link lng.CoreShaderNode} */
-export interface IRendererShader extends Partial<lng.CoreShaderType> {
+/** Based on {@link lng.ShaderNode} */
+export interface IRendererShader extends Partial<lng.ShaderType> {
   shaderType: IRendererShaderType;
   props?: IRendererShaderProps;
   program?: {};
@@ -75,7 +75,7 @@ export interface IRendererNodeShaded extends EventEmitter {
   stage: IRendererStage;
   id: number;
   animate: (
-    props: Partial<lng.INodeAnimateProps<any>>,
+    props: Partial<lng.AnimateProps>,
     settings: Partial<lng.AnimationSettings>,
   ) => lng.IAnimationController;
   get absX(): number;

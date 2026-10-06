@@ -3,7 +3,6 @@
 // @solidtv/renderer instance (WebGL, SDF text) per test file, with the Lato
 // MSDF font loaded before anything renders.
 import { RendererMain } from '@solidtv/renderer';
-import { SdfTextRenderer, WebGlCoreRenderer } from '@solidtv/renderer/webgl';
 import { Config, createRenderer, loadFonts } from '@solidtv/solid';
 import latoData from './fonts/Lato-Regular.msdf.json?url';
 import latoAtlas from './fonts/Lato-Regular.msdf.png?url';
@@ -26,12 +25,10 @@ Config.fontSettings = { fontFamily: FONT_FAMILY, fontSize: 30 };
 const root = document.createElement('div');
 document.body.appendChild(root);
 
-// Renderer 1.x takes its engines as options: WebGL, and SDF text only.
+// Renderer 2.x is WebGL with SDF text only: no engines to pass.
 Config.rendererOptions = {
   appWidth: 1920,
   appHeight: 1080,
-  renderEngine: WebGlCoreRenderer,
-  fontEngines: [SdfTextRenderer],
 };
 
 // Called before createRenderer, as apps do: the download overlaps the boot.
@@ -68,17 +65,17 @@ const nextFrame = () =>
   });
 
 /**
- * Wait until layout has settled: no scene update pending (renderer 1.9's
- * Stage.hasSceneUpdates: a dirty node, a requested render, a texture to
- * upload) for two animation frames in a row. Text lays out in the renderer's
- * frame, its `loaded` event runs Solid's flex, and the writes it makes
+ * Wait until layout has settled: no frame requested (renderer 2.x's
+ * frameRequested: a dirty node, a pending reprocessUpdates callback, a
+ * requested render) for two animation frames in a row. Text lays out in the
+ * renderer's frame, its `loaded` event runs Solid's flex, and the writes it makes
  * mark nodes dirty again, so "no update pending" means nothing is.
  */
 export async function settle(maxFrames = 300): Promise<void> {
   let quiet = 0;
   for (let i = 0; i < maxFrames; i++) {
     await nextFrame();
-    if (!renderer.stage.hasSceneUpdates()) {
+    if (!renderer.frameRequested) {
       if (++quiet === 2) {
         return;
       }

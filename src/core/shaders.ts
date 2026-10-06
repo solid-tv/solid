@@ -8,7 +8,7 @@ import type {
   RoundedProps as ShaderRoundedProps,
   ShadowProps as ShaderShadowProps,
 } from '@solidtv/renderer';
-import { type WebGlShaderType as WebGlShader } from '@solidtv/renderer/webgl';
+import { type WebGlShaderType as WebGlShader } from '@solidtv/renderer';
 export {
   ShaderHolePunchProps,
   ShaderLinearGradientProps,
