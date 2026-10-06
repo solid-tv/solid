@@ -172,6 +172,22 @@ const EFFECT_SHADER_KEYS = [
   'shadow',
 ] as const satisfies ReadonlyArray<keyof StyleEffects>;
 
+const hasOwnProperty = Object.prototype.hasOwnProperty;
+
+// Handle individual border sides: transform width/w to bottom/left/right/top
+const borderSideMap: Record<string, string> = {
+  borderBottom: 'bottom',
+  borderLeft: 'left',
+  borderRight: 'right',
+  borderTop: 'top',
+};
+
+// The shader prop each key of a style object writes, per style prefix
+// (`border` + `width` → `border-w`, `borderTop` + `w` → `border-top`): built
+// at a key's first write, so that a write builds no string.
+const shaderPropNames: Record<string, Record<string, string> | undefined> =
+  Object.create(null);
+
 const parseAndAssignShaderProps = (
   prefix: string,
   obj: Record<string, unknown>,
@@ -179,28 +195,33 @@ const parseAndAssignShaderProps = (
 ) => {
   if (!obj) return;
 
-  // Handle individual border sides: transform width/w to bottom/left/right/top
-  const borderSideMap: Record<string, string> = {
-    borderBottom: 'bottom',
-    borderLeft: 'left',
-    borderRight: 'right',
-    borderTop: 'top',
-  };
-
   const side = borderSideMap[prefix];
   const actualPrefix = side ? 'border' : prefix;
+  let names = shaderPropNames[prefix];
+  if (names === undefined) {
+    names = Object.create(null) as Record<string, string>;
+    shaderPropNames[prefix] = names;
+  }
 
   props[actualPrefix] = obj;
-  Object.entries(obj).forEach(([key, value]) => {
-    let transformedKey = key === 'width' ? 'w' : key;
+  // The object's own enumerable keys in order, as Object.entries gave them,
+  // without its arrays and closure.
+  for (const key in obj) {
+    if (!hasOwnProperty.call(obj, key)) continue;
+    let name = names[key];
+    if (name === undefined) {
+      let transformedKey = key === 'width' ? 'w' : key;
 
-    // If border side and key is width/w, transform to side (bottom/left/right/top)
-    if (side && transformedKey === 'w') {
-      transformedKey = side;
+      // If border side and key is width/w, transform to side (bottom/left/right/top)
+      if (side && transformedKey === 'w') {
+        transformedKey = side;
+      }
+
+      name = actualPrefix + '-' + transformedKey;
+      names[key] = name;
     }
-
-    props[`${actualPrefix}-${transformedKey}`] = value;
-  });
+    props[name] = obj[key];
+  }
 };
 
 export function convertToShader(
