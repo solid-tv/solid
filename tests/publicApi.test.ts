@@ -1,5 +1,5 @@
-// Phase 1 contract tests: "Compiler contract" and "Exports" in the 1.7 brief's
-// Compatibility contract, plus the package.json `exports` map.
+// Contract tests: what the JSX compiler imports, the runtime export names of
+// every entry point, and the package.json `exports` map.
 //
 // The export lists below are today's runtime export names, sorted. Removing a
 // name breaks apps; adding one is an API decision. Either way, update the list
@@ -418,7 +418,7 @@ v.describe('package.json exports', () => {
     }
   });
 
-  // B21 (Phase 2, stream M): ./shaders pointed at src/shaders/index.ts (and
+  // B21 (fixed in 1.7): ./shaders pointed at src/shaders/index.ts (and
   // dist/src/shaders/*), deleted in cf3b1e0 ("use shaders from renderer").
   v.test('./shaders points at a file that exists', () => {
     v.expect(exists(sourceTarget(pkg.exports['./shaders']!))).toBe(true);

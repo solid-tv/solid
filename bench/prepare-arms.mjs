@@ -1,8 +1,9 @@
 // Prepares the benchmark arms under bench/.arms (gitignored).
 //
 //   A: solid 1.6.4 on renderer 1.9.3 (what ships today)
-//   B: solid 1.6.4 + the renderer v2 lockstep patch, on renderer v2 as of the brief
-//   C: this working tree (src/) on ../renderer-v2-solid (built here)
+//   B: solid 1.6.4 + the renderer v2 lockstep patch, on renderer v2 (faf4b9f)
+//   C: this working tree (src/) on its installed @solidtv/renderer
+//      (node_modules/@solidtv/renderer: the ../renderer-v2-solid link, built here)
 //
 // Re-running is cheap: an arm already prepared at the pinned ref is kept.
 import { execSync } from 'node:child_process';
@@ -10,6 +11,7 @@ import {
   existsSync,
   mkdirSync,
   readFileSync,
+  realpathSync,
   rmSync,
   writeFileSync,
 } from 'node:fs';
@@ -19,13 +21,18 @@ import { fileURLToPath } from 'node:url';
 const here = dirname(fileURLToPath(import.meta.url));
 const solidRoot = resolve(here, '..');
 const armsDir = join(here, '.arms');
-const rendererC = resolve(solidRoot, '../renderer-v2-solid');
+const rendererC = realpathSync(
+  join(solidRoot, 'node_modules', '@solidtv', 'renderer'),
+);
+const rendererCVersion = JSON.parse(
+  readFileSync(join(rendererC, 'package.json'), 'utf8'),
+).version;
 
 export const PINS = {
   solidA: '71c170f', // v1.6.4
   solidB: 'f1c8ab0', // 1.6.4 + solid-lockstep-2.0.patch
   rendererA: '1.9.3', // npm
-  rendererB: 'faf4b9f', // renderer v2 (2.0.0-alpha.0) at the brief's date
+  rendererB: 'faf4b9f', // renderer v2 (2.0.0-alpha.0) the lockstep patch targets
 };
 
 export const ARMS = {
@@ -33,13 +40,19 @@ export const ARMS = {
     solid: join(armsDir, 'solid-a'),
     renderer: join(armsDir, 'renderer-a'),
     rendererMajor: 1,
+    rendererVersion: PINS.rendererA,
   },
   B: {
     solid: join(armsDir, 'solid-b'),
     renderer: join(armsDir, 'renderer-b'),
     rendererMajor: 2,
   },
-  C: { solid: solidRoot, renderer: rendererC, rendererMajor: 2 },
+  C: {
+    solid: solidRoot,
+    renderer: rendererC,
+    rendererMajor: Number(rendererCVersion.split('.')[0]),
+    rendererVersion: rendererCVersion,
+  },
 };
 
 const sh = (cmd, cwd) =>

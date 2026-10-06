@@ -1,4 +1,4 @@
-// Brief scenario: a VirtualRow and a VirtualGrid, where presses move the window.
+// Scenario: a VirtualRow and a VirtualGrid, where presses move the window.
 import type { ElementNode, NodeStyles } from '@solidtv/solid';
 import { VirtualGrid, VirtualRow } from '@solidtv/solid/primitives';
 import {

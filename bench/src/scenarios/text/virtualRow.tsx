@@ -1,4 +1,4 @@
-// Brief scenario: a VirtualRow of text tiles where presses move the window,
+// Scenario: a VirtualRow of text tiles where presses move the window,
 // so new text comes in on every press.
 import { VirtualRow } from '@solidtv/solid/primitives';
 import type { Scenario } from '../../scenario.js';

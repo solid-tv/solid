@@ -1,9 +1,9 @@
-// Phase 1 contract tests: VirtualRow and VirtualColumn (window of mounted
+// Contract tests: VirtualRow and VirtualColumn (window of mounted
 // items, window shift per press, selected -> data index mapping, final x/y,
 // scroll modes, wrap, displaySize, bufferSize, selected, onSelectedChanged,
 // onEndReached).
 //
-// Pins today's behaviour (arm B) through the public surface: keys go through
+// Pins today's behaviour (1.7) through the public surface: keys go through
 // the focus manager's real keydown listener; assertions read the focused
 // element, `selected`, `cursor` (documented as the data index), the data
 // items of the mounted children, callback arguments and final x/y.

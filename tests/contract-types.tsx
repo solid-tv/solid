@@ -1,5 +1,5 @@
-// Phase 1 contract tests: "Types" in the 1.7 brief's Compatibility contract,
-// and the type-only half of "Exports".
+// Contract tests: the public types apps augment, and the type-only export
+// names of every entry point.
 //
 // Type-level only: never executed, not a vitest file. `pnpm tsc` checks it
 // through tests/tsconfig.contract.json. A failure here is a type error.

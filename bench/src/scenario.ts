@@ -6,8 +6,8 @@ import type { JSX } from 'solid-js';
  * `warmup` operations and then for `measured` operations, timing each one.
  *
  * Scenarios must be arm-agnostic: they use only the public `@solidtv/solid`
- * API that solid 1.6.4 (arm A) and 1.7 (arms B, C) share, never the renderer
- * directly.
+ * API that solid 1.6.4 (arms A, B) and the working tree (arm C) share, never
+ * the renderer directly.
  */
 export interface Scenario {
   /** Stable kebab-case id, used in URLs (`?scenario=`) and result files. */

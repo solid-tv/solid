@@ -1,6 +1,6 @@
-// Phase 1 contract tests: States (brief "Compatibility contract" -> "States").
+// Contract tests: States (the `states` prop, `$state` blocks and their undo).
 //
-// These pin today's behaviour (arm B) through public node props and the
+// These pin today's behaviour (1.7) through public node props and the
 // public `states` API only. Where today's behaviour is odd it is pinned anyway
 // and the comment says so; where it looks like a genuine bug the
 // correct-behaviour test is an `it.skip` marked `// BUG:`.
@@ -475,7 +475,7 @@ v.describe('contract: $state blocks inside style apply and undo', () => {
   });
 
   // The undo table. "Undo restores the theme and style values, not JSX
-  // props" (docs/essentials/states.md, brief). For each key the last state
+  // props" (docs/essentials/states.md). For each key the last state
   // application wrote, undo writes theme[key], else style[key], else
   // undefined.
 
@@ -845,7 +845,7 @@ v.describe('contract: forwardStates', () => {
   v.it(
     "a child's own states are overwritten by the parent's states (current behaviour)",
     () => {
-      // Pinned as is: the brief notes forwardStates overwrites the children's
+      // Pinned as is (a known quirk): forwardStates overwrites the children's
       // own states. The child's $active is dropped when the parent's states
       // change, and stays dropped after the parent's state is removed.
       let parent!: lng.ElementNode;

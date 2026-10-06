@@ -1,5 +1,5 @@
 /**
- * Phase 1 contract tests: flex layout.
+ * Contract tests: flex layout.
  *
  * Part 1 runs one table of flex cases against the flex engine
  * (src/core/flexLayout.ts) by calling it directly on ElementNode trees.

@@ -40,6 +40,7 @@ with the renderer's numbered behaviour changes, is the renderer's
 | `loaded` for text arrives between the walks of the frame that lays it out; `idle` fires in the frame that drew the last change, and can fire while textures still load | `src/pages/Benchmark.tsx` (waits for idle)                                                                          | Wait for `renderer.pendingTextures === 0` at an `idle` to wait for every texture.                                                                                                                                                      |
 | `Image` with a placeholder: the image's download starts once the placeholder shows (1.6 started both at once)                                                          | none found                                                                                                          | None.                                                                                                                                                                                                                                  |
 | Shaders: `el.lng.shader` reads `null` without one; `createShader` of an unregistered type returns `null` with a warning                                                | `src/pages/ButtonsMaterial.tsx` (`RoundedRectangle` is not registered, on every arm)                                | Register the type.                                                                                                                                                                                                                     |
+| `boundsMargin` is one number for every side: the `[top, right, bottom, left]` tuple (renderer 1.10.1, Solid 1.6.5) is read as its widest edge, with a warning          | none found (`src/index.tsx:184` passes a number)                                                                    | Pass one number. The DOM renderer still takes the tuple.                                                                                                                                                                               |
 
 ## 2. Solid 1.7 changes (approved at Checkpoint 1)
 
@@ -385,8 +386,8 @@ not reflow its flex parent) changes nothing.
     - `loaded` on a DOM text fires whenever its size differs from the last one
       it told; a `contain` change re-measures a flex text.
     - `el.destroyed` on the DOM renderer now returns a boolean; it was
-      `undefined`. As in renderer v2, it is true for a destroyed node and for
-      every node under it.
+      `undefined` before 1.6.5. As in renderer v2, it is true for a destroyed
+      node and for every node under it.
   - **Gain:** none; the DOM renderer is not the performance target. Each
     measured text costs a synchronous `getBoundingClientRect` (a reflow).
   - **Demo app:** none. **Upgrade step:** none.

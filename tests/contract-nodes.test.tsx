@@ -1,4 +1,4 @@
-// Phase 1 contract tests: "Nodes" in the 1.7 brief's Compatibility contract.
+// Contract tests: nodes (props, el.lng, animate, events, child order).
 //
 // Behavioural, through the public API only: JSX props, ElementNode members
 // apps use, and `el.lng` (the raw renderer node, which apps also use). These
@@ -116,7 +116,7 @@ v.describe(
         v.expect(row.children[0]).toBe(tile);
 
         // Today data props stay on the ElementNode: they are not forwarded to
-        // the renderer node (a renderer 2.0 node would take any unknown name as
+        // the renderer node (a renderer node could take an unknown name as
         // a field of its own).
         v.expect((tile.lng as unknown as Record<string, unknown>).item).toBe(
           undefined,

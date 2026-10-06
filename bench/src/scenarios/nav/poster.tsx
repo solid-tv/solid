@@ -1,4 +1,4 @@
-// Brief scenario: node creation for a Poster tile: an image, text, `$focus`
+// Scenario: node creation for a Poster tile: an image, text, `$focus`
 // and a border. Modelled on solid-demo-app's PosterTitle (image + title with
 // forwardStates) with styles.Thumbnail's border and focus.
 import type { ElementNode, NodeStyles, TextStyles } from '@solidtv/solid';

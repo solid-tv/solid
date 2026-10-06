@@ -27,7 +27,7 @@
 // `import.meta.env.VITE_USE_NEW_FLEX` is non-empty). Every arm is built the
 // same way by default; BENCH_FLEX=old builds src/core/flex.ts instead, into
 // dist/<arm>[-count]-flexold.
-import { readFileSync, realpathSync } from 'node:fs';
+import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import { dirname, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { defineConfig, type Alias, type Plugin } from 'vite';
@@ -41,9 +41,17 @@ if (!(arm in ARMS)) {
   throw new Error(`BENCH_ARM must be one of ${Object.keys(ARMS).join(', ')}`);
 }
 const { rendererMajor } = ARMS[arm];
-// The arms' real paths: the bundler's module ids are real paths, and a
-// worktree's `bench/.arms` is a symlink to the shared arms, so a path joined
-// from it matches no id (no chunks, no flex hook).
+// The renderer bootstrap (engines, shader registration) for the arm's
+// renderer major: src/arm-v1.ts (arm A) or src/arm-v2.ts (arms B and C).
+const armInit = resolve(here, `src/arm-v${rendererMajor}.ts`);
+if (!existsSync(armInit)) {
+  throw new Error(
+    `arm ${arm}: no bench bootstrap for @solidtv/renderer ${rendererMajor}.x (${armInit})`,
+  );
+}
+// The arms' real paths: the bundler's module ids are real paths, and
+// `bench/.arms` can be a symlink (a worktree sharing another's arms), so a
+// path joined from it would match no id (no chunks, no flex hook).
 const solid = realpathSync(ARMS[arm].solid);
 const renderer = realpathSync(ARMS[arm].renderer);
 const escape = (s: string) => s.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&');
@@ -88,7 +96,7 @@ const solidAliases: Alias[] = [
  * Count mode only: wraps the default export of the arm's flex layout modules
  * so that each call (one flex pass over one container) counts. It matches
  * `export default function (` in src/core/flex.ts and flexLayout.ts, as in
- * arms A and B. A module without it is left alone with a warning, as is a
+ * every arm. A module without it is left alone with a warning, as is a
  * build in which neither module was transformed (a path that matches no
  * module id), and the runner reports flex passes as n/a (`flexHooks` stays 0).
  */
@@ -174,7 +182,7 @@ export default defineConfig({
       ...rendererAliases(),
       {
         find: /^bench-arm-init$/,
-        replacement: resolve(here, `src/arm-v${rendererMajor}.ts`),
+        replacement: armInit,
       },
     ],
     conditions: ['@solidtv/source', 'browser'],

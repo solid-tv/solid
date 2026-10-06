@@ -18,12 +18,12 @@
  * font size is 30 (Config.fontSettings). `settle()` waits until no font is
  * in flight and the renderer has no frame requested.
  *
- * The numbers are the final positions and sizes on solid 1.6.4 with the
- * renderer v2 lockstep (arm B): "final positions after fonts load must match
- * arm B". They are not derived from a formula, they were read from arm B;
- * the comments show how they add up. Each one is compared with
+ * The numbers are the final positions and sizes, after fonts load, on
+ * solid 1.6.4 with SDF text (read on renderer 2.0; the same on renderer
+ * 1.9), which 1.7 keeps. They are not derived from a formula, they were read
+ * from a run; the comments show how they add up. Each one is compared with
  * `expect.closeTo(n, 3)`, |actual - expected| < 0.0005: until 1.7 the flex
- * engines summed child sizes in Float32Arrays, so arm B's positions carry
+ * engines summed child sizes in Float32Arrays, so 1.6.4's positions carry
  * float32 rounding (109.70999908 for 109.71); 1.7 sums in Float64Arrays.
  *
  * Final states are asserted, and from 1.7 (stream T, text measured before
@@ -382,9 +382,9 @@ v.test(
           ` loaded events ${loaded}, flex passes on the row ${flexPasses}`,
       );
       // 1.7 (stream T): Solid measures the text before the frame, so the
-      // frame walks once (arm B: 2, the flex of `loaded` wrote between the
-      // walks), the row is laid out once, and the app's listener hears the
-      // one layout once.
+      // frame walks once (1.6.4 on renderer 2.0: twice, the flex of `loaded`
+      // wrote between the walks), the row is laid out once, and the app's
+      // listener hears the one layout once.
       v.expect(walks.length).toBeGreaterThan(0);
       v.expect(walks.every((w) => w === 1)).toBe(true);
       v.expect(flexPasses).toBe(1);
@@ -662,7 +662,8 @@ v.test(
     ));
     await settle();
     // 5.2 (1.7): text under a culled ancestor is measured at mount, so the
-    // row is laid out while hidden (arm B left it unlaid until shown).
+    // row is laid out while hidden (1.6.4 on renderer 2.0 left it unlaid
+    // until shown).
     expectBox(one, 0, 0, 56.34, LINE_30);
     expectBox(two, 66.34, 0, 55.26, LINE_30);
     expectBox(row, 0, 0, 121.6, LINE_30);

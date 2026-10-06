@@ -104,7 +104,7 @@ const buildName = (arm, instrument) =>
   (instrument ? '-count' : '') +
   (flexOld ? '-flexold' : '') +
   (chunks ? '' : '-nochunks');
-/** The arm as results label it: B, or B-flexold / B-nochunks for a variant. */
+/** The arm as results label it: C, or C-flexold / C-nochunks for a variant. */
 const label = (arm) =>
   arm + (flexOld ? '-flexold' : '') + (chunks ? '' : '-nochunks');
 

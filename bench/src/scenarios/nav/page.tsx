@@ -1,4 +1,4 @@
-// Brief scenarios: node creation for a whole page, the shape of a route
+// Scenarios: node creation for a whole page, the shape of a route
 // change. A Browse-like page: a Column of 7 titled Rows x 20 Poster tiles.
 // Each tile is poster.tsx's (an image, a title, `$focus`, a border and
 // `forwardStates`) with a subtitle and a badge added, four nodes in all, so a

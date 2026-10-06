@@ -28,6 +28,9 @@
 // `idleTimeoutMs` pass (`timedOut`). The keyup goes out only then, so it
 // never lands in the op's frames; its handler is timed as `keyup`, and the
 // probe waits for idle again before the next op.
+//
+// v1 and v2 below are @solidtv/renderer 1.x and 2.x. Arm A runs 1.x, arms B
+// and C 2.x; a hook for one major never installs on the other.
 export function pageProbe(opts) {
   const counting = opts.mode === 'count';
   const perf = window.performance;
@@ -525,8 +528,26 @@ export function pageProbe(opts) {
         detail.shaderUnwrapped++;
         return;
       }
-      const wrapper = {};
+      // Every prop name: for…in lists the enumerable ones (v2's facade), and
+      // v1 defines each prop as a non-enumerable accessor on the node's own
+      // `definedProps`, which only getOwnPropertyNames lists. Missing them
+      // would swap in an empty wrapper: no write counted (0, not n/a), and
+      // the shader's next update would read undefined props and throw.
+      const names = [];
       for (const name in props) {
+        names.push(name);
+      }
+      for (const name of Object.getOwnPropertyNames(props)) {
+        const d = Object.getOwnPropertyDescriptor(props, name);
+        if (d.get !== undefined && !names.includes(name)) {
+          names.push(name);
+        }
+      }
+      if (names.length === 0) {
+        return;
+      }
+      const wrapper = {};
+      for (const name of names) {
         Object.defineProperty(wrapper, name, {
           enumerable: true,
           configurable: true,
@@ -612,8 +633,8 @@ export function pageProbe(opts) {
               }
             };
           } else if (name === 'insertBefore' && typeof d.value === 'function') {
-            // Renderer v2 (dc09e5e): a second way to attach a child, which
-            // Solid 1.7 uses to keep draw order; the `parent` setter is the
+            // Renderer 2.x only, inactive on 1.x (no insertBefore there): a
+            // second way to attach a child; the `parent` setter is the
             // other, so both count as a write (`insertBefore` in topWrites).
             const fn = d.value;
             p[name] = function () {
@@ -639,8 +660,8 @@ export function pageProbe(opts) {
     patchProto(nodeProto);
     // Every node made later: its class may be one not seen in the tree yet.
     // The creation bag is counted on its own (`creationProps`: its keys with
-    // a defined value), the same on both majors: renderer v2 applies it
-    // through the public setters, v1 in the constructor, and neither counts
+    // a defined value), the same on both majors: renderer 1.x applies it in
+    // the constructor, 2.x through the public setters, and neither counts
     // as a write.
     const created = [];
     for (const method of ['createNode', 'createTextNode']) {
@@ -752,7 +773,7 @@ export function pageProbe(opts) {
     });
     attempt('walkHook', () => {
       if (r.scene !== undefined && typeof r.scene.run === 'function') {
-        // Renderer v2: one ScenePass.run per walk (RendererCore.update).
+        // Renderer 2.x only, inactive on 1.x: one ScenePass.run per walk.
         const scene = r.scene;
         const run = scene.run;
         scene.run = guarded('walkHook', function () {
@@ -803,10 +824,10 @@ export function pageProbe(opts) {
     attempt('textHook', () => {
       const tn = r.textNodes;
       if (tn !== undefined && tn !== null) {
-        // Renderer v2: TextNodes.lay (private; every layout, from a walk's
-        // visit or from TextNode.measure(): since 407b973), else
-        // TextNodes.layoutText (every walk visit with DIRTY_LAYOUT: faf4b9f,
-        // where the layout is inline in the visit).
+        // Renderer 2.x only, inactive on 1.x (no textNodes there):
+        // TextNodes.lay (every layout, from a walk's visit or from
+        // TextNode.measure()), else TextNodes.layoutText (every walk visit
+        // with DIRTY_LAYOUT, in early 2.0 alphas).
         const name =
           typeof tn.lay === 'function'
             ? 'lay'
@@ -877,10 +898,10 @@ export function pageProbe(opts) {
     // Both majors' frame loops swallow what a frame, or a listener it calls,
     // throws: the frame is not drawn and is tried again, so a throwing hook
     // would read as zero frames and zero counts. They hand it to a no-op by
-    // default: v2 reads settings.handleLoopError on every error; v1 (1.9.3)
-    // reads stage.options.handleLoopError, a copy the Stage made of the
-    // setting when it was built, so replacing the setting later does nothing
-    // there. Hook the one the loop reads.
+    // default: 1.x reads stage.options.handleLoopError, a copy the Stage made
+    // of the setting when it was built, so replacing the setting later does
+    // nothing there; 2.x (inactive on 1.x) reads settings.handleLoopError on
+    // every error. Hook the one the loop reads.
     attempt('loop', () => {
       const options =
         r.stage !== undefined && r.stage !== null ? r.stage.options : undefined;

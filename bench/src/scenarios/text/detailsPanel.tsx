@@ -1,4 +1,4 @@
-// Brief scenario: a details panel whose title, description and metadata text
+// Scenario: a details panel whose title, description and metadata text
 // change on every key press, laid out with flex, as on a hero or details
 // screen (modelled on solid-demo-app's ContentBlock and Entity page).
 import type { NodeStyles, TextStyles } from '@solidtv/solid';

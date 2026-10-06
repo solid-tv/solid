@@ -1,4 +1,4 @@
-// Brief scenario: `onFocusChanged` driving reactive text colours, modelled on
+// Scenario: `onFocusChanged` driving reactive text colours, modelled on
 // solid-demo-app's pages/Portal.tsx (the Examples page): a Column of 4 Rows of
 // DemoTiles, each tile tracking focus in a signal that recolours its 3 texts.
 import type { ElementNode, NodeStyles, TextStyles } from '@solidtv/solid';

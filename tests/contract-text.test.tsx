@@ -1,5 +1,5 @@
 /**
- * Phase 1 contract tests: text props, text children, font defaults,
+ * Contract tests: text props, text children, font defaults,
  * autosize, and text inside flex containers — on the DOM renderer (jsdom).
  *
  * jsdom has no layout, so the DOM renderer measures every text as 0 x 0

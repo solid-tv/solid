@@ -1,17 +1,16 @@
 # Performance measurement: methodology
 
-How `npm run bench` measures the CPU cost of SolidTV on the three benchmark
-arms, what each number means, and how the numbers map to the metrics of the
-1.7 brief (`docs/superpowers/specs/2026-10-03-solid-1.7-rewrite-brief.md`,
-Priorities and Phase 0).
+How `npm run bench` measures the CPU cost of SolidTV on its three benchmark
+arms, and what each number means.
 
 ## Running it
 
 ```sh
-npm run bench                                   # every scenario, A,B,C, 3 runs, all modes
+npm run bench                                   # every scenario, arms A,B,C, 3 runs, all modes
 npm run bench -- --scenarios thumbnail-focus --runs 5 --modes time
 npm run bench -- --scenarios smoke --runs 1 --quick   # harness smoke test
-node bench/run.mjs --summarize docs/perf/results/2026-10-03   # rebuild summary.md only
+node bench/run.mjs --summarize docs/perf/results/<date>   # rebuild summary.md only
+node bench/harness/inclusive.mjs docs/perf/results/<date> # inclusive time (needs --save-profiles)
 ```
 
 | Option               | Default                    | Meaning                                                                                                                                                              |
@@ -35,32 +34,49 @@ node bench/run.mjs --summarize docs/perf/results/2026-10-03   # rebuild summary.
 Each run writes `<out>/<scenario>.<arm>.<mode>.<run>.json` (every op's raw
 record plus the run's statistics and environment), and the runner then
 regenerates `<out>/summary.md` from **every** result file in `<out>`. The raw
-JSON is large (about 11 MB per full series) and gitignored; `summary.md` and
-any digest beside it are committed. Runs
-whose page threw are kept as JSON (`errors`) and left out of the summary.
+JSON is large and gitignored, as are the `.cpuprofile` files; `summary.md` is
+the part of a series to commit. Runs whose page threw are kept as JSON
+(`errors`) and left out of the summary, and the runner exits 1.
+
+`node bench/harness/inclusive.mjs <dir> [scenario …]` reads the raw profiles
+that `--modes profile --save-profiles` writes and prints, per scenario and
+arm, the inclusive time per op of a list of named Solid and renderer
+functions (key dispatch, Row/Column navigation, flex, focus change, state
+styles, node creation, the renderer frame).
 
 Run the measured series on a quiet machine: the summary records the
 1-minute load average at the start of each run.
 
 ## Arms and builds
 
-| Arm | Solid                                    | Renderer                    |
-| --- | ---------------------------------------- | --------------------------- |
-| A   | 1.6.4 (`71c170f`)                        | npm 1.9.3                   |
-| B   | 1.6.4 + renderer v2 lockstep (`f1c8ab0`) | v2 `faf4b9f`                |
-| C   | this working tree (`src/`)               | `../renderer-v2-solid` dist |
+| Arm | Solid                                    | Renderer                                                                                        |
+| --- | ---------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| A   | 1.6.4 (`71c170f`)                        | npm 1.9.3                                                                                       |
+| B   | 1.6.4 + renderer v2 lockstep (`f1c8ab0`) | v2 `faf4b9f`                                                                                    |
+| C   | this working tree (`src/`)               | the installed `@solidtv/renderer` (`node_modules`: the `../renderer-v2-solid` link), its `dist` |
 
-`bench/prepare-arms.mjs` prepares them under `bench/.arms`;
-`bench/vite.config.ts` builds one arm (`BENCH_ARM=A|B|C`): Solid compiled from
-the arm's source, the renderer from its `dist`, terser without mangling,
-`chrome64` target, as the demo app's modern bundle. The build uses the arms'
-real paths: a worktree's `bench/.arms` can be a symlink to a shared arms
-directory, and the bundler's module ids are real paths, so through the
-symlink arms A and B matched no chunk (everything landed in `user`) and no
-flex wrap. The runner rebuilds every arm it runs unless `--skip-build`, and
-records the arm's source revisions (`source` in each JSON; C is marked
-`+dirty` when `src/` has uncommitted changes). While C is unchanged, **B and C
-are the same code**, so B/C is the in-session noise floor.
+`bench/prepare-arms.mjs` prepares arms A and B under `bench/.arms` (a `git
+archive` of each pinned commit; `npm pack` of A's renderer, and B's renderer
+archived from `../renderer-v2-solid` and built); arm C is the working tree and
+whatever `node_modules/@solidtv/renderer` resolves to (on this branch the
+`../renderer-v2-solid` link, whose `dist` it rebuilds; its major is read from
+its `package.json`). `bench/vite.config.ts` builds one arm (`BENCH_ARM=A|B|C`):
+Solid compiled from the arm's source, the renderer from its `dist`, terser
+without mangling, `chrome64` target, as the demo app's modern bundle. The
+renderer bootstrap (engines, shader registration) is `bench/src/arm-v1.ts`
+(arm A) or `bench/src/arm-v2.ts` (arms B and C), picked by the renderer's
+major version. The build uses the arms' real paths: the bundler's module ids
+are real paths, so through a symlinked `bench/.arms` nothing would match a
+chunk or the flex hook. The runner rebuilds every arm it runs unless
+`--skip-build`, and records each arm's source (`source` in each JSON; C is
+marked `+dirty` when `src/` has uncommitted changes).
+
+The summary's ratios are A/B (shipping 1.6.4 on renderer 1.9.3 over the
+lockstep port on renderer v2) and B/C (the lockstep port over the working
+tree, both on renderer v2; above 1: C is faster or allocates less). The
+summary lists each arm's Solid and renderer: B/C is the in-session noise
+floor only when they match (C at `f1c8ab0` on renderer `faf4b9f`: **B and C
+are then the same code**).
 
 **Flex.** solid-demo-app sets `VITE_USE_NEW_FLEX=true`, so apps run
 `src/core/flexLayout.ts`. Every arm is built that way by default (the define
@@ -87,37 +103,37 @@ below).
 
 ## The browser
 
-- **Chromium 141** (Playwright 1.56, `channel: 'chromium'`: the full browser in
-  new headless mode), one fresh browser per run, viewport 1920×1080 at device
-  scale 1 (the app's size, so the canvas is 1:1).
-- **Hardware GPU.** On this Mac, headless Chromium can use the GPU through
-  ANGLE's Metal backend (`--use-angle=metal`): the WebGL renderer string is
-  `ANGLE (Apple, ANGLE Metal Renderer: Apple M4 Pro)`. The default headless
-  shell uses SwiftShader, software GL that burns CPU in the GPU process and
-  competes with the page for cores. The hardware GPU is used; each result
+- **Chromium** from Playwright (1.56, `channel: 'chromium'`: the full browser
+  in new headless mode; `npx playwright install chromium` once), one fresh
+  browser per run, viewport 1920×1080 at device scale 1 (the app's size, so
+  the canvas is 1:1).
+- **Hardware GPU.** On macOS, headless Chromium can use the GPU through
+  ANGLE's Metal backend (`--use-angle=metal`, the default there): the WebGL
+  renderer string then names the GPU (`ANGLE Metal Renderer: Apple M4 Pro`).
+  The default headless shell uses SwiftShader, software GL that burns
+  CPU in the GPU process and competes with the page for cores. Each result
   records the renderer string, and the runner warns on SwiftShader. On a TV
-  the GL calls are what costs CPU (renderer CLAUDE.md, cost model): those are
-  serialized into the command buffer on the page's main thread, inside the
-  timed frame, whatever the GPU.
+  the GL calls are what costs CPU: those are serialized into the command
+  buffer on the page's main thread, inside the timed frame, whatever the GPU.
 - **Cross-origin isolation.** The runner's static server sends
   `Cross-Origin-Opener-Policy: same-origin` and
   `Cross-Origin-Embedder-Policy: require-corp`, so `crossOriginIsolated` is
   true and `performance.now()` has a 5 µs resolution (100 µs otherwise). Each
-  result records the measured resolution (`env.clockResolutionUs`, 5.0 µs
-  here); the runner warns when it is coarser.
+  result records the measured resolution (`env.clockResolutionUs`); the runner
+  warns when it is coarser than 20 µs.
 - `--disable-background-timer-throttling`, `--disable-renderer-backgrounding`
   and `--disable-backgrounding-occluded-windows` keep headless timers honest.
-- Headless Chromium runs `requestAnimationFrame` at 120 Hz on this machine.
-  Renderer v2 caps at its target frame rate, so every other callback is an
-  undrawn tick (counted as `undrawnCpu`, a few µs).
+- Headless Chromium can run `requestAnimationFrame` at 120 Hz (it does on an
+  M4 Pro). Renderer v2 caps at its target frame rate, so every other callback
+  is then an undrawn tick (counted as `undrawnCpu`, a few µs).
 
 ### CPU throttling is a duty cycle
 
-`Emulation.setCPUThrottlingRate` (6x by default, the brief's TV proxy) does not
-slow the main thread evenly: it lets it run for about 0.17 ms, then suspends
-it for about 0.85 ms (measured here at 6x: 16% of wall time running). An
-interval much shorter than a millisecond therefore reads either unthrottled or
-about one suspension longer, depending on where it fell. Two consequences:
+`Emulation.setCPUThrottlingRate` (6x by default, a TV proxy) does not slow the
+main thread evenly: it lets it run for about 0.17 ms, then suspends it for
+about 0.85 ms (measured at 6x: 16% of wall time running). An interval much
+shorter than a millisecond therefore reads either unthrottled or about one
+suspension longer, depending on where it fell. Two consequences:
 
 - the **median** of sub-millisecond intervals is close to the unthrottled
   time, and says little about the throttled cost;
@@ -128,20 +144,18 @@ So every time in the summary is a per-run **mean over ops** (means also add
 up: `total` = handler + tail + frame). The JSON keeps median, p95, min and
 max per field. Report throttled means as the result.
 
-**Do not use `--throttle 1` for comparisons on this Mac.** Unthrottled, the
+**Do not use `--throttle 1` for comparisons on a Mac.** Unthrottled, the
 page's main thread is idle most of the time, and macOS runs it on an
-efficiency core or at a low clock: on 2026-10-03 every op read about 5x
-_slower_ at 1x than the median of the same op at 6x (a Row press's handler:
-0.080 ms median at 1x against 0.015 ms at 6x), and the factor moved with the
-machine's load. At 6x the throttler keeps a core busy, so the slices the page
-runs in are at full speed. Consequences:
+efficiency core or at a low clock: on an M4 Pro every op read about 5x
+_slower_ at 1x than the median of the same op at 6x, and the factor moved
+with the machine's load. At 6x the throttler keeps a core busy, so the slices
+the page runs in are at full speed. Consequences:
 
 - the 6x **mean** is the TV proxy (6 × full-speed CPU, tails included: GC
   pauses, deoptimisations);
 - the 6x per-op **median**, pooled over runs, approximates the full-speed CPU
   of a typical op shorter than about 0.17 ms (at the clock's 5 µs
-  resolution);
-- the 1x series of 2026-10-03 was discarded for this reason.
+  resolution).
 
 ## The scenario contract
 
@@ -157,6 +171,15 @@ warmup and after the measured ops; the summary flags a run whose last two
 snapshots differ, and a scenario whose final state differs between arms) and
 `opKind(i)` (a label per op; the summary adds one row per kind, so an
 alternating create/destroy workload is not reported as one bimodal number).
+Scenarios use only the public `@solidtv/solid` API every arm shares, never the
+renderer directly.
+
+The scenarios (`bench/src/scenarios`): `nav` (Row/Column presses with every
+`scroll` mode, a `$focus` thumbnail row, VirtualRow and VirtualGrid windows,
+a NavDrawer `states` toggle, `onFocusChanged` driving text colours, Poster
+and whole-page mount and swap) and `text` (text in flex containers: mount,
+text changes in a details panel, a VirtualRow of text tiles). `smoke` only
+checks the harness.
 
 ## One operation (all modes)
 
@@ -174,24 +197,25 @@ renderer's `idle` event (both majors emit it). For each op:
 3. **`tail`.** From the handler's end to the start of the first task after
    the microtask checkpoint: a `MessageChannel` message posted at the handler's
    end. This catches microtasks that queue more microtasks (Solid's
-   post-mutation pass, queued renderer work), which the demo app's
-   `queueMicrotask` bracket (`#/benchmark`) misses. If a frame runs before the
-   message, the tail ends where that frame starts (`tailCut` in the op record).
+   post-mutation pass, queued renderer work). If a frame runs before the
+   message, the tail ends where that frame starts (`tailCut` in the op
+   record).
 4. **`frame`.** The CPU time (callback duration) of the first drawn renderer
    frame after the op: the frame that shows the result. It includes what the
-   framework does inside the frame (Solid's flex on text `loaded` in arms A
-   and B; in arm C a text in a flex container is measured in the tail, so
-   only an autosize node's or an animated text's `loaded` relays out here;
-   and on renderer v2 the `idle` listeners, which v2 emits inside the last
-   drawn frame). `total` = handler + tail + frame: the brief's "keydown
-   dispatch to the end of the renderer frame that shows the result".
+   framework does inside the frame (Solid's flex on a text's `loaded` event
+   in arms A and B; in arm C a text in a flex container is measured in the
+   tail, so only an autosize node's or an animated text's `loaded` relays out
+   here; and on renderer v2 the `idle` listeners, which v2 emits inside the
+   last drawn frame). `total` = handler + tail + frame: keydown dispatch to the
+   end of the renderer frame that shows the result.
 5. **Frames until idle.** Every later callback until the renderer's `idle`
    event: `frames` (drawn), `animCpu` (drawn frames after the first:
-   transitions), `undrawnCpu` (renderer callbacks that drew nothing: v1's idle
-   polls, v2's capped ticks and upload-only frames), `otherRaf` (callbacks that
-   are not the renderer's). `cpu` = handler + tail + all of those.
-   `settle` = wall time from the op's start to the end of its last drawn frame.
-   `frameDelay` = from the tail's end to the first frame's start.
+   transitions), `undrawnCpu` (renderer callbacks that drew nothing: v1's
+   idle polls, v2's capped ticks and upload-only frames), `otherRaf`
+   (callbacks that are not the renderer's). `cpu` = handler + tail + all of
+   those. `settle` = wall time
+   from the op's start to the end of its last drawn frame. `frameDelay` = from
+   the tail's end to the first frame's start.
 6. **Idle.** The op is over at the renderer's `idle` event followed by 50 ms
    with no drawn frame (Solid's idle tasks and late image uploads can draw
    again: then it waits for the next `idle`), or after 50 ms with no drawn
@@ -202,7 +226,7 @@ renderer's `idle` event (both majors emit it). For each op:
    (`keyupFrames`) before the next op.
 
 Work outside the handler, the microtask tail and rAF callbacks (timers, image
-decode callbacks, the renderers' idle maintenance) is not in the time-mode
+decode callbacks, the renderer's idle maintenance) is not in the time-mode
 numbers; the profile mode sees it.
 
 ## Modes
@@ -218,7 +242,6 @@ The op records above. No instrumentation beyond the rAF wrap and the
 
 ### `alloc`: bytes per op
 
-As the renderer's `test/allocations.ts` and `visual-regression/src/alloc-probe.ts`:
 CDP `HeapProfiler.startSampling` around the measured ops with
 `includeObjectsCollectedByMajorGC` and `…MinorGC` (objects that die young
 count), sampling interval 1 byte by default (every allocation). Each node's
@@ -231,11 +254,11 @@ bytes are charged to the innermost frame with a script URL on its stack
   mostly the harness's `MessageEvent`s), reported, not counted.
 
 V8 charges a callee it inlined to the function it was inlined into, so a
-renderer function inlined into a framework function counts as framework (the
-renderer's probe has the same caveat). The JSON lists the top 30 allocating
-functions (`function (chunk:line)`, bytes per op; line numbers are of the
-beautified bundle in `bench/dist/<arm>/assets`). The brief's goal of zero
-framework allocations in the steady state reads off the `framework` column.
+renderer function inlined into a framework function counts as framework. The
+JSON lists the top 30 allocating functions (`function (chunk:line)`, bytes
+per op; line numbers are of the beautified bundle in
+`bench/dist/<arm>/assets`). Zero framework allocations in the steady state
+reads off the `framework` column.
 
 ### `profile`: self time
 
@@ -246,8 +269,9 @@ and named `fn [native] (chunk)`. `(program)` and `(garbage collector)` are
 kept as their own buckets, `(idle)` is dropped. Under throttling the
 suspended time lands on whatever was on the stack, so self times are in
 throttled ms, like the time mode. The window includes everything between the
-ops too: for example both renderers' idle-maintenance `gl.getError()` (the
+ops too: for example the renderer's idle-maintenance `gl.getError()` (the
 out-of-memory probe), which shows up as `getError [native] (renderer)`.
+`--save-profiles` keeps the raw profile for `bench/harness/inclusive.mjs`.
 
 ### `count` (instrumented build, its timings are not reported)
 
@@ -257,7 +281,7 @@ Built separately (`BENCH_INSTRUMENT=1` into `dist/<arm>-count`). Per op:
 | ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | flex passes              | Build time: the default export of the arm's `src/core/flex.ts` and `flexLayout.ts` is wrapped (`bench/vite.config.ts`, `countFlexPasses`); one call is one container laid out. `n/a` if the hook did not install (the build warns).                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 | node writes              | Runtime: every configurable setter on the renderer node prototypes (from `renderer.root`, and every node `createNode`/`createTextNode` returns) is wrapped. Only **app writes** count: a setter call made while renderer code is on the stack is skipped (a renderer frame's callback, `createNode`/`createTextNode`/`createShader`/`animate`, another setter, a non-node emitter's dispatch such as a texture's), while the app's listeners the renderer calls (`loaded` and other node events, the renderer's `idle`) run as app code. v2's `Node.insertBefore` (since `dc09e5e`; the second way, beside the `parent` setter, to attach a child) counts as a write too. Per-prop counts in `topWrites.node`. |
-| shader writes            | Runtime: each shader node's `props` (v1: per-node own accessors; v2: a facade with non-configurable prototype accessors) is swapped for a counting forwarder, at `createShader` and for existing nodes. App writes only, as above.                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| shader writes            | Runtime: each shader node's `props` (v1: the node's own `definedProps`, one non-enumerable accessor per prop; v2: a facade with non-configurable prototype accessors) is swapped for a counting forwarder, at `createShader` and for existing nodes. App writes only, as above.                                                                                                                                                                                                                                                                                                                                                                                                                                |
 | in frames                | The app writes (both kinds) made during a renderer frame: Solid's work in listeners the frame calls, such as flex on text `loaded` (arms A and B; arm C measures a text in a flex container in the tail). Renderer v1 steps animations through its setters, v2 writes its arrays; neither counts.                                                                                                                                                                                                                                                                                                                                                                                                              |
 | created, creation props  | Nodes created through `createNode`/`createTextNode`, and the keys with a defined value in the props bag passed to them. Renderer v2 applies the bag through its public setters, v1 in its constructor; both are counted here, the same way, and never as writes.                                                                                                                                                                                                                                                                                                                                                                                                                                               |
 | animations               | App calls of `animate`/`animateProp` on node prototypes.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
@@ -275,8 +299,8 @@ renamed and restructured the text path between `faf4b9f` and `6392ce4`.
 | Hook (`hooks.<key>`)                    | Feeds                                            | A: v1 1.9.3                                  | B: v2 `faf4b9f`            | C: v2 `6392ce4` and later |
 | --------------------------------------- | ------------------------------------------------ | -------------------------------------------- | -------------------------- | ------------------------- |
 | `flexHooks` (build time)                | flex passes, frames to final layout              | default export of `flex.ts`, `flexLayout.ts` | same                       | same                      |
-| `nodeAccessors`                         | node writes, in frames                           | node prototype setters (and `insertBefore`)  | same                       | same                      |
-| shader `props` swap (`shaderUnwrapped`) | shader writes                                    | per-node accessors                           | prototype facade           | same                      |
+| `nodeAccessors`                         | node writes, in frames                           | node prototype setters                       | same                       | same, and `insertBefore`  |
+| shader `props` swap (`shaderUnwrapped`) | shader writes                                    | `definedProps` accessors                     | prototype facade           | same                      |
 | `createHook`                            | created, creation props                          | `createNode`, `createTextNode`               | same                       | same                      |
 | `animateHooks`                          | animations                                       | `animate`, `animateProp`                     | same                       | same                      |
 | `walkHook`                              | walks, walks/drawn frame                         | `Stage.drawFrame` loop iterations            | `ScenePass.run`            | same                      |
@@ -312,29 +336,26 @@ that saw it.
 
 ## Noise
 
-- **In-session control:** B and C are the same code; their ratio in the
-  summary is the noise floor of that series. A difference between A and B (or
-  later B and C) smaller than the B/C spread is not a result.
-- **The brief's rule:** a "faster" claim needs n ≥ 3 runs that beat the noise
-  floor. Use more runs (`--runs 5`) for effects near it.
+- **In-session control:** when B and C are the same code (above), their
+  ratio in the summary is the noise floor of that series. An effect smaller
+  than that spread is not a result.
+- **Runs:** a "faster" claim needs n ≥ 3 runs that beat the noise floor. Use
+  more runs (`--runs 5`) for effects near it.
 - **Throttling** adds up to ±0.43 ms per op (above); means over 60 ops reduce
   it to roughly ±0.05 ms per run.
 - **Machine load** shows directly in the numbers: other processes take the
   cores the GPU process and the compositor need. The summary prints the load
   average range; measure on a quiet machine.
-- **Chunking check** (2026-10-03, load average 2–4, so indicative only):
-  thumbnail-focus, arm B, time mode, 3 runs per build in the order chunked,
-  single-chunk, chunked. `total` per run: chunked 0.548, 0.618, 0.463 then
-  0.511, 0.501, 0.336 ms; single-chunk 0.472, 0.473, 0.466 ms. The
-  difference is inside the chunked build's own run-to-run spread; repeat
-  with `--no-chunks` on a quiet machine before relying on sub-10% effects.
+- **Chunking:** the chunked build's calls between chunks are real module
+  imports. Compare it with `--no-chunks` on a quiet machine before relying on
+  sub-10% effects.
 - **Machine cost:** a throttled page keeps about one core busy in the
   Chromium renderer process even when the page is idle. Do not run two
   series at once.
 
-## How the numbers map to the brief
+## Where each metric is
 
-| Brief metric (Phase 0)                     | Where                                                                 |
+| Metric                                     | Where                                                                 |
 | ------------------------------------------ | --------------------------------------------------------------------- |
 | JS time per press: handler, tail, frame    | time mode: `handler`, `tail`, `frame`, `total` (and `cpu` until idle) |
 | bytes allocated per press                  | alloc mode: `total`, split framework / reactivity / renderer / user   |
@@ -346,7 +367,21 @@ that saw it.
 | layout cache hit rate                      | count mode: `layout cache hit rate`                                   |
 | time from setting the text to final layout | count mode: `frames to final layout`, `ms to final layout`            |
 | where the time goes                        | profile mode: self time per chunk, top 20 functions                   |
+| inclusive time of named functions          | `bench/harness/inclusive.mjs` on `--save-profiles` output             |
 
-The demo app's own `#/benchmark` (Phase 0 step 3) and the on-device method
-are in `solid-demo-app/BENCHMARKING.md`; this harness is the in-browser,
-per-scenario complement, not the TV gate.
+This harness is the in-browser, per-scenario measurement on a desktop CPU
+under throttling; it is not a substitute for measuring on a device.
+
+## The demo app and micro-benchmarks
+
+`bench/demo` runs solid-demo-app (its 1.7 port, `../solid-demo-app-1.7`) per
+arm; the demo's own `#/benchmark` and the on-device method are in its
+`BENCHMARKING.md`.
+
+| Script                           | What it does                                                                                                                |
+| -------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| `bench/demo/run-demo.mjs`        | Builds the demo per arm into `dist-bench/<arm>` and runs its `#/benchmark` under CDP throttling                             |
+| `bench/demo/route-times.mjs`     | Times each demo route from the hash change to the page settling, per arm                                                    |
+| `bench/demo/check-routes.mjs`    | Opens every route of a demo build and reports console errors, page errors and failed requests                               |
+| `bench/demo/bundle-copies.mjs`   | Checks from a build's sourcemaps that it bundles one copy each of `solid-js` and `@solidtv/renderer`                        |
+| `bench/micro/accessors.test.tsx` | ElementNode's forwarded-prop accessors on real renderer v2 handles (`npx vitest run --config=bench/micro/vitest.config.ts`) |
