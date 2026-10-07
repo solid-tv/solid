@@ -31,7 +31,6 @@ import {
   isElementText,
   logRenderTree,
   isFunction,
-  spliceItem,
 } from './utils.js';
 import { isDev, SHADERS_ENABLED } from './env.js';
 import { Config, isDomRendererActive } from './config.js';
@@ -142,6 +141,23 @@ function addToLayoutQueue(node: ElementNode) {
   schedulePostMutation();
 }
 
+/**
+ * Removes the first `item` from `arr` in place, as `splice(index, 1)` did,
+ * without the array of removed items splice returns. Returns its index, or
+ * -1 when it is not there.
+ */
+function removeItem<T>(arr: T[], item: T): number {
+  const index = arr.indexOf(item);
+  if (index > -1) {
+    const last = arr.length - 1;
+    for (let i = index; i < last; i++) {
+      arr[i] = arr[i + 1]!;
+    }
+    arr.pop();
+  }
+  return index;
+}
+
 // Text-default template, built once on first use.  Config.fontSettings is
 // expected to be set at app startup and not change afterwards.
 let _fontTemplate: Array<[string, any]> | undefined;
@@ -172,6 +188,22 @@ const EFFECT_SHADER_KEYS = [
   'shadow',
 ] as const satisfies ReadonlyArray<keyof StyleEffects>;
 
+const hasOwnProperty = Object.prototype.hasOwnProperty;
+
+// Handle individual border sides: transform width/w to bottom/left/right/top
+const borderSideMap: Record<string, string> = {
+  borderBottom: 'bottom',
+  borderLeft: 'left',
+  borderRight: 'right',
+  borderTop: 'top',
+};
+
+// The shader prop each key of a style object writes, per style prefix
+// (`border` + `width` → `border-w`, `borderTop` + `w` → `border-top`): built
+// at a key's first write, so that a write builds no string.
+const shaderPropNames: Record<string, Record<string, string> | undefined> =
+  Object.create(null);
+
 const parseAndAssignShaderProps = (
   prefix: string,
   obj: Record<string, unknown>,
@@ -179,28 +211,33 @@ const parseAndAssignShaderProps = (
 ) => {
   if (!obj) return;
 
-  // Handle individual border sides: transform width/w to bottom/left/right/top
-  const borderSideMap: Record<string, string> = {
-    borderBottom: 'bottom',
-    borderLeft: 'left',
-    borderRight: 'right',
-    borderTop: 'top',
-  };
-
   const side = borderSideMap[prefix];
   const actualPrefix = side ? 'border' : prefix;
+  let names = shaderPropNames[prefix];
+  if (names === undefined) {
+    names = Object.create(null) as Record<string, string>;
+    shaderPropNames[prefix] = names;
+  }
 
   props[actualPrefix] = obj;
-  Object.entries(obj).forEach(([key, value]) => {
-    let transformedKey = key === 'width' ? 'w' : key;
+  // The object's own enumerable keys in order, as Object.entries gave them,
+  // without its arrays and closure.
+  for (const key in obj) {
+    if (!hasOwnProperty.call(obj, key)) continue;
+    let name = names[key];
+    if (name === undefined) {
+      let transformedKey = key === 'width' ? 'w' : key;
 
-    // If border side and key is width/w, transform to side (bottom/left/right/top)
-    if (side && transformedKey === 'w') {
-      transformedKey = side;
+      // If border side and key is width/w, transform to side (bottom/left/right/top)
+      if (side && transformedKey === 'w') {
+        transformedKey = side;
+      }
+
+      name = actualPrefix + '-' + transformedKey;
+      names[key] = name;
     }
-
-    props[`${actualPrefix}-${transformedKey}`] = value;
-  });
+    props[name] = obj[key];
+  }
 };
 
 export function convertToShader(
@@ -957,8 +994,16 @@ export class ElementNode {
     if (beforeNode) {
       // SolidJS can move nodes around in the children array.
       // We need to insert following DOM insertBefore which moves elements.
-      spliceItem(this.children, node as ElementNode, 1);
-      if (spliceItem(this.children, beforeNode as ElementNode, 0, node) > -1) {
+      const children = this.children;
+      removeItem(children, node as ElementNode);
+      const index = children.indexOf(beforeNode as ElementNode);
+      if (index > -1) {
+        // In front of beforeNode, the rest moved up one: splice(index, 0,
+        // node) without its argument list and result array.
+        for (let i = children.length; i > index; i--) {
+          children[i] = children[i - 1]!;
+        }
+        children[index] = node as ElementNode;
         return;
       }
     }
@@ -967,7 +1012,7 @@ export class ElementNode {
   }
 
   removeChild(node: ElementNode | ElementText | TextNode) {
-    if (spliceItem(this.children, node, 1) > -1) {
+    if (removeItem(this.children, node as ElementNode) > -1) {
       if (isElementNode(node) && node.onRemove) {
         node.onRemove.call(node, node);
       }
@@ -1741,7 +1786,11 @@ export class ElementNode {
     this.onRender?.(this);
 
     if (node.onEvent) {
-      for (const [name, handler] of Object.entries(node.onEvent)) {
+      const onEvent = node.onEvent;
+      // Own enumerable keys in order, as Object.entries gave them.
+      for (const name in onEvent) {
+        if (!hasOwnProperty.call(onEvent, name)) continue;
+        const handler = onEvent[name as keyof OnEvent]!;
         if (typeof node.lng.on === 'function') {
           node.lng.on(name, (_inode, data) => handler.call(node, node, data));
         }

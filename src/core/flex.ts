@@ -1,5 +1,6 @@
 import { type ElementNode } from './elementNode.js';
 import { isTextNode, isElementText } from './utils.js';
+import { isDev } from './env.js';
 
 export default function (node: ElementNode): boolean {
   const direction = node.flexDirection || 'row';
@@ -154,7 +155,7 @@ export default function (node: ElementNode): boolean {
       node._containsFlexGrow = node._containsFlexGrow ? null : true;
     } else if (node._containsFlexGrow) {
       node._containsFlexGrow = null;
-    } else {
+    } else if (isDev) {
       // No positive space available for items to grow, or items overflow.
       // flex-grow has no effect in this case.
       console.warn(
