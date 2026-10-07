@@ -24,8 +24,8 @@ importers:
         specifier: ^0.16.1
         version: 0.16.1(solid-js@1.9.3)
       '@solidtv/renderer':
-        specifier: ^2.0.0-alpha.1
-        version: 2.0.0-alpha.1
+        specifier: ^2.0.0-alpha.3
+        version: 2.0.0-alpha.3
       solid-js:
         specifier: '*'
         version: 1.9.3
@@ -1167,8 +1167,8 @@ packages:
       '@solidjs/router':
         optional: true
 
-  '@solidtv/renderer@2.0.0-alpha.1':
-    resolution: {integrity: sha512-wdhy2bcBv2QysYEW0fG3eCjr/yDdE1CBhhZpxyz+QgAAE3Xz31G/bnfvx6CWCNIyO5Hn20rysPVJp6GDZ9pI0Q==}
+  '@solidtv/renderer@2.0.0-alpha.3':
+    resolution: {integrity: sha512-MlBROAAi5n0Gu/i9IZCzNoCCX1I5VpxTR2c6rktBDRsFJHgS7zfiBNvgnUiCza4GWssh/Ets3HPBF4/Ft0kxKQ==}
     engines: {node: '>= 18.0.0', npm: '>= 10.0.0', pnpm: '>= 10.17.0'}
 
   '@standard-schema/spec@1.1.0':
@@ -3718,7 +3718,7 @@ snapshots:
     optionalDependencies:
       '@solidjs/router': 0.16.1(solid-js@1.9.3)
 
-  '@solidtv/renderer@2.0.0-alpha.1': {}
+  '@solidtv/renderer@2.0.0-alpha.3': {}
 
   '@standard-schema/spec@1.1.0': {}
 
