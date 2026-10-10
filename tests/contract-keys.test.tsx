@@ -854,14 +854,14 @@ v.describe('contract: per-element throttleInput', () => {
     },
   );
 
-  // BUG: per-element throttling also drops key-ups. isElementThrottled
-  // (src/core/focusManager.ts:285) is checked for releases too (lines 312 and
-  // 350), and a key-up has the same key as the press it follows, so a release
-  // within throttleInput ms of a handled press never reaches on<Key>Release
-  // or onCapture<Key>Release. The global Config.throttleInput skips key-ups
-  // (line 390). Breaks useHold on a throttled node (the release is lost, so a
-  // tap waits for the hold timer). Expected: releases are never throttled.
-  v.it.skip(
+  // B3 (fixed): per-element throttling also dropped key-ups.
+  // isElementThrottled was checked for releases too, and a key-up has the same
+  // key as the press it follows, so a release within throttleInput ms of a
+  // handled press never reached on<Key>Release or onCapture<Key>Release. The
+  // global Config.throttleInput skips key-ups. Broke useHold on a throttled
+  // node (the release was lost, so a tap waited for the hold timer). Releases
+  // are now never throttled.
+  v.it(
     'a key release right after a handled press still reaches on<Key>Release',
     async () => {
       const { r, target, dispose } = await mountRow(true);
@@ -870,6 +870,38 @@ v.describe('contract: per-element throttleInput', () => {
       at(1050);
       target.up('ArrowRight');
       v.expect(r.order()).toEqual(['row.onRight', 'row.onRightRelease']);
+      dispose();
+    },
+  );
+
+  // B3, like the global Config.throttleInput: a release the node handles does
+  // not start a window either. Before the fix the handled release at 1600
+  // started one, and the press at 1900 was dropped.
+  v.it(
+    'a release the node handles does not restart its throttle window',
+    async () => {
+      const r = recorder();
+      const { target, dispose } = await mount(() => (
+        <view
+          id="row"
+          throttleInput={500}
+          onRight={r.handler('onRight', true)}
+          onRightRelease={r.handler('onRightRelease', true)}
+        >
+          <view id="item" autofocus />
+        </view>
+      ));
+      at(1000);
+      target.down('ArrowRight');
+      at(1600);
+      target.up('ArrowRight');
+      at(1900);
+      target.down('ArrowRight');
+      v.expect(r.order()).toEqual([
+        'row.onRight',
+        'row.onRightRelease',
+        'row.onRight',
+      ]);
       dispose();
     },
   );
