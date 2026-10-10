@@ -37,6 +37,11 @@ const flattenKeyMap = (
         newTargetMap[v] = key;
       });
     } else if (value === null) {
+      // Unmap every key mapped to this name, defaults included (B4). The
+      // entry keyed by the name itself goes too, as it always did.
+      for (const mapped in newTargetMap) {
+        if (newTargetMap[mapped] === key) delete newTargetMap[mapped];
+      }
       delete newTargetMap[key];
     } else {
       newTargetMap[value as KeyNameOrKeyCode] = key;
@@ -298,6 +303,9 @@ const updateFocusPath = (
 let lastGlobalKeyPressTime = 0;
 let lastInputKey: string | number | undefined;
 
+// Per-element throttleInput applies to key presses only, like the global
+// Config.throttleInput: a release is never dropped and never starts a window
+// (B3).
 const isElementThrottled = (
   elm: ElementNode,
   sameKey: boolean,
@@ -372,14 +380,14 @@ const propagateKeyPress = (
 
   for (let i = fp.length - 1; i >= 0; i--) {
     const elm = fp[i]!;
-    if (isElementThrottled(elm, sameKey, currentTime)) return true;
+    if (!isUp && isElementThrottled(elm, sameKey, currentTime)) return true;
 
     const captureHandler = elm[captureEvent] || elm[captureKey];
     if (
       isFunction(captureHandler) &&
       captureHandler.call(elm, e, elm, finalFocusElm, mappedEvent) === true
     ) {
-      elm._lastAnyKeyPressTime = currentTime;
+      if (!isUp) elm._lastAnyKeyPressTime = currentTime;
       return true;
     }
   }
@@ -393,7 +401,7 @@ const propagateKeyPress = (
 
   for (let i = 0; i < fp.length; i++) {
     const elm = fp[i]!;
-    if (isElementThrottled(elm, sameKey, currentTime)) return true;
+    if (!isUp && isElementThrottled(elm, sameKey, currentTime)) return true;
 
     let handled = false;
     if (eventHandlerKey) {
@@ -414,7 +422,7 @@ const propagateKeyPress = (
     }
 
     if (handled) {
-      elm._lastAnyKeyPressTime = currentTime;
+      if (!isUp) elm._lastAnyKeyPressTime = currentTime;
       return true;
     }
   }

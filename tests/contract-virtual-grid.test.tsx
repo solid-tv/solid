@@ -200,6 +200,87 @@ v.describe('VirtualGrid', () => {
     },
   );
 
+  v.it(
+    'a row change lays the grid out once, a move within a row not at all (1.7)',
+    async () => {
+      let grid!: lng.ElementNode;
+      dispose = await mount(() => (
+        <view width={1920} height={1080}>
+          <VirtualGrid
+            ref={grid}
+            autofocus
+            y={40}
+            width={700}
+            columns={3}
+            rows={2}
+            buffer={1}
+            each={range(20)}
+          >
+            {(item) => <Cell item={item()} />}
+          </VirtualGrid>
+        </view>
+      ));
+      // The grid's flex passes: updateLayout calls, from the post-mutation
+      // layout phase and from VirtualGrid itself.
+      let n = 0;
+      const updateLayout = grid.updateLayout;
+      grid.updateLayout = function (this: lng.ElementNode) {
+        n++;
+        return updateLayout.call(this);
+      };
+      const passes: number[] = [];
+      for (const key of [
+        'ArrowRight',
+        'ArrowDown',
+        'ArrowDown',
+        'ArrowDown',
+        'ArrowLeft',
+        'ArrowUp',
+        'ArrowUp',
+      ]) {
+        n = 0;
+        await press(key);
+        passes.push(n);
+      }
+      // It was two per row change and none within a row.
+      v.expect(passes).toEqual([0, 1, 1, 1, 0, 1, 1]);
+    },
+  );
+
+  v.it(
+    'a press re-runs only the props that depend on the cursor: an unrelated prop getter is not read again (1.7)',
+    async () => {
+      let grid!: lng.ElementNode;
+      let reads = 0;
+      const probe = () => {
+        reads++;
+        return 1;
+      };
+      dispose = await mount(() => (
+        <view width={1920} height={1080}>
+          <VirtualGrid
+            ref={grid}
+            autofocus
+            y={40}
+            width={700}
+            columns={3}
+            rows={2}
+            buffer={1}
+            each={range(20)}
+            probe={probe()}
+          >
+            {(item) => <Cell item={item()} />}
+          </VirtualGrid>
+        </view>
+      ));
+      const before = reads;
+      await press('ArrowRight', 'ArrowDown', 'ArrowDown', 'ArrowUp');
+      v.expect(grid.cursor).toBe(4);
+      // It was read again on every press: the cursor was in the spread.
+      v.expect(reads).toBe(before);
+    },
+  );
+
   v.it('defaults: rows 1, buffer 2, scroll "always"', async () => {
     let grid!: lng.ElementNode;
     dispose = await mount(() => (
@@ -336,9 +417,11 @@ v.describe('VirtualGrid', () => {
       setSel(10);
       await flush();
       v.expect(state()).toEqual(['g10', 4, 10, -60, '6-17', 0]);
-      // Current behaviour: lastIdx is the new data index (the `selected` prop
-      // already wrote it to the node), not the previous child index.
-      v.expect(calls).toEqual([[4, 'g10', 10]]);
+      // B15 (1.7): lastIdx is the previous child index, in the previous
+      // window (g0 was child 0 of 0-8). It was the new data index (10): the
+      // `selected` prop wrote it to the node before updateSelected read it,
+      // the cause of the B15 test below where the grid stays scrolled.
+      v.expect(calls).toEqual([[4, 'g10', 0]]);
       calls.length = 0;
 
       // Past the end: onEndReached (no threshold needed), focus stays.
@@ -354,9 +437,12 @@ v.describe('VirtualGrid', () => {
       setItems(range(30));
       await flush();
       v.expect(state()).toEqual(['g25', 4, 25, -60, '21-29', 1]);
+      // B15 (1.7): lastIdx is the previous child index, in the previous
+      // window (g10 was child 4 of 6-17), not the data index (25) the
+      // `selected` prop wrote to the node.
       v.expect(calls).toEqual([
-        [4, 'g25', 25],
-        [4, 'g25', 25],
+        [4, 'g25', 4],
+        [4, 'g25', 4],
       ]);
 
       await press('ArrowRight');
@@ -364,14 +450,13 @@ v.describe('VirtualGrid', () => {
     },
   );
 
-  // Today: with autofocus and selected={10}, the first forwardFocus runs
-  // before the selected effect and treats 10 as a child index of the initial
-  // window (items 6-17), i.e. item 16; the grid ends on g16 with cursor 16.
-  // `selected={props.selected || 0}` passes the data index straight to the
-  // node (VirtualGrid.tsx:210) and navigableForwardFocus reads it as a child
-  // index. Without autofocus (setFocus later) g10 is focused correctly.
-  v.it.skip(
-    'BUG: autofocus with an initial selected past the first window focuses the wrong item (VirtualGrid.tsx:210)',
+  // B15 (fixed in 1.7): with autofocus and selected={10}, the first
+  // forwardFocus runs before the selected effect and treated 10 as a child
+  // index of the initial window (items 6-17), i.e. item 16: the grid ended on
+  // g16 with cursor 16. `selected={props.selected || 0}` passed the data
+  // index straight to the node; it now gets the child index (10 - 6 = 4).
+  v.it(
+    'B15: autofocus with an initial selected past the first window focuses that item',
     async () => {
       let grid!: lng.ElementNode;
       dispose = await mount(() => (
@@ -391,17 +476,176 @@ v.describe('VirtualGrid', () => {
           </VirtualGrid>
         </view>
       ));
-      v.expect([focusedId(), grid.cursor]).toEqual(['g10', 10]);
+      // y: g10's row (row 1 of the window 6-17, 100 high) at the grid's
+      // start, the same y as reaching g10 by Down then Up.
+      v.expect([focusedId(), grid.cursor, grid.selected, grid.y]).toEqual([
+        'g10',
+        10,
+        4,
+        -60,
+      ]);
+      await press('ArrowDown', 'ArrowUp');
+      v.expect([focusedId(), grid.cursor, grid.y]).toEqual(['g10', 10, -60]);
     },
   );
 
-  // Today: after selected 10 -> 1, g1 is focused with y still -60, so the
-  // top row is drawn 60px above the grid's start. updateSelected reads
-  // lastSelected from the node (VirtualGrid.tsx:145) after the reactive
-  // `selected` prop has overwritten it with the new value, so the row-change
-  // check in onSelectedChanged (line 103) sees no change and skips the scroll.
-  v.it.skip(
-    'BUG: reactive selected back to the first row leaves the grid scrolled (VirtualGrid.tsx:145)',
+  v.it(
+    'B15: an initial selected without autofocus: focusing the grid later focuses that item, scrolled to its row',
+    async () => {
+      let grid!: lng.ElementNode;
+      dispose = await mount(() => (
+        <view width={1920} height={1080}>
+          <VirtualGrid
+            ref={grid}
+            y={40}
+            width={700}
+            columns={3}
+            rows={2}
+            buffer={1}
+            each={range(20)}
+            selected={10}
+          >
+            {(item) => <Cell item={item()} />}
+          </VirtualGrid>
+        </view>
+      ));
+      grid.setFocus();
+      await flush();
+      v.expect([focusedId(), grid.cursor, grid.selected, grid.y]).toEqual([
+        'g10',
+        10,
+        4,
+        -60,
+      ]);
+    },
+  );
+
+  for (const autofocus of [true, false]) {
+    v.it(
+      `B15: an initial selected applied when the items arrive after mount scrolls to its row (${autofocus ? 'autofocus' : 'focused later'})`,
+      async () => {
+        let grid!: lng.ElementNode;
+        const [items, setItems] = s.createSignal<number[]>([]);
+        dispose = await mount(() => (
+          <view width={1920} height={1080}>
+            <VirtualGrid
+              ref={grid}
+              autofocus={autofocus}
+              y={40}
+              width={700}
+              columns={3}
+              rows={2}
+              buffer={1}
+              each={items()}
+              selected={10}
+            >
+              {(item) => <Cell item={item()} />}
+            </VirtualGrid>
+          </view>
+        ));
+        setItems(range(20));
+        await flush();
+        if (!autofocus) {
+          grid.setFocus();
+          await flush();
+        }
+        // As with the items present at mount (and as in 1.6): g10's row at
+        // the grid's start. A mount run that found no child used to use up
+        // the initial scroll, leaving y at 40.
+        v.expect([focusedId(), grid.cursor, grid.selected, grid.y]).toEqual([
+          'g10',
+          10,
+          4,
+          -60,
+        ]);
+      },
+    );
+  }
+
+  v.it(
+    'B15: an initial selected past the end (onEndReached) scrolls to its row once the items arrive',
+    async () => {
+      let grid!: lng.ElementNode;
+      const [items, setItems] = s.createSignal(range(20));
+      const onEndReached = v.vi.fn();
+      dispose = await mount(() => (
+        <view width={1920} height={1080}>
+          <VirtualGrid
+            ref={grid}
+            autofocus
+            y={40}
+            width={700}
+            columns={3}
+            rows={2}
+            buffer={1}
+            each={items()}
+            selected={25}
+            onEndReached={onEndReached}
+          >
+            {(item) => <Cell item={item()} />}
+          </VirtualGrid>
+        </view>
+      ));
+      v.expect(onEndReached).toHaveBeenCalledTimes(1);
+      setItems(range(30));
+      await flush();
+      // Window 21-29: g25 is child 4, in its second row.
+      v.expect([focusedId(), grid.cursor, grid.selected, grid.y]).toEqual([
+        'g25',
+        25,
+        4,
+        -60,
+      ]);
+    },
+  );
+
+  for (const selected of [10, 0]) {
+    v.it(
+      `B15: the mount call of onSelectedChanged for selected={${selected}} reports lastIdx === idx, as Row and Column do`,
+      async () => {
+        const calls: unknown[][] = [];
+        dispose = await mount(() => (
+          <view width={1920} height={1080}>
+            <VirtualGrid
+              autofocus
+              y={40}
+              width={700}
+              columns={3}
+              rows={2}
+              buffer={1}
+              each={range(20)}
+              selected={selected}
+              onSelectedChanged={(idx, _g, active, lastIdx) =>
+                calls.push([idx, active?.id, lastIdx])
+              }
+            >
+              {(item) => <Cell item={item()} />}
+            </VirtualGrid>
+          </view>
+        ));
+        // Three calls on an autofocus mount with `selected` (forwardFocus and
+        // the selected effect), each with lastIdx === idx. B15 (1.7): for
+        // selected={10} they were child 10 / item 16 (see the B15 test
+        // above); selected={0} is unchanged.
+        const idx = selected === 10 ? 4 : 0;
+        const id = `g${selected}`;
+        v.expect(calls).toEqual([
+          [idx, id, idx],
+          [idx, id, idx],
+          [idx, id, idx],
+        ]);
+      },
+    );
+  }
+
+  // B15 (fixed in 1.7): after selected 10 -> 1, g1 was focused with y still
+  // -60, so the top row was drawn 60px above the grid's start. updateSelected
+  // read lastSelected from the node after the reactive `selected` prop had
+  // overwritten it with the new value, so the row-change check in
+  // onSelectedChanged saw no change and skipped the scroll. The prop no
+  // longer writes the node's `selected` after mount.
+  v.it(
+    'B15: reactive selected back to the first row scrolls the grid back',
     async () => {
       let grid!: lng.ElementNode;
       const [sel, setSel] = s.createSignal<number | undefined>(undefined);
@@ -430,14 +674,14 @@ v.describe('VirtualGrid', () => {
     },
   );
 
-  // Today: Down from g17 (no item below it) bubbles but leaves `selected` at
-  // 8, past the 8 mounted children; the next Up computes 8 - 3 = 5, lands on
-  // g17 again and the press is lost. onVerticalNav writes this.selected
-  // (VirtualGrid.tsx:74) before checking that the child exists (line 77).
-  // Its last-row guard (line 63, maxRows = floor(length / columns)) is also
-  // one row late when length is a multiple of columns.
-  v.it.skip(
-    'BUG: a Down with nothing below corrupts selected, so the next Up is lost (VirtualGrid.tsx:74)',
+  // B15 (fixed in 1.7): Down from g17 (no item below it) bubbled but left
+  // `selected` at 8, past the 8 mounted children; the next Up computed
+  // 8 - 3 = 5, landed on g17 again and the press was lost. onVerticalNav
+  // wrote this.selected before checking that the child exists. Its last-row
+  // guard (maxRows = floor(length / columns)) was also one row late when the
+  // length is a multiple of columns.
+  v.it(
+    'B15: a Down with nothing below leaves selected alone, so the next Up moves up',
     async () => {
       let grid!: lng.ElementNode;
       dispose = await mount(() => (

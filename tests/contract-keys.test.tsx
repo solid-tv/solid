@@ -32,11 +32,13 @@ const MENU_KEY = 'ContractMenuKey';
 const MENU_KEYCODE = 9077;
 const LEGACY_MENU_KEY = 'ContractLegacyMenuKey';
 const UNMAPPED_KEY = 'ContractUnmappedKey';
+const NULLED_KEY = 'ContractNulledKey';
 const menuKeyMap = { Menu: [MENU_KEY, MENU_KEYCODE] } as Partial<KeyMap>;
 
 v.afterAll(() => {
-  // `{ <key>: null }` deletes the key map entry for that *key* (see the
-  // null-value BUG test below), which is exactly what undoes menuKeyMap.
+  // `{ <key>: null }` still deletes the key map entry for that *key* (besides
+  // unmapping a name's keys, B4 below), which is exactly what undoes
+  // menuKeyMap.
   createRoot((dispose) => {
     useFocusManager(
       {
@@ -461,11 +463,12 @@ v.describe('contract: key map', () => {
     },
   );
 
-  // BUG: KeyMap types allow `{ Left: null }` (src/core/focusKeyTypes.ts), but
-  // flattenKeyMap (src/core/focusManager.ts:42) runs `delete targetMap['Left']`
-  // on a table keyed by *key* ('ArrowLeft' → 'Left'), so the defaults for that
-  // name are never removed. Expected: null unmaps the name's keys.
-  v.it.skip('a null value removes the keys mapped to that name', async () => {
+  // B4 (fixed): KeyMap types allow `{ Left: null }`
+  // (src/core/focusKeyTypes.ts), but flattenKeyMap ran
+  // `delete targetMap['Left']` on a table keyed by *key*
+  // ('ArrowLeft' → 'Left'), so the defaults for that name were never removed.
+  // null now unmaps the name's keys.
+  v.it('a null value removes the keys mapped to that name', async () => {
     const r = recorder();
     try {
       const { target, dispose } = await mountChain(
@@ -482,6 +485,28 @@ v.describe('contract: key map', () => {
       });
     }
   });
+
+  v.it(
+    'a null value under a key (not a name) still removes that key (kept with B4)',
+    async () => {
+      const r = recorder();
+      const { target, dispose } = await mountChain(
+        (id) => (id === 'leaf' ? { onMenu: r.handler('onMenu') } : {}),
+        { Menu: [NULLED_KEY] } as Partial<KeyMap>,
+      );
+      target.down(NULLED_KEY);
+      createRoot((d) => {
+        useFocusManager(
+          { [NULLED_KEY]: null } as Partial<KeyMap>,
+          new KeyTarget(),
+        );
+        d();
+      });
+      target.down(NULLED_KEY);
+      v.expect(r.order()).toEqual(['leaf.onMenu']);
+      dispose();
+    },
+  );
 });
 
 v.describe('contract: hold', () => {
@@ -829,14 +854,14 @@ v.describe('contract: per-element throttleInput', () => {
     },
   );
 
-  // BUG: per-element throttling also drops key-ups. isElementThrottled
-  // (src/core/focusManager.ts:285) is checked for releases too (lines 312 and
-  // 350), and a key-up has the same key as the press it follows, so a release
-  // within throttleInput ms of a handled press never reaches on<Key>Release
-  // or onCapture<Key>Release. The global Config.throttleInput skips key-ups
-  // (line 390). Breaks useHold on a throttled node (the release is lost, so a
-  // tap waits for the hold timer). Expected: releases are never throttled.
-  v.it.skip(
+  // B3 (fixed): per-element throttling also dropped key-ups.
+  // isElementThrottled was checked for releases too, and a key-up has the same
+  // key as the press it follows, so a release within throttleInput ms of a
+  // handled press never reached on<Key>Release or onCapture<Key>Release. The
+  // global Config.throttleInput skips key-ups. Broke useHold on a throttled
+  // node (the release was lost, so a tap waited for the hold timer). Releases
+  // are now never throttled.
+  v.it(
     'a key release right after a handled press still reaches on<Key>Release',
     async () => {
       const { r, target, dispose } = await mountRow(true);
@@ -845,6 +870,38 @@ v.describe('contract: per-element throttleInput', () => {
       at(1050);
       target.up('ArrowRight');
       v.expect(r.order()).toEqual(['row.onRight', 'row.onRightRelease']);
+      dispose();
+    },
+  );
+
+  // B3, like the global Config.throttleInput: a release the node handles does
+  // not start a window either. Before the fix the handled release at 1600
+  // started one, and the press at 1900 was dropped.
+  v.it(
+    'a release the node handles does not restart its throttle window',
+    async () => {
+      const r = recorder();
+      const { target, dispose } = await mount(() => (
+        <view
+          id="row"
+          throttleInput={500}
+          onRight={r.handler('onRight', true)}
+          onRightRelease={r.handler('onRightRelease', true)}
+        >
+          <view id="item" autofocus />
+        </view>
+      ));
+      at(1000);
+      target.down('ArrowRight');
+      at(1600);
+      target.up('ArrowRight');
+      at(1900);
+      target.down('ArrowRight');
+      v.expect(r.order()).toEqual([
+        'row.onRight',
+        'row.onRightRelease',
+        'row.onRight',
+      ]);
       dispose();
     },
   );
