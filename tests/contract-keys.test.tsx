@@ -32,11 +32,13 @@ const MENU_KEY = 'ContractMenuKey';
 const MENU_KEYCODE = 9077;
 const LEGACY_MENU_KEY = 'ContractLegacyMenuKey';
 const UNMAPPED_KEY = 'ContractUnmappedKey';
+const NULLED_KEY = 'ContractNulledKey';
 const menuKeyMap = { Menu: [MENU_KEY, MENU_KEYCODE] } as Partial<KeyMap>;
 
 v.afterAll(() => {
-  // `{ <key>: null }` deletes the key map entry for that *key* (see the
-  // null-value BUG test below), which is exactly what undoes menuKeyMap.
+  // `{ <key>: null }` still deletes the key map entry for that *key* (besides
+  // unmapping a name's keys, B4 below), which is exactly what undoes
+  // menuKeyMap.
   createRoot((dispose) => {
     useFocusManager(
       {
@@ -461,11 +463,12 @@ v.describe('contract: key map', () => {
     },
   );
 
-  // BUG: KeyMap types allow `{ Left: null }` (src/core/focusKeyTypes.ts), but
-  // flattenKeyMap (src/core/focusManager.ts:42) runs `delete targetMap['Left']`
-  // on a table keyed by *key* ('ArrowLeft' → 'Left'), so the defaults for that
-  // name are never removed. Expected: null unmaps the name's keys.
-  v.it.skip('a null value removes the keys mapped to that name', async () => {
+  // B4 (fixed): KeyMap types allow `{ Left: null }`
+  // (src/core/focusKeyTypes.ts), but flattenKeyMap ran
+  // `delete targetMap['Left']` on a table keyed by *key*
+  // ('ArrowLeft' → 'Left'), so the defaults for that name were never removed.
+  // null now unmaps the name's keys.
+  v.it('a null value removes the keys mapped to that name', async () => {
     const r = recorder();
     try {
       const { target, dispose } = await mountChain(
@@ -482,6 +485,28 @@ v.describe('contract: key map', () => {
       });
     }
   });
+
+  v.it(
+    'a null value under a key (not a name) still removes that key (kept with B4)',
+    async () => {
+      const r = recorder();
+      const { target, dispose } = await mountChain(
+        (id) => (id === 'leaf' ? { onMenu: r.handler('onMenu') } : {}),
+        { Menu: [NULLED_KEY] } as Partial<KeyMap>,
+      );
+      target.down(NULLED_KEY);
+      createRoot((d) => {
+        useFocusManager(
+          { [NULLED_KEY]: null } as Partial<KeyMap>,
+          new KeyTarget(),
+        );
+        d();
+      });
+      target.down(NULLED_KEY);
+      v.expect(r.order()).toEqual(['leaf.onMenu']);
+      dispose();
+    },
+  );
 });
 
 v.describe('contract: hold', () => {

@@ -37,6 +37,11 @@ const flattenKeyMap = (
         newTargetMap[v] = key;
       });
     } else if (value === null) {
+      // Unmap every key mapped to this name, defaults included (B4). The
+      // entry keyed by the name itself goes too, as it always did.
+      for (const mapped in newTargetMap) {
+        if (newTargetMap[mapped] === key) delete newTargetMap[mapped];
+      }
       delete newTargetMap[key];
     } else {
       newTargetMap[value as KeyNameOrKeyCode] = key;
