@@ -6,6 +6,8 @@
 
 SolidTV is a UI framework for building high-performance TV applications. It allows you to declaratively construct UI nodes with reactive primitives, providing incredible performance on even the most constrained hardware.
 
+**Coming from `@lightningtv/solid`?** The project moved here and is now `@solidtv/solid`. See the [migration guide](https://solid-tv.github.io/solid/#/migrate).
+
 **[Commercial support available](https://solidtv.dev/#services)** from the creator of SolidTV: support plans, performance audits, migrations and Apple TV ports.
 
 ## Used by companies worldwide
@@ -74,34 +76,6 @@ render(() => <text>Hello World</text>);
 
 For a more detailed Hello World guide check out the [Hello World](HelloWorld.md) guide.
 
-## Migration Guide from previous repo:
+## Migrating from @lightningtv/solid
 
-If you're migrating from https://github.com/lightning-js/solid
-
-Find and replace:
-"@solidtv/solid-primitives" with "@solidtv/solid/primitives"
-"@solidtv/solid" with "@solidtv/solid"
-
-Update vite.config to dedupe solid:
-
-```js
-resolve: {
-    dedupe: [
-      "solid-js",
-      "@solidtv/solid",
-      "@solidtv/solid/primitives",
-      "@solidtv/solid-ui",
-    ],
-  },
-```
-
-If you don't want to find and replace you can use alias
-
-```js
-resolve: {
-    alias: {
-      "@solidtv/solid": "@solidtv/solid",
-      "@solidtv/solid-primitives": "@solidtv/solid/primitives",
-    },
-  },
-```
+This project used to live at https://github.com/lightning-tv/solid and was published as `@lightningtv/solid`. To move an existing app to `@solidtv/solid`, follow the [migration guide](https://solid-tv.github.io/solid/#/migrate).

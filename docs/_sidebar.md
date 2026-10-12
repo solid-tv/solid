@@ -1,6 +1,7 @@
 - Getting Started
   - [Basics](/articles/basics.md)
   - [Rendering Hello World](/essentials/render.md)
+  - [Migrating from @lightningtv/solid](/migrate.md)
   - [Migration 2.x to 3.0](/articles/migration-2x-to-3.0.md)
   - [Upgrading to Renderer 1.9](/articles/renderer-1.9-upgrade.md)
 - Core Concepts
