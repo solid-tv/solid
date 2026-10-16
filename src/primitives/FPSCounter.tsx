@@ -1,4 +1,4 @@
-import { type Stage, type NodeProps, RendererMain } from '@solidtv/solid';
+import { type NodeProps, RendererMain } from '@solidtv/solid';
 import { createSignal } from 'solid-js';
 
 const fpsStyle = {
@@ -70,8 +70,8 @@ const calcFps = (fps: number) => {
   setAvgFps(Math.round(totalFps / count));
 };
 
-function updateMemoryInfo(stage: Stage) {
-  const memInfo = stage.txMemManager.getMemoryInfo();
+function updateMemoryInfo(renderer: RendererMain) {
+  const memInfo = renderer.memoryInfo();
   setCriticalThresholdSignal(bytesToMb(memInfo.criticalThreshold));
   setTargetThresholdSignal(bytesToMb(memInfo.targetThreshold));
   setRenderableMemUsedSignal(bytesToMb(memInfo.renderableMemUsed));
@@ -88,7 +88,7 @@ export function setupFPS(root: any) {
     if (fps > 5) {
       calcFps(fps);
       if (frameCount % 10 === 0) {
-        updateMemoryInfo(target.stage);
+        updateMemoryInfo(target);
         frameCount = 0;
       }
       frameCount++;

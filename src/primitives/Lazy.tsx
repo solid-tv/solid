@@ -150,11 +150,18 @@ function createLazy<T>(
     // proximity check must use child units.
     const rendered = container.children.length;
 
+    // B16: the mount lands only after this press (the key handler's writes
+    // are batched), so it has to start while this press's move still has a
+    // child to land on: a buffer below 2 acts as 2. With buffer 1 the press
+    // that reached the rendered edge found no child and bubbled, so every
+    // other press was lost.
+    const edge = Math.max(buffer(), 2);
+
     // Already mounted everything (offset is in data units — a diverged child
     // count must neither stop mounting early nor keep it running forever),
     // or still far enough from the rendered edge that the buffer covers the
     // next selection — no work to do.
-    if (offset() >= maxOffset || selected < rendered - buffer()) return;
+    if (offset() >= maxOffset || selected < rendered - edge) return;
 
     const bump = () => setOffset((prev) => Math.min(prev + 1, maxOffset));
 

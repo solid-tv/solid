@@ -59,11 +59,19 @@ export interface Effects {
 
 export type StyleEffects = Effects;
 
-export type FontLoadOptions = Parameters<lngr.Stage['loadFont']>[1] & {
+export type FontLoadOptions = Omit<
+  lngr.FontLoadOptions,
+  'atlasUrl' | 'atlasDataUrl'
+> & {
   type?: 'ssdf' | 'msdf';
+  // For web fonts (DOM renderer)
+  fontUrl?: string;
+  // For SDF fonts
+  atlasUrl?: string;
+  atlasDataUrl?: string;
 };
 
-export type CoreShaderManager = lngr.Stage['shManager'];
+export type CoreShaderManager = Pick<lngr.RendererMain, 'registerShaderType'>;
 
 export type NewOmit<T, K extends PropertyKey> = {
   [P in keyof T as Exclude<P, K>]: T[P];

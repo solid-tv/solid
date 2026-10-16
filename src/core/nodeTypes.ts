@@ -8,11 +8,14 @@ export const NodeType = {
 export type NodeTypes = (typeof NodeType)[keyof typeof NodeType];
 
 export class TextNode {
-  readonly _type = 'text' as const;
-  parent: ElementText | undefined = undefined;
-  text: string;
+  // Assigned in the constructor, not class fields (design 3.6.5).
+  declare readonly _type: 'text';
+  declare parent: ElementText | undefined;
+  declare text: string;
 
   constructor(text: string) {
+    this._type = 'text';
+    this.parent = undefined;
     this.text = text;
   }
 }

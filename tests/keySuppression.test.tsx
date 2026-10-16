@@ -89,6 +89,33 @@ v.describe('key suppression', () => {
 
     dispose();
   });
+
+  v.test('releaseKeySuppression lifts by name or by event, once', async () => {
+    const { onEnter, dispose } = await setup();
+    const onRelease = v.vi.fn();
+
+    keydown();
+    suppressKeyUntilRelease('Enter', onRelease);
+    releaseKeySuppression('Enter');
+    v.assert.equal(onRelease.mock.calls.length, 1);
+    keydown(true);
+    v.assert.equal(onEnter.mock.calls.length, 2);
+
+    // An event finds the suppression under its keyCode, and every alias goes.
+    suppressKeyUntilRelease(
+      new KeyboardEvent('keydown', { key: 'GoBack', keyCode: 461 }),
+      onRelease,
+    );
+    releaseKeySuppression(
+      new KeyboardEvent('keyup', { key: 'Unidentified', keyCode: 461 }),
+    );
+    v.assert.equal(onRelease.mock.calls.length, 2);
+    releaseKeySuppression('GoBack');
+    releaseKeySuppression(461);
+    v.assert.equal(onRelease.mock.calls.length, 2);
+
+    dispose();
+  });
 });
 
 // webOS reports Back's key-down and key-up under different `key` names, sharing

@@ -2,6 +2,7 @@ import * as v from 'vitest';
 import * as s from 'solid-js';
 import * as lng from '@solidtv/solid';
 import { renderer, waitForUpdate } from './setup.js';
+import States from '../src/core/states.ts';
 
 v.describe('State Specificity', () => {
   v.test('Applies states in the order defined by Config.stateOrder', async () => {
@@ -111,5 +112,54 @@ v.describe('State Specificity', () => {
 
     dispose();
     lng.Config.stateOrder = originalOrder;
+  });
+});
+
+v.describe('States copies a list by index', () => {
+  /** A list whose iterator throws: a spread of it fails. */
+  function noIterator<T extends lng.DollarString[]>(list: T): T {
+    Object.defineProperty(list, Symbol.iterator, {
+      value() {
+        throw new Error('iterated');
+      },
+    });
+    return list;
+  }
+
+  v.test(
+    'merge replaces the list in place, from an array or another States',
+    () => {
+      let changes = 0;
+      const states = new States(() => changes++, ['$a', '$b', '$c']);
+
+      v.expect(states.merge(new States(() => {}, ['$x']))).toBe(states);
+      v.expect([...states]).toEqual(['$x']);
+
+      states.merge(['$p', '$q', '$r', '$s']);
+      v.expect([...states]).toEqual(['$p', '$q', '$r', '$s']);
+
+      states.merge([]);
+      v.expect(states.length).toBe(0);
+
+      v.expect(changes).toBe(0);
+    },
+  );
+
+  v.test('a self-merge clears the list', () => {
+    const states = new States(() => {}, ['$p', '$q']);
+    v.expect(states.merge(states)).toBe(states);
+    v.expect(states.length).toBe(0);
+  });
+
+  v.test('merge and the constructor read the list without iterating it', () => {
+    const states = new States(
+      () => {},
+      noIterator(['$a', '$b'] as lng.DollarString[]),
+    );
+    v.expect(states).toBeInstanceOf(States);
+    v.expect([...states]).toEqual(['$a', '$b']);
+
+    states.merge(noIterator(new States(() => {}, ['$x'])));
+    v.expect([...states]).toEqual(['$x']);
   });
 });

@@ -10,7 +10,13 @@ export default class States extends Array<DollarString> {
 
   constructor(callback: () => void, initialState: NodeStates = {}) {
     if (isArray(initialState)) {
-      super(...initialState);
+      // By index: a spread runs the iterator protocol (an iterator and an
+      // argument list per call).
+      super();
+      const n = initialState.length;
+      for (let i = 0; i < n; i++) {
+        this[i] = initialState[i]!;
+      }
     } else if (isString(initialState)) {
       super(initialState); // Assert as DollarString
     } else {
@@ -66,9 +72,18 @@ export default class States extends Array<DollarString> {
   }
 
   merge(newStates: NodeStates) {
-    if (isArray(newStates)) {
-      this.length = 0; // Clear the current states
-      this.push(...newStates);
+    if (newStates === this) {
+      // A self-merge clears the list, as it did when merge emptied the list
+      // and then pushed a spread of it.
+      this.length = 0;
+    } else if (isArray(newStates)) {
+      // Copied by index, then cut to length: a spread ran the iterator
+      // protocol over the list (with forwardStates, the parent's States).
+      const n = newStates.length;
+      for (let i = 0; i < n; i++) {
+        this[i] = newStates[i]!;
+      }
+      this.length = n;
     } else if (isString(newStates)) {
       this.length = 0; // Clear the current states
       this.push(newStates); // Assert as DollarString

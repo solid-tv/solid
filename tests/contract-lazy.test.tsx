@@ -315,15 +315,15 @@ v.describe('LazyRow', () => {
     ]);
   });
 
-  // Today, with buffer={1}: the press that leaves the selection on the last
-  // rendered child does not mount (updateOffset checks the selection before
-  // the move); the next press mounts, but the key handler runs inside the
-  // focus manager's runWithOwner, which batches the write, so the new child
-  // exists only after the Row's handler has run. That press finds nothing to
-  // move to and bubbles. Every other press is lost: focus goes l1, l2, l2,
-  // l3, l3, l4, ... (Lazy.tsx:157-165).
-  v.it.skip(
-    'BUG: with a small buffer the press that reaches the rendered edge is lost and bubbles (Lazy.tsx:157-165)',
+  // B16 (fixed in 1.7), with buffer={1}: the press that left the selection
+  // on the last rendered child did not mount (updateOffset checks the
+  // selection before the move); the next press mounted, but the key handler
+  // runs inside the focus manager's runWithOwner, which batches the write, so
+  // the new child existed only after the Row's handler had run. That press
+  // found nothing to move to and bubbled: every other press was lost (focus
+  // went l1, l2, l2, l3, l3, ...). A buffer below 2 now acts as 2.
+  v.it(
+    'B16: with a small buffer every press moves and none bubbles',
     async () => {
       let row!: lng.ElementNode;
       const parentRight = v.vi.fn(() => true);
@@ -342,12 +342,16 @@ v.describe('LazyRow', () => {
           </LazyRow>
         </view>
       ));
-      const seen: unknown[] = [];
-      for (let i = 0; i < 5; i++) {
-        await press('ArrowRight');
-        seen.push(focusedId());
-      }
-      v.expect(seen).toEqual(['l1', 'l2', 'l3', 'l4', 'l5']);
+      v.expect(row.children.length).toBe(3);
+      // [mounted, focused] after each press: a mount starts one press before
+      // the selection reaches the last mounted child.
+      v.expect(await walkRight(row, 5)).toEqual([
+        [3, 'l1', 0],
+        [4, 'l2', 0],
+        [5, 'l3', 0],
+        [6, 'l4', 0],
+        [7, 'l5', 0],
+      ]);
       v.expect(parentRight).not.toHaveBeenCalled();
     },
   );

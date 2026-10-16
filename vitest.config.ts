@@ -19,7 +19,13 @@ export default defineConfig(({ mode }) => ({
   test: {
     watch: false,
     // Real-renderer tests run in a browser: vitest.webgl.config.ts.
-    exclude: [...configDefaults.exclude, 'tests/webgl/**', 'bench/**'],
+    exclude: [
+      ...configDefaults.exclude,
+      'tests/webgl/**',
+      'bench/**',
+      // .claude/** holds nested git worktrees with their own copies of tests.
+      '.claude/**',
+    ],
     isolate: false,
     passWithNoTests: true,
     environment: 'jsdom',

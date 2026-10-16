@@ -31,19 +31,17 @@ import {
   isElementText,
   logRenderTree,
   isFunction,
-  spliceItem,
 } from './utils.js';
 import { isDev, SHADERS_ENABLED } from './env.js';
 import { Config, isDomRendererActive } from './config.js';
 import type {
   RendererMain,
   INode,
-  INodeAnimateProps,
+  AnimateProps,
   IAnimationController,
   LinearGradientProps,
   RadialGradientProps,
   ShadowProps,
-  CoreShaderNode,
   ITextNodeProps,
   INodeProps,
 } from '@solidtv/renderer';
@@ -143,6 +141,23 @@ function addToLayoutQueue(node: ElementNode) {
   schedulePostMutation();
 }
 
+/**
+ * Removes the first `item` from `arr` in place, as `splice(index, 1)` did,
+ * without the array of removed items splice returns. Returns its index, or
+ * -1 when it is not there.
+ */
+function removeItem<T>(arr: T[], item: T): number {
+  const index = arr.indexOf(item);
+  if (index > -1) {
+    const last = arr.length - 1;
+    for (let i = index; i < last; i++) {
+      arr[i] = arr[i + 1]!;
+    }
+    arr.pop();
+  }
+  return index;
+}
+
 // Text-default template, built once on first use.  Config.fontSettings is
 // expected to be set at app startup and not change afterwards.
 let _fontTemplate: Array<[string, any]> | undefined;
@@ -173,6 +188,22 @@ const EFFECT_SHADER_KEYS = [
   'shadow',
 ] as const satisfies ReadonlyArray<keyof StyleEffects>;
 
+const hasOwnProperty = Object.prototype.hasOwnProperty;
+
+// Handle individual border sides: transform width/w to bottom/left/right/top
+const borderSideMap: Record<string, string> = {
+  borderBottom: 'bottom',
+  borderLeft: 'left',
+  borderRight: 'right',
+  borderTop: 'top',
+};
+
+// The shader prop each key of a style object writes, per style prefix
+// (`border` + `width` → `border-w`, `borderTop` + `w` → `border-top`): built
+// at a key's first write, so that a write builds no string.
+const shaderPropNames: Record<string, Record<string, string> | undefined> =
+  Object.create(null);
+
 const parseAndAssignShaderProps = (
   prefix: string,
   obj: Record<string, unknown>,
@@ -180,38 +211,104 @@ const parseAndAssignShaderProps = (
 ) => {
   if (!obj) return;
 
-  // Handle individual border sides: transform width/w to bottom/left/right/top
-  const borderSideMap: Record<string, string> = {
-    borderBottom: 'bottom',
-    borderLeft: 'left',
-    borderRight: 'right',
-    borderTop: 'top',
-  };
-
   const side = borderSideMap[prefix];
   const actualPrefix = side ? 'border' : prefix;
+  let names = shaderPropNames[prefix];
+  if (names === undefined) {
+    names = Object.create(null) as Record<string, string>;
+    shaderPropNames[prefix] = names;
+  }
 
   props[actualPrefix] = obj;
-  Object.entries(obj).forEach(([key, value]) => {
-    let transformedKey = key === 'width' ? 'w' : key;
+  // The object's own enumerable keys in order, as Object.entries gave them,
+  // without its arrays and closure.
+  for (const key in obj) {
+    if (!hasOwnProperty.call(obj, key)) continue;
+    let name = names[key];
+    if (name === undefined) {
+      let transformedKey = key === 'width' ? 'w' : key;
 
-    // If border side and key is width/w, transform to side (bottom/left/right/top)
-    if (side && transformedKey === 'w') {
-      transformedKey = side;
+      // If border side and key is width/w, transform to side (bottom/left/right/top)
+      if (side && transformedKey === 'w') {
+        transformedKey = side;
+      }
+
+      name = actualPrefix + '-' + transformedKey;
+      names[key] = name;
     }
+    props[name] = obj[key];
+  }
+};
 
-    props[`${actualPrefix}-${transformedKey}`] = value;
-  });
+const assignEffects = (v: StyleEffects, props: Record<string, unknown>) => {
+  if (v.rounded) props.radius = v.rounded.radius;
+  if (v.borderRadius) props.radius = v.borderRadius;
+  for (const k of EFFECT_SHADER_KEYS) {
+    if (v[k]) parseAndAssignShaderProps(k, v[k], props);
+  }
+};
+
+const assignShaderProp = (
+  key: string,
+  value: unknown,
+  props: Record<string, unknown>,
+) => {
+  if (key === 'rounded' || typeof value === 'number') {
+    props.radius = value;
+  } else {
+    parseAndAssignShaderProps(key, value as Record<string, unknown>, props);
+  }
+};
+
+// The shader types convertToShader makes, by feature bits.
+const BORDER_FEATURE = 1;
+const SHADOW_FEATURE = 2;
+const ROUNDED_SHADER_TYPES = [
+  'rounded',
+  'roundedWithBorder',
+  'roundedWithShadow',
+  'roundedWithBorderWithShadow',
+];
+
+const BORDER_WIDTH_KEYS = [
+  'border-w',
+  'border-top',
+  'border-right',
+  'border-bottom',
+  'border-left',
+];
+
+// Whether a border width is above 0: read from `change` where it has the
+// key, else from `props`. A border of width 0 needs no border shader.
+const hasBorderWidth = (
+  props: Record<string, unknown>,
+  change?: Record<string, unknown>,
+) => {
+  for (const key of BORDER_WIDTH_KEYS) {
+    const w = change !== undefined && key in change ? change[key] : props[key];
+    if (isArray(w)) {
+      for (let i = 0; i < w.length; i++) if (w[i] > 0) return true;
+    } else if ((w as number) > 0) {
+      return true;
+    }
+  }
+  return false;
 };
 
 export function convertToShader(
-  _node: ElementNode,
+  node: ElementNode,
   v: StyleEffects,
 ): IRendererShader {
-  let type = 'rounded';
-  if (v.border) type += 'WithBorder';
-  if (v.shadow) type += 'WithShadow';
-  return renderer.createShader(type, v);
+  const props = v as Record<string, unknown>;
+  const features =
+    (hasBorderWidth(props) ? BORDER_FEATURE : 0) |
+    (props.shadow ? SHADOW_FEATURE : 0);
+  node._shaderProps = props;
+  node._shaderFeatures = features;
+  return renderer.createShader(
+    ROUNDED_SHADER_TYPES[features]!,
+    props,
+  ) as IRendererShader;
 }
 
 function getPropertyAlias(name: string) {
@@ -322,7 +419,7 @@ export interface ElementNode extends RendererNode, FocusNode {
   _queueDelete?: number;
   _animationQueue?:
     | Array<{
-        props: Partial<INodeAnimateProps<CoreShaderNode>>;
+        props: Partial<AnimateProps>;
         animationSettings?: AnimationSettings;
       }>
     | undefined;
@@ -333,6 +430,10 @@ export interface ElementNode extends RendererNode, FocusNode {
   _containsFlexGrow?: boolean | null;
   _hasRenderedChildren?: boolean;
   _effects?: Record<string, any>;
+  /** The props of a shader convertToShader made, kept to swap its type. */
+  _shaderProps?: Record<string, unknown>;
+  /** That shader's ROUNDED_SHADER_TYPES index: border 1, shadow 2. */
+  _shaderFeatures?: number;
   _fontFamily?: string;
   _id: string | undefined;
   _parent: ElementNode | undefined;
@@ -346,6 +447,8 @@ export interface ElementNode extends RendererNode, FocusNode {
   _display?: 'flex' | 'block';
   _onLayout?: (this: ElementNode, target: ElementNode) => void;
   _requiresLayout: boolean;
+  /** @internal the focus manager's generation stamp for the focus-path diff */
+  _focusGen: number;
   autosize?: boolean;
   /**
    * Optional component name for inspector / dev tooling — emitted by the
@@ -818,6 +921,8 @@ export class ElementNode {
     this._containsFlexGrow = undefined;
     this._hasRenderedChildren = undefined;
     this._effects = undefined;
+    this._shaderProps = undefined;
+    this._shaderFeatures = undefined;
     this._fontFamily = undefined;
     this._fontWeight = undefined;
     this._id = undefined;
@@ -830,6 +935,7 @@ export class ElementNode {
     this._display = undefined;
     this._onLayout = undefined;
     this._requiresLayout = false;
+    this._focusGen = 0;
   }
 
   get effects(): StyleEffects | undefined {
@@ -855,16 +961,39 @@ export class ElementNode {
     }
   }
 
+  /**
+   * Swap a shader convertToShader made when its border width moves to or
+   * from 0. For an animated write, `change` holds what animates: a border
+   * it adds is swapped in before the animation reads its start values, one
+   * it removes stays until the animation stops.
+   */
+  _syncShaderType(change?: Record<string, unknown>) {
+    const props = this._shaderProps;
+    if (props === undefined || !this.lng.shader) return;
+    const features = this._shaderFeatures!;
+    let next = features & SHADOW_FEATURE;
+    if (hasBorderWidth(props, change)) next |= BORDER_FEATURE;
+    else if (change !== undefined) next |= features & BORDER_FEATURE;
+    if (next === features) return;
+    this._shaderFeatures = next;
+    this.lng.shader = renderer.createShader(
+      ROUNDED_SHADER_TYPES[next]!,
+      props,
+    ) as IRendererShader;
+  }
+
   set effects(v: StyleEffects) {
     if (!SHADERS_ENABLED) return;
     let target = this.lng.shader || {};
     if (this.lng.shader?.props) {
       target = this.lng.shader.props;
     }
-    if (v.rounded) target.radius = v.rounded.radius;
-    if (v.borderRadius) target.radius = v.borderRadius;
-    for (const k of EFFECT_SHADER_KEYS) {
-      if (v[k]) parseAndAssignShaderProps(k, v[k], target);
+    assignEffects(v, target);
+
+    const props = this._shaderProps;
+    if (props !== undefined) {
+      if (props !== target) assignEffects(v, props);
+      this._syncShaderType();
     }
 
     this._writeShaderTarget(target);
@@ -914,12 +1043,7 @@ export class ElementNode {
     }
 
     this._fontWeight = v;
-    const weight =
-      (Config.fontWeightAlias &&
-        (Config.fontWeightAlias[v as string] as number | string)) ??
-      v;
-    (this.lng as ElementNode).fontFamily =
-      `${this.fontFamily || Config.fontSettings?.fontFamily}${weight}`;
+    this._writeFontFamily();
   }
 
   get fontWeight() {
@@ -928,11 +1052,36 @@ export class ElementNode {
 
   set fontFamily(v) {
     this._fontFamily = v;
-    (this.lng as ElementNode).fontFamily = v;
+    this._writeFontFamily();
   }
 
   get fontFamily() {
     return this._fontFamily;
+  }
+
+  /**
+   * The renderer's family name from `fontFamily` and `fontWeight`, resolved
+   * in one place so either JSX order gives the same name (B17).
+   */
+  _writeFontFamily() {
+    const weight = this._fontWeight as number | string | undefined;
+    if (weight === undefined) {
+      // No family of its own: before render, undefined lets render's font
+      // template fill it in; after render, write what the template gave
+      // (Config.fontSettings' family and weight, read at the first text
+      // render), not undefined, which the renderer takes as its default.
+      const family = this._fontFamily;
+      (this.lng as ElementNode).fontFamily =
+        family === undefined && this.rendered ? _fontFamilyWithWeight : family;
+      return;
+    }
+    const alias = Config.fontWeightAlias;
+    const aliased =
+      alias !== undefined && alias !== null
+        ? (alias[weight] as number | string | undefined)
+        : undefined;
+    (this.lng as ElementNode).fontFamily =
+      `${this._fontFamily || Config.fontSettings?.fontFamily}${aliased ?? weight}`;
   }
 
   insertChild(
@@ -955,8 +1104,16 @@ export class ElementNode {
     if (beforeNode) {
       // SolidJS can move nodes around in the children array.
       // We need to insert following DOM insertBefore which moves elements.
-      spliceItem(this.children, node as ElementNode, 1);
-      if (spliceItem(this.children, beforeNode as ElementNode, 0, node) > -1) {
+      const children = this.children;
+      removeItem(children, node as ElementNode);
+      const index = children.indexOf(beforeNode as ElementNode);
+      if (index > -1) {
+        // In front of beforeNode, the rest moved up one: splice(index, 0,
+        // node) without its argument list and result array.
+        for (let i = children.length; i > index; i--) {
+          children[i] = children[i - 1]!;
+        }
+        children[index] = node as ElementNode;
         return;
       }
     }
@@ -965,7 +1122,7 @@ export class ElementNode {
   }
 
   removeChild(node: ElementNode | ElementText | TextNode) {
-    if (spliceItem(this.children, node, 1) > -1) {
+    if (removeItem(this.children, node as ElementNode) > -1) {
       if (isElementNode(node) && node.onRemove) {
         node.onRemove.call(node, node);
       }
@@ -993,6 +1150,7 @@ export class ElementNode {
   set shader(
     shaderProps: IRendererShader | [kind: string, props: IRendererShaderProps],
   ) {
+    this._shaderProps = undefined;
     this.lng.shader = isArray(shaderProps)
       ? renderer.createShader(...shaderProps)
       : shaderProps;
@@ -1057,7 +1215,7 @@ export class ElementNode {
   }
 
   animate(
-    props: Partial<INodeAnimateProps<CoreShaderNode>>,
+    props: Partial<AnimateProps>,
     animationSettings?: AnimationSettings,
   ): IAnimationController {
     if (!this.rendered) {
@@ -1070,10 +1228,7 @@ export class ElementNode {
     );
   }
 
-  chain(
-    props: Partial<INodeAnimateProps<CoreShaderNode>>,
-    animationSettings?: AnimationSettings,
-  ) {
+  chain(props: Partial<AnimateProps>, animationSettings?: AnimationSettings) {
     if (this._animationRunning) {
       this._animationQueue = [];
       this._animationRunning = false;
@@ -1714,7 +1869,7 @@ export class ElementNode {
       if (isDev) log('Rendering: ', this, props);
 
       node.lng = renderer.createNode(
-        props as Partial<INodeProps<any>> & Partial<IRendererNodeProps>,
+        props as Partial<INodeProps> & Partial<IRendererNodeProps>,
       );
 
       if (node._hasRenderedChildren) {
@@ -1742,7 +1897,11 @@ export class ElementNode {
     this.onRender?.(this);
 
     if (node.onEvent) {
-      for (const [name, handler] of Object.entries(node.onEvent)) {
+      const onEvent = node.onEvent;
+      // Own enumerable keys in order, as Object.entries gave them.
+      for (const name in onEvent) {
+        if (!hasOwnProperty.call(onEvent, name)) continue;
+        const handler = onEvent[name as keyof OnEvent]!;
         if (typeof node.lng.on === 'function') {
           node.lng.on(name, (_inode, data) => handler.call(node, node, data));
         }
@@ -1849,16 +2008,26 @@ export function shaderAccessor<T extends Record<string, any> | number>(
         }
       }
 
-      if (key === 'rounded' || typeof value === 'number') {
-        target.radius = value;
-      } else {
-        parseAndAssignShaderProps(key, value, target);
+      assignShaderProp(key, value, target);
+
+      const props = this._shaderProps;
+      if (props !== undefined) {
+        const animated = target !== this.lng.shader?.props;
+        if (animated) this._syncShaderType(target);
+        if (props !== target) assignShaderProp(key, value, props);
+        if (!animated) this._syncShaderType();
       }
 
       this._writeShaderTarget(target);
 
       if (animationSettings) {
-        this.animate({ shaderProps: target }, animationSettings).start();
+        const animation = this.animate(
+          { shaderProps: target },
+          animationSettings,
+        ).start();
+        if (props !== undefined) {
+          void animation.waitUntilStopped().then(() => this._syncShaderType());
+        }
       }
     },
     get(this: ElementNode) {
