@@ -240,16 +240,74 @@ const parseAndAssignShaderProps = (
   }
 };
 
+const assignEffects = (v: StyleEffects, props: Record<string, unknown>) => {
+  if (v.rounded) props.radius = v.rounded.radius;
+  if (v.borderRadius) props.radius = v.borderRadius;
+  for (const k of EFFECT_SHADER_KEYS) {
+    if (v[k]) parseAndAssignShaderProps(k, v[k], props);
+  }
+};
+
+const assignShaderProp = (
+  key: string,
+  value: unknown,
+  props: Record<string, unknown>,
+) => {
+  if (key === 'rounded' || typeof value === 'number') {
+    props.radius = value;
+  } else {
+    parseAndAssignShaderProps(key, value as Record<string, unknown>, props);
+  }
+};
+
+// The shader types convertToShader makes, by feature bits.
+const BORDER_FEATURE = 1;
+const SHADOW_FEATURE = 2;
+const ROUNDED_SHADER_TYPES = [
+  'rounded',
+  'roundedWithBorder',
+  'roundedWithShadow',
+  'roundedWithBorderWithShadow',
+];
+
+const BORDER_WIDTH_KEYS = [
+  'border-w',
+  'border-top',
+  'border-right',
+  'border-bottom',
+  'border-left',
+];
+
+// Whether a border width is above 0: read from `change` where it has the
+// key, else from `props`. A border of width 0 needs no border shader.
+const hasBorderWidth = (
+  props: Record<string, unknown>,
+  change?: Record<string, unknown>,
+) => {
+  for (const key of BORDER_WIDTH_KEYS) {
+    const w = change !== undefined && key in change ? change[key] : props[key];
+    if (isArray(w)) {
+      for (let i = 0; i < w.length; i++) if (w[i] > 0) return true;
+    } else if ((w as number) > 0) {
+      return true;
+    }
+  }
+  return false;
+};
+
 export function convertToShader(
-  _node: ElementNode,
+  node: ElementNode,
   v: StyleEffects,
 ): IRendererShader {
-  let type = 'rounded';
-  if (v.border) type += 'WithBorder';
-  if (v.shadow) type += 'WithShadow';
+  const props = v as Record<string, unknown>;
+  const features =
+    (hasBorderWidth(props) ? BORDER_FEATURE : 0) |
+    (props.shadow ? SHADOW_FEATURE : 0);
+  node._shaderProps = props;
+  node._shaderFeatures = features;
   return renderer.createShader(
-    type,
-    v as Record<string, unknown>,
+    ROUNDED_SHADER_TYPES[features]!,
+    props,
   ) as IRendererShader;
 }
 
@@ -372,6 +430,10 @@ export interface ElementNode extends RendererNode, FocusNode {
   _containsFlexGrow?: boolean | null;
   _hasRenderedChildren?: boolean;
   _effects?: Record<string, any>;
+  /** The props of a shader convertToShader made, kept to swap its type. */
+  _shaderProps?: Record<string, unknown>;
+  /** That shader's ROUNDED_SHADER_TYPES index: border 1, shadow 2. */
+  _shaderFeatures?: number;
   _fontFamily?: string;
   _id: string | undefined;
   _parent: ElementNode | undefined;
@@ -859,6 +921,8 @@ export class ElementNode {
     this._containsFlexGrow = undefined;
     this._hasRenderedChildren = undefined;
     this._effects = undefined;
+    this._shaderProps = undefined;
+    this._shaderFeatures = undefined;
     this._fontFamily = undefined;
     this._fontWeight = undefined;
     this._id = undefined;
@@ -897,16 +961,39 @@ export class ElementNode {
     }
   }
 
+  /**
+   * Swap a shader convertToShader made when its border width moves to or
+   * from 0. For an animated write, `change` holds what animates: a border
+   * it adds is swapped in before the animation reads its start values, one
+   * it removes stays until the animation stops.
+   */
+  _syncShaderType(change?: Record<string, unknown>) {
+    const props = this._shaderProps;
+    if (props === undefined || !this.lng.shader) return;
+    const features = this._shaderFeatures!;
+    let next = features & SHADOW_FEATURE;
+    if (hasBorderWidth(props, change)) next |= BORDER_FEATURE;
+    else if (change !== undefined) next |= features & BORDER_FEATURE;
+    if (next === features) return;
+    this._shaderFeatures = next;
+    this.lng.shader = renderer.createShader(
+      ROUNDED_SHADER_TYPES[next]!,
+      props,
+    ) as IRendererShader;
+  }
+
   set effects(v: StyleEffects) {
     if (!SHADERS_ENABLED) return;
     let target = this.lng.shader || {};
     if (this.lng.shader?.props) {
       target = this.lng.shader.props;
     }
-    if (v.rounded) target.radius = v.rounded.radius;
-    if (v.borderRadius) target.radius = v.borderRadius;
-    for (const k of EFFECT_SHADER_KEYS) {
-      if (v[k]) parseAndAssignShaderProps(k, v[k], target);
+    assignEffects(v, target);
+
+    const props = this._shaderProps;
+    if (props !== undefined) {
+      if (props !== target) assignEffects(v, props);
+      this._syncShaderType();
     }
 
     this._writeShaderTarget(target);
@@ -1063,6 +1150,7 @@ export class ElementNode {
   set shader(
     shaderProps: IRendererShader | [kind: string, props: IRendererShaderProps],
   ) {
+    this._shaderProps = undefined;
     this.lng.shader = isArray(shaderProps)
       ? renderer.createShader(...shaderProps)
       : shaderProps;
@@ -1920,16 +2008,26 @@ export function shaderAccessor<T extends Record<string, any> | number>(
         }
       }
 
-      if (key === 'rounded' || typeof value === 'number') {
-        target.radius = value;
-      } else {
-        parseAndAssignShaderProps(key, value, target);
+      assignShaderProp(key, value, target);
+
+      const props = this._shaderProps;
+      if (props !== undefined) {
+        const animated = target !== this.lng.shader?.props;
+        if (animated) this._syncShaderType(target);
+        if (props !== target) assignShaderProp(key, value, props);
+        if (!animated) this._syncShaderType();
       }
 
       this._writeShaderTarget(target);
 
       if (animationSettings) {
-        this.animate({ shaderProps: target }, animationSettings).start();
+        const animation = this.animate(
+          { shaderProps: target },
+          animationSettings,
+        ).start();
+        if (props !== undefined) {
+          void animation.waitUntilStopped().then(() => this._syncShaderType());
+        }
       }
     },
     get(this: ElementNode) {
