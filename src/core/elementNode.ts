@@ -385,6 +385,8 @@ export interface ElementNode extends RendererNode, FocusNode {
   _display?: 'flex' | 'block';
   _onLayout?: (this: ElementNode, target: ElementNode) => void;
   _requiresLayout: boolean;
+  /** @internal the focus manager's generation stamp for the focus-path diff */
+  _focusGen: number;
   autosize?: boolean;
   /**
    * Optional component name for inspector / dev tooling — emitted by the
@@ -869,6 +871,7 @@ export class ElementNode {
     this._display = undefined;
     this._onLayout = undefined;
     this._requiresLayout = false;
+    this._focusGen = 0;
   }
 
   get effects(): StyleEffects | undefined {
@@ -953,12 +956,7 @@ export class ElementNode {
     }
 
     this._fontWeight = v;
-    const weight =
-      (Config.fontWeightAlias &&
-        (Config.fontWeightAlias[v as string] as number | string)) ??
-      v;
-    (this.lng as ElementNode).fontFamily =
-      `${this.fontFamily || Config.fontSettings?.fontFamily}${weight}`;
+    this._writeFontFamily();
   }
 
   get fontWeight() {
@@ -967,11 +965,36 @@ export class ElementNode {
 
   set fontFamily(v) {
     this._fontFamily = v;
-    (this.lng as ElementNode).fontFamily = v;
+    this._writeFontFamily();
   }
 
   get fontFamily() {
     return this._fontFamily;
+  }
+
+  /**
+   * The renderer's family name from `fontFamily` and `fontWeight`, resolved
+   * in one place so either JSX order gives the same name (B17).
+   */
+  _writeFontFamily() {
+    const weight = this._fontWeight as number | string | undefined;
+    if (weight === undefined) {
+      // No family of its own: before render, undefined lets render's font
+      // template fill it in; after render, write what the template gave
+      // (Config.fontSettings' family and weight, read at the first text
+      // render), not undefined, which the renderer takes as its default.
+      const family = this._fontFamily;
+      (this.lng as ElementNode).fontFamily =
+        family === undefined && this.rendered ? _fontFamilyWithWeight : family;
+      return;
+    }
+    const alias = Config.fontWeightAlias;
+    const aliased =
+      alias !== undefined && alias !== null
+        ? (alias[weight] as number | string | undefined)
+        : undefined;
+    (this.lng as ElementNode).fontFamily =
+      `${this._fontFamily || Config.fontSettings?.fontFamily}${aliased ?? weight}`;
   }
 
   insertChild(

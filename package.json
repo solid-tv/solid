@@ -34,10 +34,17 @@
     },
     "./devtools/jsx-locator": "./src/devtools/jsx-locator.js",
     "./shaders": {
-      "@solidtv/source": "./src/shaders/index.ts",
+      "@solidtv/source": "./src/core/shaders.ts",
       "import": {
-        "types": "./dist/src/shaders/index.d.ts",
-        "default": "./dist/src/shaders/index.js"
+        "types": "./dist/src/core/shaders.d.ts",
+        "default": "./dist/src/core/shaders.js"
+      }
+    },
+    "./focusManager": {
+      "@solidtv/source": "./src/core/focusManager.ts",
+      "import": {
+        "types": "./dist/src/core/focusManager.d.ts",
+        "default": "./dist/src/core/focusManager.js"
       }
     },
     "./jsx-runtime": {

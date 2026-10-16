@@ -11,6 +11,71 @@ export let renderer: lng.RendererMain | DOMRendererMain;
 
 export const getRenderer = () => renderer;
 
+// @solidtv/renderer 2.0 has one engine (WebGL) and one text engine (SDF), so
+// these settings are gone; apps written for 1.x still pass them.
+const REMOVED_SETTINGS = ['renderEngine', 'fontEngines'];
+
+const warned: { [message: string]: true | undefined } = {};
+
+/** `console.warn`, once per page, in every build (not only in dev). */
+function warnOnce(message: string) {
+  if (warned[message] !== true) {
+    warned[message] = true;
+    console.warn(message);
+  }
+}
+
+/**
+ * `options` without the settings 2.0 removed, each warned about once. The
+ * app's own object is not touched: the same object is returned when it has
+ * none of them, a copy when it does.
+ */
+function withoutRemovedSettings<T extends object>(options: T): T {
+  const source = options as { [name: string]: unknown };
+  let found = false;
+  for (let i = 0; i < REMOVED_SETTINGS.length; i++) {
+    const name = REMOVED_SETTINGS[i]!;
+    if (source[name] !== undefined) {
+      found = true;
+      warnOnce(
+        '[solid] Config.rendererOptions.' +
+          name +
+          ' was removed in @solidtv/renderer 2.0 and is ignored',
+      );
+    }
+  }
+  if (found === false) {
+    return options;
+  }
+
+  const copy: { [name: string]: unknown } = {};
+  const keys = Object.keys(source);
+  for (let i = 0; i < keys.length; i++) {
+    const key = keys[i]!;
+    if (REMOVED_SETTINGS.indexOf(key) === -1) {
+      copy[key] = source[key];
+    }
+  }
+  return copy as T;
+}
+
+/**
+ * 1.10's `renderer.stage.shManager.registerShaderType(...)`: in 2.0 the stage
+ * is the renderer and `registerShaderType` is on it. Defined once, here, as an
+ * alias of the renderer; it warns the first time an app reads it.
+ */
+function aliasShManager(rendererMain: lng.RendererMain) {
+  Object.defineProperty(rendererMain, 'shManager', {
+    configurable: true,
+    get() {
+      warnOnce(
+        '[solid] renderer.stage.shManager was removed in @solidtv/renderer 2.0: use renderer.registerShaderType',
+      );
+      return rendererMain;
+    },
+  });
+}
+
 export function startLightningRenderer(
   options: lng.RendererMainSettings | DomRendererMainSettings,
   rootId: string | HTMLElement = 'app',
@@ -18,10 +83,19 @@ export function startLightningRenderer(
   // Inlined (not isDomRendererActive()) so bundlers can fold DOM_RENDERING to
   // false and drop the DOMRendererMain branch + import in WebGL builds.
   const enableDomRenderer = DOM_RENDERING && Config.domRendererEnabled;
+  const settings = withoutRemovedSettings(options);
 
-  renderer = enableDomRenderer
-    ? new DOMRendererMain(options, rootId)
-    : new lng.RendererMain(options, rootId);
+  if (enableDomRenderer) {
+    // Its stage has its own (inert) shManager.
+    renderer = new DOMRendererMain(settings, rootId);
+  } else {
+    const rendererMain = new lng.RendererMain(
+      settings as lng.RendererMainSettings,
+      rootId,
+    );
+    aliasShManager(rendererMain);
+    renderer = rendererMain;
+  }
 
   // A stage now exists, so any fonts requested before this point can finish.
   flushPendingFonts();

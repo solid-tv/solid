@@ -278,17 +278,20 @@ v.describe('VirtualRow: window and scroll modes', () => {
     );
   }
 
-  // Today scroll="none" (and "center", which VirtualRow does not implement
-  // and treats like "none") never moves the window: only items 0-5 are ever
-  // mounted, Right stops at v5 and the press bubbles; cursor never passes 5.
-  // Row and Column with scroll="none" keep every child reachable.
-  v.it.skip(
-    'BUG: scroll="none"/"center" on VirtualRow cannot reach items past displaySize + bufferSize (Virtual.tsx:329-334)',
+  // B13 (fixed in 1.7): scroll="none" (and "center", which VirtualRow does
+  // not implement and treats like "none") never moved the window: only items
+  // 0-5 were ever mounted, Right stopped at v5 and the press bubbled. Now the
+  // window follows the cursor, keeping one item mounted on each side of it;
+  // the row itself still never scrolls (x stays 50), like a Row with
+  // scroll="none".
+  v.it(
+    'B13: scroll="none"/"center" on VirtualRow: the window follows the cursor, so every item is reachable; x never changes',
     async () => {
       for (const mode of ['none', 'center'] as const) {
         let row!: lng.ElementNode;
+        const parentRight = v.vi.fn(() => true);
         dispose = await mount(() => (
-          <view width={1920} height={1080}>
+          <view width={1920} height={1080} onRight={parentRight}>
             <VirtualRow
               ref={row}
               autofocus
@@ -301,10 +304,257 @@ v.describe('VirtualRow: window and scroll modes', () => {
             </VirtualRow>
           </view>
         ));
-        await press(...Array.from({ length: 11 }, () => 'ArrowRight'));
-        v.expect([focusedId(), row.cursor]).toEqual(['v11', 11]);
+        const seen: Step[] = [rowStep(row)];
+        for (let i = 0; i < 13; i++) {
+          await press('ArrowRight');
+          seen.push(rowStep(row));
+        }
+        for (let i = 0; i < 7; i++) {
+          await press('ArrowLeft');
+          seen.push(rowStep(row));
+        }
+        v.expect(seen).toEqual([
+          ['v0', 0, 0, 50, '0,1,2,3,4,5'],
+          ['v1', 1, 1, 50, '0,1,2,3,4,5'],
+          ['v2', 2, 2, 50, '0,1,2,3,4,5'],
+          ['v3', 3, 3, 50, '0,1,2,3,4,5'],
+          ['v4', 4, 4, 50, '0,1,2,3,4,5'],
+          // The next item must stay mounted: the window moves.
+          ['v5', 4, 5, 50, '1,2,3,4,5,6'],
+          ['v6', 4, 6, 50, '2,3,4,5,6,7'],
+          ['v7', 4, 7, 50, '3,4,5,6,7,8'],
+          ['v8', 4, 8, 50, '4,5,6,7,8,9'],
+          ['v9', 4, 9, 50, '5,6,7,8,9,10'],
+          ['v10', 4, 10, 50, '6,7,8,9,10,11'],
+          ['v11', 5, 11, 50, '6,7,8,9,10,11'],
+          // At the end the press bubbles.
+          ['v11', 5, 11, 50, '6,7,8,9,10,11'],
+          ['v11', 5, 11, 50, '6,7,8,9,10,11'],
+          ['v10', 4, 10, 50, '6,7,8,9,10,11'],
+          ['v9', 3, 9, 50, '6,7,8,9,10,11'],
+          ['v8', 2, 8, 50, '6,7,8,9,10,11'],
+          ['v7', 1, 7, 50, '6,7,8,9,10,11'],
+          ['v6', 1, 6, 50, '5,6,7,8,9,10'],
+          ['v5', 1, 5, 50, '4,5,6,7,8,9'],
+          ['v4', 1, 4, 50, '3,4,5,6,7,8'],
+        ]);
+        v.expect(parentRight).toHaveBeenCalledTimes(2);
         dispose();
         dispose = undefined;
+      }
+    },
+  );
+
+  // B13 with wrap: the window follows the cursor around the end of the data
+  // (it is a modular window, as in the other wrap modes), so Right past the
+  // last item wraps to the first and Left past the first to the last.
+  v.it(
+    'B13: scroll="none" + wrap on VirtualRow: Right past the last item wraps to the first; x never changes after mount',
+    async () => {
+      let row!: lng.ElementNode;
+      const parentRight = v.vi.fn(() => true);
+      const parentLeft = v.vi.fn(() => true);
+      dispose = await mount(() => (
+        <view
+          width={1920}
+          height={1080}
+          onRight={parentRight}
+          onLeft={parentLeft}
+        >
+          <VirtualRow
+            ref={row}
+            autofocus
+            x={50}
+            each={twelve}
+            displaySize={4}
+            scroll="none"
+            wrap
+          >
+            {(item) => <Item item={item()} />}
+          </VirtualRow>
+        </view>
+      ));
+      const seen: Step[] = [rowStep(row)];
+      for (let i = 0; i < 13; i++) {
+        await press('ArrowRight');
+        seen.push(rowStep(row));
+      }
+      for (let i = 0; i < 3; i++) {
+        await press('ArrowLeft');
+        seen.push(rowStep(row));
+      }
+      v.expect(seen).toEqual([
+        // As in the other wrap modes, one item before the cursor and the row
+        // one slot left (wrap's mount offset): v0 is at screen x 50.
+        ['v0', 1, 0, -180, '11,0,1,2,3,4'],
+        ['v1', 2, 1, -180, '11,0,1,2,3,4'],
+        ['v2', 3, 2, -180, '11,0,1,2,3,4'],
+        ['v3', 4, 3, -180, '11,0,1,2,3,4'],
+        ['v4', 4, 4, -180, '0,1,2,3,4,5'],
+        ['v5', 4, 5, -180, '1,2,3,4,5,6'],
+        ['v6', 4, 6, -180, '2,3,4,5,6,7'],
+        ['v7', 4, 7, -180, '3,4,5,6,7,8'],
+        ['v8', 4, 8, -180, '4,5,6,7,8,9'],
+        ['v9', 4, 9, -180, '5,6,7,8,9,10'],
+        ['v10', 4, 10, -180, '6,7,8,9,10,11'],
+        ['v11', 4, 11, -180, '7,8,9,10,11,0'],
+        // Past the last item: the first, then the second.
+        ['v0', 4, 0, -180, '8,9,10,11,0,1'],
+        ['v1', 4, 1, -180, '9,10,11,0,1,2'],
+        ['v0', 3, 0, -180, '9,10,11,0,1,2'],
+        ['v11', 2, 11, -180, '9,10,11,0,1,2'],
+        ['v10', 1, 10, -180, '9,10,11,0,1,2'],
+      ]);
+      v.expect(parentRight).not.toHaveBeenCalled();
+      v.expect(parentLeft).not.toHaveBeenCalled();
+    },
+  );
+
+  v.it(
+    'B13: scroll="none" + wrap with fewer items than the window (displaySize < count < displaySize + bufferSize): each item mounted once, every press moves',
+    async () => {
+      let row!: lng.ElementNode;
+      const parentRight = v.vi.fn(() => true);
+      dispose = await mount(() => (
+        <view width={1920} height={1080} onRight={parentRight}>
+          <VirtualRow
+            ref={row}
+            autofocus
+            x={50}
+            each={[0, 1, 2, 3, 4]}
+            displaySize={4}
+            scroll="none"
+            wrap
+          >
+            {(item) => <Item item={item()} />}
+          </VirtualRow>
+        </view>
+      ));
+      const step = (): [...Step, number] => [
+        ...rowStep(row),
+        row.x + lng.activeElement()!.x,
+      ];
+      const seen = [step()];
+      for (let i = 0; i < 7; i++) {
+        await press('ArrowRight');
+        seen.push(step());
+      }
+      for (let i = 0; i < 3; i++) {
+        await press('ArrowLeft');
+        seen.push(step());
+      }
+      // [focused, selected, cursor, x, mounted, focused screen x]: five
+      // items in a window of five, the focus kept in slots 1-3.
+      v.expect(seen).toEqual([
+        ['v0', 1, 0, -180, '4,0,1,2,3', 50],
+        ['v1', 2, 1, -180, '4,0,1,2,3', 280],
+        ['v2', 3, 2, -180, '4,0,1,2,3', 510],
+        ['v3', 3, 3, -180, '0,1,2,3,4', 510],
+        ['v4', 3, 4, -180, '1,2,3,4,0', 510],
+        ['v0', 3, 0, -180, '2,3,4,0,1', 510],
+        ['v1', 3, 1, -180, '3,4,0,1,2', 510],
+        ['v2', 3, 2, -180, '4,0,1,2,3', 510],
+        ['v1', 2, 1, -180, '4,0,1,2,3', 280],
+        ['v0', 1, 0, -180, '4,0,1,2,3', 50],
+        ['v4', 1, 4, -180, '3,4,0,1,2', 50],
+      ]);
+      v.expect(parentRight).not.toHaveBeenCalled();
+    },
+  );
+
+  // B14 (fixed in 1.7): a window shift moves the row by one slot, the
+  // item's unscaled size plus the gap, which is how far flex moves the items.
+  // With factorScale and a `$focus` scale of 1.2 it moved by 200 * 1.2 + 30 =
+  // 270 instead of 230 whenever it saw the scale, so the focused item drifted
+  // 40 left per shift (screen x 50, 10, -30, ... on the plain path, before and
+  // after the first B14 attempt that read `$focus`, which spread the drift to
+  // the wrap and initial-selected paths). factorScale has no effect now: the
+  // positions are the same with and without it.
+  //
+  // Animations are on, as in an app. The DOM renderer's animations run on
+  // requestAnimationFrame, and jsdom's frame time is on another clock than
+  // the performance.now() the animations start from, so frames are driven
+  // here with a time far ahead: each shift animation ends on its first frame.
+  v.it(
+    'B14: with factorScale and a $focus scale, the focused item keeps its screen x across window shifts (animations on)',
+    async () => {
+      const settle = async () => {
+        for (let i = 0; i < 4; i++) await flush();
+      };
+      v.vi.stubGlobal(
+        'requestAnimationFrame',
+        (cb: (time: number) => void) =>
+          setTimeout(() => cb(performance.now() + 1e6), 0),
+      );
+      lng.Config.animationsEnabled = true;
+      try {
+        // Focused item's screen x (row x + its x) at mount, then after Right
+        // x5 and Left x3.
+        const expected: Record<string, number[]> = {
+          plain: [50, 50, 50, 50, 50, 50, 50, 50, 50],
+          wrap: [50, 50, 50, 50, 50, 50, 50, 50, 50],
+          // Not constant, with or without factorScale. The first press moving
+          // the focused item one slot right is a bug from before 1.7 with an
+          // initial `selected` (out of scope here). The fifth press is the
+          // end of the list: the window stops and the focus moves right.
+          selected: [50, 280, 280, 280, 280, 510, 510, 510, 510],
+        };
+        for (const factorScale of [true, false]) {
+          for (const variant of ['plain', 'wrap', 'selected']) {
+            let row!: lng.ElementNode;
+            dispose = await mount(() => (
+              <view width={1920} height={1080}>
+                <VirtualRow
+                  ref={row}
+                  autofocus
+                  x={50}
+                  each={twelve}
+                  displaySize={4}
+                  factorScale={factorScale}
+                  wrap={variant === 'wrap'}
+                  selected={variant === 'selected' ? 5 : undefined}
+                >
+                  {(item) => (
+                    <view
+                      id={`v${item()}`}
+                      item={item()}
+                      width={200}
+                      height={100}
+                      style={{ $focus: { scale: 1.2 } }}
+                    />
+                  )}
+                </VirtualRow>
+              </view>
+            ));
+            await settle();
+            const screenX = () => row.x + lng.activeElement()!.x;
+            const seen = [screenX()];
+            for (const key of [
+              'ArrowRight',
+              'ArrowRight',
+              'ArrowRight',
+              'ArrowRight',
+              'ArrowRight',
+              'ArrowLeft',
+              'ArrowLeft',
+              'ArrowLeft',
+            ]) {
+              await press(key);
+              await settle();
+              seen.push(screenX());
+            }
+            v.expect([factorScale, variant, seen]).toEqual([
+              factorScale,
+              variant,
+              expected[variant],
+            ]);
+            dispose();
+            dispose = undefined;
+          }
+        }
+      } finally {
+        lng.Config.animationsEnabled = false;
+        v.vi.unstubAllGlobals();
       }
     },
   );
@@ -613,4 +863,141 @@ v.describe('VirtualColumn', () => {
       v.expect(col.x).toBe(0);
     },
   );
+});
+
+v.describe('VirtualRow: work per press (1.7)', () => {
+  // Counts the row's flex passes: updateLayout calls, from the post-mutation
+  // layout phase and from VirtualRow itself.
+  const countLayouts = (row: lng.ElementNode) => {
+    const counter = { n: 0 };
+    const updateLayout = row.updateLayout;
+    row.updateLayout = function (this: lng.ElementNode) {
+      counter.n++;
+      return updateLayout.call(this);
+    };
+    return counter;
+  };
+
+  v.it(
+    'a press re-runs only the props that depend on the cursor: an unrelated prop getter is not read again (1.7)',
+    async () => {
+      let row!: lng.ElementNode;
+      let reads = 0;
+      const probe = () => {
+        reads++;
+        return 1;
+      };
+      dispose = await mount(() => (
+        <view width={1920} height={1080}>
+          <VirtualRow
+            ref={row}
+            autofocus
+            x={50}
+            each={twelve}
+            displaySize={4}
+            probe={probe()}
+          >
+            {(item) => <Item item={item()} />}
+          </VirtualRow>
+        </view>
+      ));
+      const before = reads;
+      await press('ArrowRight', 'ArrowRight', 'ArrowRight', 'ArrowLeft');
+      v.expect(row.cursor).toBe(2);
+      // It was read again on every press: the cursor was in the spread.
+      v.expect(reads).toBe(before);
+    },
+  );
+
+  v.it(
+    'with animations on, each window shift animates the row to the same x the non-animated shift sets',
+    async () => {
+      let now = 0;
+      // Presses far apart: the adaptive duration is the full duration.
+      const spy = v.vi
+        .spyOn(performance, 'now')
+        .mockImplementation(() => (now += 1000));
+      lng.Config.animationsEnabled = true;
+      try {
+        let row!: lng.ElementNode;
+        dispose = await mount(() => (
+          <view width={1920} height={1080}>
+            <VirtualRow
+              ref={row}
+              autofocus
+              x={50}
+              each={twelve}
+              displaySize={4}
+            >
+              {(item) => <Item item={item()} />}
+            </VirtualRow>
+          </view>
+        ));
+        const targets: unknown[] = [];
+        row.animate = (props, settings) => {
+          // Copied at the call, as the renderers do.
+          targets.push([props.x, settings?.duration]);
+          return {
+            state: 'stopped',
+            start() {
+              return this;
+            },
+            stop() {},
+          } as unknown as lng.IAnimationController;
+        };
+        await press('ArrowRight', 'ArrowRight', 'ArrowRight', 'ArrowLeft');
+        const duration = row.animationSettings?.duration;
+        // The auto case's x after each press (-180), the left press included.
+        v.expect(targets).toEqual([
+          [-180, duration],
+          [-180, duration],
+          [-180, duration],
+          [-180, duration],
+        ]);
+        v.expect(row.cursor).toBe(2);
+      } finally {
+        lng.Config.animationsEnabled = false;
+        spy.mockRestore();
+      }
+    },
+  );
+
+  // Eight Right presses then four Left presses.
+  const expected = {
+    auto: [0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+    always: [0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+    edge: [0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 1],
+  };
+  for (const mode of ['auto', 'always', 'edge'] as const) {
+    v.it(`scroll="${mode}": a press lays the row out at most once`, async () => {
+      let row!: lng.ElementNode;
+      dispose = await mount(() => (
+        <view width={1920} height={1080}>
+          <VirtualRow
+            ref={row}
+            autofocus
+            x={50}
+            each={twelve}
+            displaySize={4}
+            scroll={mode}
+          >
+            {(item) => <Item item={item()} />}
+          </VirtualRow>
+        </view>
+      ));
+      const counter = countLayouts(row);
+      const passes: number[] = [];
+      for (const key of [
+        ...Array.from({ length: 8 }, () => 'ArrowRight'),
+        ...Array.from({ length: 4 }, () => 'ArrowLeft'),
+      ]) {
+        counter.n = 0;
+        await press(key);
+        passes.push(counter.n);
+      }
+      // One pass for a press that changes the window, none for a press that
+      // only moves the row or the focus (it was two and one).
+      v.expect(passes).toEqual(expected[mode]);
+    });
+  }
 });
