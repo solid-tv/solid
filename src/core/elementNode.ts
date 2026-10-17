@@ -243,7 +243,11 @@ const parseAndAssignShaderProps = (
 const assignEffects = (v: StyleEffects, props: Record<string, unknown>) => {
   if (v.rounded) props.radius = v.rounded.radius;
   if (v.borderRadius) props.radius = v.borderRadius;
-  for (const k of EFFECT_SHADER_KEYS) {
+  // Index loops here and below: legacy builds compile for-of to an iterator
+  // helper, which on Chrome 38 runs through core-js's Symbol and array
+  // iterator polyfills.
+  for (let i = 0; i < EFFECT_SHADER_KEYS.length; i++) {
+    const k = EFFECT_SHADER_KEYS[i]!;
     if (v[k]) parseAndAssignShaderProps(k, v[k], props);
   }
 };
@@ -284,7 +288,8 @@ const hasBorderWidth = (
   props: Record<string, unknown>,
   change?: Record<string, unknown>,
 ) => {
-  for (const key of BORDER_WIDTH_KEYS) {
+  for (let k = 0; k < BORDER_WIDTH_KEYS.length; k++) {
+    const key = BORDER_WIDTH_KEYS[k]!;
     const w = change !== undefined && key in change ? change[key] : props[key];
     if (isArray(w)) {
       for (let i = 0; i < w.length; i++) if (w[i] > 0) return true;
@@ -1875,7 +1880,9 @@ export class ElementNode {
       if (node._hasRenderedChildren) {
         node._hasRenderedChildren = false;
 
-        for (const child of node.children) {
+        const children = node.children;
+        for (let i = 0; i < children.length; i++) {
+          const child = children[i]!;
           if (isElementNode(child) && isINode(child.lng)) {
             child.lng.parent = node.lng as INode;
           }

@@ -70,8 +70,10 @@ export function keyExists(
   obj: Record<string, unknown>,
   keys: (string | number | symbol)[],
 ) {
-  for (const key of keys) {
-    if (key in obj) {
+  // An index loop: legacy builds compile for-of to an iterator helper, which
+  // on Chrome 38 runs through core-js's polyfills (this runs per focus change).
+  for (let i = 0; i < keys.length; i++) {
+    if (keys[i]! in obj) {
       return true;
     }
   }
