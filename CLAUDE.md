@@ -20,7 +20,7 @@ npm run build          # Clean build (rm -rf dist && tsc + copy jsx-runtime.d.ts
 npm run tsc            # TypeScript compile only
 npm test               # Run vitest (jsdom, non-watch)
 npm run test:browser   # Run vitest in Playwright/Chromium
-npm run lint           # Prettier check + ESLint
+npm run lint           # Prettier check + oxlint
 npm run lint:fix       # Auto-fix both
 npm run release        # release-it (bumps version, tags, publishes to npm, creates GitHub release)
 ```

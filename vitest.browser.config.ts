@@ -2,7 +2,7 @@ import { configDefaults, defineConfig } from 'vitest/config';
 import { playwright } from '@vitest/browser-playwright';
 import solid from 'vite-plugin-solid';
 
-export default defineConfig(({ mode }) => ({
+export default defineConfig(() => ({
   define: {
     __DEV__: true,
     VITE_SOLIDTV_DOM_RENDERING: true,
