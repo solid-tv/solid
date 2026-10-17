@@ -1,5 +1,4 @@
 import * as v from 'vitest';
-import * as s from 'solid-js';
 import * as lng from '@solidtv/solid';
 import { renderer, waitForUpdate } from './setup.js';
 import States from '../src/core/states.ts';

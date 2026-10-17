@@ -2,20 +2,38 @@
 // targets ESNext, where a class field is emitted as a native field (define
 // semantics), which an app's bundler lowers to a `_defineProperty` call per
 // field for its Chrome 47 build. Constructor assignments stay plain stores.
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
-import ts from 'typescript';
+import { execFileSync } from 'node:child_process';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { TextNode } from '../src/core/nodeTypes.js';
 
 describe('TextNode', () => {
   it('is emitted without class fields', () => {
-    const file = resolve(__dirname, '../src/core/nodeTypes.ts');
-    const { outputText } = ts.transpileModule(readFileSync(file, 'utf8'), {
-      compilerOptions: { target: ts.ScriptTarget.ESNext },
-    });
-    const body = outputText.slice(outputText.indexOf('class TextNode'));
-    expect(body).not.toMatch(/^\s+(_type|parent|text)\s*(=|;)/m);
+    // TypeScript 7 has no in-process transpile API, so emit this one file
+    // with the tsc CLI (no type check, imports left unresolved).
+    const outDir = mkdtempSync(join(tmpdir(), 'nodeTypes-'));
+    try {
+      execFileSync(process.execPath, [
+        resolve(__dirname, '../node_modules/typescript/bin/tsc'),
+        resolve(__dirname, '../src/core/nodeTypes.ts'),
+        '--ignoreConfig',
+        '--target',
+        'esnext',
+        '--noCheck',
+        '--noResolve',
+        '--rootDir',
+        resolve(__dirname, '../src/core'),
+        '--outDir',
+        outDir,
+      ]);
+      const outputText = readFileSync(join(outDir, 'nodeTypes.js'), 'utf8');
+      const body = outputText.slice(outputText.indexOf('class TextNode'));
+      expect(body).not.toMatch(/^\s+(_type|parent|text)\s*(=|;)/m);
+    } finally {
+      rmSync(outDir, { recursive: true, force: true });
+    }
   });
 
   it('has its three fields, in order, set in the constructor', () => {

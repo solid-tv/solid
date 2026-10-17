@@ -1,5 +1,4 @@
 import * as v from 'vitest';
-import * as lng from '@solidtv/solid';
 import {
   useFocusManager,
   suppressKeyUntilRelease,
