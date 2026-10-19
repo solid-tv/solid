@@ -179,15 +179,40 @@ describe('ElementNode shader props', () => {
   });
 
   it('border transition animates through the shader track', () => {
-    // Task 6 fills the animation; here the parsed keys reach the facade of
-    // a node that has a transition on `border`.
-    const { node } = rendered();
-    node._transition = { border: { duration: 10 } };
+    const { core, node } = rendered();
+    node.transition = { border: { duration: 10 } };
     node.border = { width: 4, color: RED };
+    // The border shader is swapped in before the animation reads its start.
     expect(typeName(node)).toBe('roundedWithBorder');
     const props = node._shader!.props;
-    expect(props['border-width']).toEqual([4, 4, 4, 4]);
+    expect(props['border-width']).toEqual([0, 0, 0, 0]);
     expect(props['border-color']).toBe(RED);
+    // The bag holds the target at once (the getter, a later swap, undo).
+    expect(node._shaderProps!['border-width']).toBe(4);
+    core.step(5);
+    core.update();
+    expect(node._shader!.props['border-width']).toEqual([2, 2, 2, 2]);
+    core.step(5);
+    core.update();
+    expect(node._shader!.props['border-width']).toEqual([4, 4, 4, 4]);
+    // Back to 0: the border shader stays while the width animates down,
+    // and the stop (syncShaderType from onStop) swaps rounded back in.
+    node.border = { width: 0, color: RED };
+    expect(typeName(node)).toBe('roundedWithBorder');
+    core.step(5);
+    core.update();
+    expect(typeName(node)).toBe('roundedWithBorder');
+    expect(node._shader!.props['border-width']).toEqual([2, 2, 2, 2]);
+    core.step(5);
+    core.update();
+    expect(typeName(node)).toBe('rounded');
+  });
+
+  it('a border write with no transition, or before attach, lands at once', () => {
+    const { node } = rendered();
+    node.transition = { x: { duration: 10 } };
+    node.border = { width: 4, color: RED };
+    expect(node._shader!.props['border-width']).toEqual([4, 4, 4, 4]);
   });
 
   it('shadow and border give roundedWithShadow and roundedWithBorderWithShadow', () => {

@@ -162,12 +162,17 @@ v.describe('rounded shader type from the border width', () => {
       const node = renderView((n) => {
         n.borderRadius = 8;
         n.border = { width: 0, color: RED };
-        n._transition = { border: { duration: 10 } };
+        n.transition = { border: { duration: 10 } };
       });
       // What the animation reads its start values from is the swapped-in
-      // shader: the type is already roundedWithBorder after the write.
+      // shader: the type is already roundedWithBorder after the write, and
+      // the width starts at 0.
       node.border = { width: 4, color: RED };
       v.expect(shaderType(node)).toBe('roundedWithBorder');
+      v.expect(propsOf(node)['border-width']).toEqual([0, 0, 0, 0]);
+      node.core.step(10);
+      node.core.update();
+      v.expect(propsOf(node)['border-width']).toEqual([4, 4, 4, 4]);
     },
   );
 

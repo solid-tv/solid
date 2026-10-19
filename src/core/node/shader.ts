@@ -1,7 +1,17 @@
-import { NULL, setShader, type ShaderNode } from '@solidtv/renderer';
+import {
+  createAnimation,
+  NULL,
+  setShader,
+  type ShaderNode,
+} from '@solidtv/renderer';
 import { Config } from '../config.js';
 import { SHADERS_ENABLED } from '../env.js';
-import type { BorderStyle, SingleBorderStyle } from '../intrinsicTypes.js';
+import type {
+  AnimationSettings,
+  BorderStyle,
+  SingleBorderStyle,
+} from '../intrinsicTypes.js';
+import { transitionSettings } from './animation.js';
 import type { ElementNode } from './ElementNode.js';
 import {
   SET_BORDER,
@@ -361,8 +371,65 @@ function bagOf(node: ElementNode): Record<string, unknown> {
 }
 
 /**
+ * A transitioned write of a rounded-family prop to a node that has its
+ * shader: the facade keys whose value changes animate through the
+ * renderer's shader track instead of being written. The changed keys are
+ * read against the bag before the merge (against the facade for a shader
+ * the app made), so a border this write adds is swapped in from the old
+ * values and animates from them; one it removes stays until the animation
+ * stops, whose `onStop` swaps the type to what the bag (merged now, for the
+ * getter and a later swap) says.
+ */
+function animateRounded(
+  node: ElementNode,
+  shader: ShaderNode,
+  key: ShaderKey,
+  value: unknown,
+  parse: ShaderParse | undefined,
+  settings: AnimationSettings,
+): void {
+  const bag = node._shaderProps!;
+  const managed = node._shaderFeatures !== SHADER_UNMANAGED;
+  const current = managed ? bag : shader.props;
+  const change: Record<string, unknown> = {};
+  let changed = false;
+  if (key === 'rounded') {
+    if (value !== undefined && value !== null && current.radius !== value) {
+      change.radius = value;
+      changed = true;
+    }
+  } else if (parse !== undefined) {
+    for (let i = 0; i < parse.keys.length; i++) {
+      const k = parse.keys[i]!;
+      if (current[k] !== parse.values[i]) {
+        change[k] = parse.values[i];
+        changed = true;
+      }
+    }
+  }
+  if (managed) {
+    syncShaderType(node, change);
+  }
+  mergeIntoBag(bag, key, value, parse);
+  if (!changed) {
+    return;
+  }
+  const animation = createAnimation(
+    node.core,
+    node,
+    { shaderProps: change },
+    settings,
+  );
+  if (managed) {
+    animation.onStop = () => syncShaderType(node);
+  }
+  animation.start();
+}
+
+/**
  * `border`, a side, `shadow`, `borderRadius`: store the object, merge its
- * parse into the bag, then reach the facade with the keys that changed.
+ * parse into the bag, then reach the facade with the keys that changed (or
+ * animate them, under a transition: animateRounded).
  * Before attach (no shader yet, not rendered) the object only waits in the
  * bag for convertToShader. A shader convertToShader made was built from the
  * bag, so a key the bag held already is on it: writing the same object again
@@ -374,11 +441,26 @@ function writeRounded(node: ElementNode, key: ShaderKey, value: unknown): void {
   // One parse per write (a getter object's getters run once).
   const parse =
     key !== 'rounded' && isObject(value) ? shaderParse(key, value) : undefined;
+  const shader = node._shader;
+  if (
+    SHADERS_ENABLED &&
+    shader !== undefined &&
+    node._transition !== undefined
+  ) {
+    // `rounded` is `borderRadius` to a transition.
+    const settings = transitionSettings(
+      node,
+      key === 'rounded' ? 'borderRadius' : key,
+    );
+    if (settings !== undefined) {
+      animateRounded(node, shader, key, value, parse, settings);
+      return;
+    }
+  }
   mergeIntoBag(bag, key, value, parse);
   if (!SHADERS_ENABLED) {
     return;
   }
-  const shader = node._shader;
   if (shader === undefined) {
     if (node.rendered) {
       Config.convertToShader(node);

@@ -1,4 +1,5 @@
 import {
+  animateSlotProp,
   DIRTY_ALPHA,
   DIRTY_LOCAL,
   F_ALPHA,
@@ -19,8 +20,9 @@ import {
   setColor,
   setField,
   setZIndex,
-  type AnimationSettings,
+  type AnimateProps,
   type ClippingValue,
+  type IAnimationController,
   type RendererCore,
   type ShaderNode,
   type SlotOwner,
@@ -33,6 +35,7 @@ import {
   type TextWordBreak,
 } from '@solidtv/renderer';
 import type {
+  AnimationSettings,
   BorderStyle,
   SingleBorderStyle,
   Styles,
@@ -47,6 +50,14 @@ import {
   writeTextWidth,
   writeWidth,
 } from './accessors.js';
+import {
+  animateNode,
+  chainAnimation,
+  installAnimationAccessors,
+  startChain,
+  stoppedHook,
+  transitionSettings,
+} from './animation.js';
 import { SET_COUNT, type StoreProp, type TextNumberProp } from './defaults.js';
 import { installShaderAccessors, SHADER_UNMANAGED } from './shader.js';
 import { installTextAccessors, writeTextNumber } from './textProps.js';
@@ -59,6 +70,28 @@ export type SolidNode = ElementNode | TextNode;
 
 /** A listener of a renderer event (`loaded`, `inViewport`, ...). */
 export type NodeEventHandler = (node: ElementNode, data: unknown) => void;
+
+/** The `onEvent` prop: a listener per event name (`loaded`, `failed`, ...). */
+export type OnEventProp = Record<string, NodeEventHandler | undefined>;
+
+/** An `onAnimation` handler: the prop's name and its end value. */
+export type AnimationEventHandler = (
+  this: ElementNode,
+  name: string,
+  endValue: number,
+) => void;
+
+/** `onAnimation`: called as a transition starts and when it stops. */
+export interface AnimationEvents {
+  animating?: AnimationEventHandler;
+  stopped?: AnimationEventHandler;
+}
+
+/** One `chain` entry. */
+interface ChainedAnimation {
+  props: AnimateProps;
+  animationSettings: AnimationSettings | undefined;
+}
 
 /** A key handler (`onUp`, `onEnter`, ...); true stops the bubbling. */
 export type KeyHandler = (
@@ -231,6 +264,18 @@ export class ElementNode implements SlotOwner {
         currentFocusedElm: ElementNode,
       ) => boolean | void)
     | undefined;
+  declare onAnimation: AnimationEvents | undefined;
+  /** The `onEvent` object as written (animation.ts). */
+  declare _onEventProp: OnEventProp | undefined;
+  // `chain` and `start` (animation.ts).
+  declare _animationQueue: ChainedAnimation[] | undefined;
+  declare _animationQueueSettings: AnimationSettings | undefined;
+  declare _animationRunning: boolean;
+
+  // Prototype accessors (animation.ts).
+  declare transition: TransitionSetting | undefined;
+  declare animationSettings: AnimationSettings | undefined;
+  declare onEvent: OnEventProp | undefined;
 
   // Prototype accessors (accessors.ts): the store props.
   declare x: number;
@@ -397,6 +442,11 @@ export class ElementNode implements SlotOwner {
     this.onFocusChanged = undefined;
     this.onBlur = undefined;
     this.onKeyPress = undefined;
+    this.onAnimation = undefined;
+    this._onEventProp = undefined;
+    this._animationQueue = undefined;
+    this._animationQueueSettings = undefined;
+    this._animationRunning = false;
     core.nodes.handles[slot] = this;
   }
 
@@ -407,11 +457,79 @@ export class ElementNode implements SlotOwner {
 
   /**
    * Let a transition take a write of `name`: true when it started or
-   * retargeted an animation (the store is then written by the animation).
-   * Task 6 fills it in; until then every write is direct.
+   * retargeted an animation (the store is then written by the animation),
+   * false when the caller writes the store.
    */
-  _animate(_name: StoreProp, _value: number): boolean {
-    return false;
+  _animate(name: StoreProp, value: number): boolean {
+    const settings = transitionSettings(this, name);
+    if (settings === undefined) {
+      return false;
+    }
+    // The same settings object retargets the prop's controller: no
+    // allocation. A new controller gets its stop hook once.
+    const controller = animateSlotProp(this.core, this, name, value, settings);
+    if (controller.onStop === null) {
+      controller.onStop = stoppedHook(this, name);
+    }
+    const handlers = this.onAnimation;
+    if (handlers !== undefined && handlers.animating !== undefined) {
+      handlers.animating.call(this, name, value);
+    }
+    return true;
+  }
+
+  /**
+   * An unstarted controller animating `props` with `settings` (else the
+   * node's, else Config's); an inert one before attach.
+   */
+  animate(
+    props: AnimateProps,
+    settings?: AnimationSettings,
+  ): IAnimationController {
+    return animateNode(this, props, settings);
+  }
+
+  /** Queue an animation for `start`. */
+  chain(props: AnimateProps, settings?: AnimationSettings): this {
+    chainAnimation(this, props, settings);
+    return this;
+  }
+
+  /** Run the `chain`ed animations in order; resolves when all have run. */
+  start(): Promise<void> {
+    return startChain(this);
+  }
+
+  /** Listen to a renderer event (`loaded`, `failed`, `freed`, ...). */
+  on(name: string, fn: NodeEventHandler): void {
+    let events = this._onEvent;
+    if (events === undefined) {
+      // No prototype: an event named like an Object method is no listener.
+      events = Object.create(null) as Record<string, NodeEventHandler[]>;
+      this._onEvent = events;
+    }
+    const list = events[name];
+    if (list === undefined) {
+      events[name] = [fn];
+    } else {
+      list.push(fn);
+    }
+  }
+
+  /** Stop listening: removes one registration of `fn`. */
+  off(name: string, fn: NodeEventHandler): void {
+    const events = this._onEvent;
+    if (events === undefined) {
+      return;
+    }
+    const list = events[name];
+    if (list === undefined) {
+      return;
+    }
+    const at = list.indexOf(fn);
+    if (at !== -1) {
+      list.splice(at, 1);
+    }
   }
 
   // SlotOwner (renderer SlotOwner.ts)
@@ -435,7 +553,8 @@ export class ElementNode implements SlotOwner {
       return;
     }
     for (let i = 0; i < list.length; i++) {
-      list[i]!(this, data);
+      // `this` is the node too, as 1.x registered `onEvent` handlers.
+      list[i]!.call(this, this, data);
     }
   }
 
@@ -602,3 +721,4 @@ export class ElementNode implements SlotOwner {
 installAccessors(ElementNode.prototype);
 installTextAccessors(ElementNode.prototype);
 installShaderAccessors(ElementNode.prototype);
+installAnimationAccessors(ElementNode.prototype);
