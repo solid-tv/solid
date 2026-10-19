@@ -230,16 +230,20 @@ function hasRoundedProps(bag: Record<string, unknown>): boolean {
 
 /**
  * Keys of the last parse whose value the bag did not hold: the positions in
- * `parse.keys`, in a scratch array so a write allocates nothing (a write
- * runs to its end before the next starts).
+ * `parse.keys`, the first `changedCount` entries of a scratch array, so a
+ * write allocates nothing (a write runs to its end before the next starts).
+ * A count, not the array's length: `length = 0` drops an array's store, and
+ * the next push allocated a new one (76 bytes) on every merge.
  */
 const CHANGED: number[] = [];
+let changedCount = 0;
 
 /**
  * Merge what a rounded-family object stands for into the bag's facade keys,
  * as the facade write does: a key the object does not name keeps its value,
  * so a `$focus` border of `{ width: 4 }` keeps the base border's colour.
- * Fills CHANGED with the keys whose value differs from what the bag held.
+ * Fills CHANGED (changedCount) with the keys whose value differs from what
+ * the bag held.
  */
 function mergeIntoBag(
   bag: Record<string, unknown>,
@@ -247,11 +251,11 @@ function mergeIntoBag(
   value: unknown,
   parse: ShaderParse | undefined,
 ): void {
-  CHANGED.length = 0;
+  changedCount = 0;
   if (key === 'rounded') {
     if (value !== undefined && value !== null && bag.radius !== value) {
       bag.radius = value;
-      CHANGED.push(0);
+      CHANGED[changedCount++] = 0;
     }
     return;
   }
@@ -263,7 +267,7 @@ function mergeIntoBag(
   for (let i = 0; i < keys.length; i++) {
     if (bag[keys[i]!] !== values[i]) {
       bag[keys[i]!] = values[i];
-      CHANGED.push(i);
+      CHANGED[changedCount++] = i;
     }
   }
 }
@@ -540,12 +544,12 @@ function writeRounded(node: ElementNode, key: ShaderKey, value: unknown): void {
   }
   const props = shader.props;
   if (key === 'rounded') {
-    if (CHANGED.length > 0) {
+    if (changedCount > 0) {
       props.radius = value;
     }
     return;
   }
-  for (let i = 0; i < CHANGED.length; i++) {
+  for (let i = 0; i < changedCount; i++) {
     const at = CHANGED[i]!;
     props[parse!.keys[at]!] = parse!.values[at];
   }
