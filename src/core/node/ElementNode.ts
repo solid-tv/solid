@@ -91,8 +91,8 @@ import { installTextAccessors, writeTextNumber } from './textProps.js';
 import { destroy, insertChild, removeChild } from './lifecycle.js';
 import {
   deferFocus,
+  focusNext,
   schedulePostMutationInFrame,
-  setFocus,
   updateLayout,
   type TextMeasure,
 } from './postMutation.js';
@@ -612,7 +612,33 @@ export class ElementNode implements SlotOwner {
 
   /** Make the node (or the child forwardFocus names) the active element. */
   setFocus(): void {
-    setFocus(this);
+    // Written out here: terser inlines a single-use helper with locals as an
+    // IIFE, a closure per focus change.
+    if (!this.rendered) {
+      // Attach focuses it.
+      this._autofocus = true;
+      return;
+    }
+    // forwardFocus first (a handler, or a child index; can be 0).
+    const forwardFocus = this.forwardFocus;
+    if (forwardFocus !== undefined) {
+      if (typeof forwardFocus === 'function') {
+        if (forwardFocus.call(this, this) !== false) {
+          return;
+        }
+      } else {
+        const nodes = this.children;
+        if (forwardFocus < nodes.length) {
+          const child = nodes[forwardFocus]!;
+          // A TextNode may be a child (`children` types it out).
+          if ((child as SolidNode)._type !== NodeType.Text) {
+            child.setFocus();
+          }
+          return;
+        }
+      }
+    }
+    focusNext(this);
   }
 
   /** Run the flex layout and `onLayout` now. */

@@ -502,35 +502,11 @@ export function deferFocus(node: ElementNode): void {
 }
 
 /**
- * `setFocus()`: forwardFocus first (a handler, or a child index); else the
- * node becomes the active element in the next pass, so that its children
- * attach first (Row and Column). Before attach it only marks the node, and
- * attach focuses it.
+ * The last step of `setFocus()` (ElementNode): the node becomes the active
+ * element in the next pass, so that its children attach first (Row and
+ * Column).
  */
-export function setFocus(node: ElementNode): void {
-  if (!node.rendered) {
-    node._autofocus = true;
-    return;
-  }
-  const forwardFocus = node.forwardFocus;
-  // can be 0
-  if (forwardFocus !== undefined) {
-    if (typeof forwardFocus === 'function') {
-      if (forwardFocus.call(node, node) !== false) {
-        return;
-      }
-    } else {
-      const nodes = node.children;
-      if (forwardFocus < nodes.length) {
-        const child = nodes[forwardFocus]!;
-        // A TextNode may be a child (`children` types it out).
-        if ((child as SolidNode)._type !== NodeType.Text) {
-          child.setFocus();
-        }
-        return;
-      }
-    }
-  }
+export function focusNext(node: ElementNode): void {
   nextActiveElement = node;
   schedulePostMutation();
 }
