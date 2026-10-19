@@ -205,6 +205,47 @@ describe('attach', () => {
     expect(other.children).toContain(kept);
   });
 
+  it('a node removed, re-inserted and removed again in one tick stays linked until the flush', async () => {
+    const { core, root } = scene();
+    const parent = view(core);
+    insertChild(root, parent);
+    const a = view(core);
+    insertChild(parent, a);
+    await microtasks();
+    const slot = a.slot;
+    // Its count passes through 0 (-1, +1, -1 queued) like a preserved node's,
+    // but it is not preserved: it is destroyed, and stays drawn until then.
+    removeChild(parent, a);
+    insertChild(parent, a);
+    removeChild(parent, a);
+    expect(a.preserve).toBe(false);
+    expect(core.nodes.i32[slot * I_STRIDE + I_PARENT]).toBe(parent.slot);
+    await microtasks();
+    expect(a.slot).toBe(NULL);
+  });
+
+  it('the same node with a promise onDestroy stays linked until it resolves', async () => {
+    const { core, root } = scene();
+    const parent = view(core);
+    insertChild(root, parent);
+    const a = view(core);
+    let finish!: () => void;
+    a.onDestroy = () => new Promise<void>((resolve) => (finish = resolve));
+    insertChild(parent, a);
+    await microtasks();
+    const slot = a.slot;
+    removeChild(parent, a);
+    insertChild(parent, a);
+    removeChild(parent, a);
+    expect(core.nodes.i32[slot * I_STRIDE + I_PARENT]).toBe(parent.slot);
+    await microtasks();
+    expect(a.slot).toBe(slot);
+    expect(core.nodes.i32[slot * I_STRIDE + I_PARENT]).toBe(parent.slot);
+    finish();
+    await microtasks();
+    expect(a.slot).toBe(NULL);
+  });
+
   it('a removed node stays linked while the promise onDestroy returns is pending', async () => {
     const { core, root } = scene();
     const parent = view(core);

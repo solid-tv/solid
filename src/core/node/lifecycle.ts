@@ -187,14 +187,13 @@ export function removeChild(parent: ElementNode, node: SolidNode): void {
   if (parent.requiresLayout()) {
     queueLayout(parent);
   }
-  // A `preserve`d node (`_queueDelete` is 0; read before the count moves) is
-  // never destroyed by the flush, so nothing would ever unlink it: left
-  // linked under `parent`, destroying `parent` later would free its slot
-  // too. Unlink it now, after onRemove (which hides it, so no exit is drawn
-  // from the old place); insertChild links it again (its link is NULL).
-  // Also true of a node that moved and was removed again in this pass (its
-  // count is 0 too, and it is queued): unlinked early, destroyed at the flush.
-  const preserved = node._queueDelete === 0 && node.slot !== NULL;
+  // A `preserve`d node is never destroyed by the flush, so nothing would
+  // ever unlink it: left linked under `parent`, destroying `parent` later
+  // would free its slot too. Unlink it now, after onRemove (which hides it,
+  // so no exit is drawn from the old place); insertChild links it again (its
+  // link is NULL). Not `_queueDelete === 0`: a node that moved and was
+  // removed again in one pass counts 0 as well, and is destroyed.
+  const preserved = node._preserved && node.slot !== NULL;
   enqueueDelete(node, -1);
   if (preserved) {
     const nodes = parent.core.nodes;

@@ -980,6 +980,9 @@ v.describe('Row and Column: a press reuses the merged transition', () => {
       await press('ArrowRight');
       v.expect(focusedId()).toBe('c3');
       v.expect(row.transition).toBe(transition);
+      // The renderer's settings object is the cached merge's own `x`: the
+      // record is tied to the cache, not just stable by itself.
+      v.expect(slot!.settings).toBe((row.transition as { x: unknown }).x);
       v.expect(xSlot(row)!.settings).toBe(slot!.settings);
       v.expect(xSlot(row)!.controller).toBe(slot!.controller);
     },

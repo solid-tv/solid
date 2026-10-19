@@ -193,6 +193,8 @@ export class ElementNode implements SlotOwner {
   /** flexGrow record (B8): the size the last growth wrote. */
   declare _flexGrown: number | undefined;
   declare _queueDelete: number | undefined;
+  /** `preserve`: the delete flush never destroys it (removeChild unlinks it). */
+  declare _preserved: boolean;
   declare _layoutDepth: number | undefined;
   /** In the post-mutation pass's layout queue (postMutation.ts). */
   declare _layoutQueued: boolean;
@@ -574,6 +576,7 @@ export class ElementNode implements SlotOwner {
     this.componentName = undefined;
     this.componentLocation = undefined;
     this._destroyed = false;
+    this._preserved = false;
     core.nodes.handles[slot] = this;
   }
 
@@ -643,10 +646,13 @@ export class ElementNode implements SlotOwner {
 
   /** Kept by the delete flush when removed: KeepAlive, Preserve. */
   get preserve(): boolean {
-    return this._queueDelete === 0;
+    return this._preserved;
   }
 
   set preserve(v: boolean) {
+    // Count 0 and never queued: enqueueDelete only moves the count, so the
+    // delete flush (which only sees queued nodes) never destroys it.
+    this._preserved = v;
     this._queueDelete = v ? 0 : undefined;
   }
 
