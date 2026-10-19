@@ -14,6 +14,10 @@ Just give any `<view>` tag a src to an image. Be sure to also give it a width an
 
 The SolidTV renderer will scale the image to fit the width and height dimensions provided. If you don't know the size of the image you can use `autosize` attribute for the Renderer to set the image size when it loads.
 
+Since renderer 1.8 `autosize` means only that: take the texture's intrinsic
+dimensions once it loads. It does not size a container to its children (use flex
+for that), and it is a no-op on `<text>` nodes.
+
 For the best performance, it's important to keep your source images as small as possible. If you're displaying an image at `200px x 200px`, make sure the image is exactly that size or _smaller_. The latter option may lead to some quality loss, but can positively impact the overall performance of your App.
 
 ## textureOptions for images

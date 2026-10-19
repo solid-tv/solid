@@ -96,8 +96,8 @@ export function MarqueeText(props: MarqueeTextProps) {
   return (
     <>
       {wasFocusedBefore() && <>
-        <text {...props} ref={text1} hidden={!shouldScroll()} rtt maxLines={1} onEvent={events} />
-        <text {...props} ref={text2} hidden={!shouldScroll()} rtt maxLines={1} />
+        <text {...props} ref={text1} hidden={!shouldScroll()} maxLines={1} onEvent={events} />
+        <text {...props} ref={text2} hidden={!shouldScroll()} maxLines={1} />
       </>}
       <text {...props} maxLines={1} hidden={shouldScroll()} contain='width' />
     </>

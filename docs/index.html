@@ -48,6 +48,11 @@
   </head>
 
   <body>
+    <nav>
+      <a href="https://solidtv.dev/#services" target="_blank" rel="noopener"
+        >Commercial Support</a
+      >
+    </nav>
     <div id="app"></div>
     <script>
       window.$docsify = {
@@ -63,6 +68,22 @@
           noData: 'No Results!',
           depth: 5,
         },
+        plugins: [
+          // Old lightning-tv.github.io/solid links land on #/migrate?from=<page>;
+          // offer a link back to that page on this site.
+          function (hook, vm) {
+            hook.doneEach(function () {
+              var el = document.getElementById('migrate-continue');
+              var from = vm.route.query.from;
+              if (!el || !from || !/^[\w\-\/]+$/.test(from)) return;
+              var link = document.createElement('a');
+              link.href = '#/' + from.replace(/^\/+/, '');
+              link.textContent = 'Continue to the page you were looking for';
+              el.appendChild(link);
+              el.hidden = false;
+            });
+          },
+        ],
       };
     </script>
     <!-- Docsify v4 -->

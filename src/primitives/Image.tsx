@@ -43,15 +43,8 @@ export const Image: Component<ImageProps> = (props) => {
       });
     }
 
-    srcTexture
-      .getTextureData()
-      .then((resp) => {
-        // if texture fails to load, this is still called after the failed handler
-        if (resp.data) setTexture(srcTexture);
-      })
-      .catch(() => {
-        // handle potential errors from getTextureData
-      });
+    // Renderer 2.x loads a texture only once a node shows it
+    setTexture(srcTexture);
   });
 
   return (

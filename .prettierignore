@@ -6,3 +6,6 @@ build
 releases
 .tmp
 .env
+bench/.arms
+bench/dist
+bench/public

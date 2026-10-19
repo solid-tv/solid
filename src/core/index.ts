@@ -10,6 +10,10 @@ export * from './config.js';
 export * from './shaders.js';
 export type * from '@solidtv/renderer';
 export { type AnimationSettings } from './intrinsicTypes.js';
+// Solid's own versions of names the renderer also exports
+export { TextNode } from './nodeTypes.js';
+export type { FontLoadOptions, TextProps } from './intrinsicTypes.js';
+export type { IEventEmitter } from './dom-renderer/domRendererTypes.js';
 // hopefully fix up webpack error
 import { assertTruthy, deg2Rad } from '@solidtv/renderer/utils';
 export { assertTruthy, deg2Rad };

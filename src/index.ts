@@ -1,7 +1,12 @@
 export type * from '@solidtv/solid/jsx-runtime';
 export * from './core/index.js';
 export type * from './core/index.js';
-export type { KeyHandler, KeyMap } from './core/focusManager.js';
+export type {
+  KeyEventLike,
+  KeyEventTarget,
+  KeyHandler,
+  KeyMap,
+} from './core/focusManager.js';
 export { activeElement, setActiveElement } from './core/activeElement.js';
 export { setActiveElementCore } from './core/focusManager.js';
 export * from './utils.js';

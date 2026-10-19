@@ -83,3 +83,10 @@ v.test('static and reactive props coexist on one element', () => {
 
   dispose()
 })
+
+v.test('Unrendered node animate start noop', () => {
+  const node = new lng.ElementNode('view')
+  const anim = node.animate({ alpha: 0 })
+  v.assert.equal(typeof anim.start, 'function')
+  v.assert.doesNotThrow(() => anim.start())
+})

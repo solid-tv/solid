@@ -1,5 +1,6 @@
 import { type ElementNode } from './elementNode.js';
 import { isTextNode, isElementText } from './utils.js';
+import { isDev } from './env.js';
 
 function getArrayValue(
   val: number | number[] | undefined,
@@ -240,7 +241,7 @@ export default function (node: ElementNode): boolean {
       node._containsFlexGrow = node._containsFlexGrow ? null : true;
     } else if (node._containsFlexGrow) {
       node._containsFlexGrow = null;
-    } else if (totalFlexGrow > 0) {
+    } else if (isDev && totalFlexGrow > 0) {
       // No positive space available for items to grow, or items overflow.
       // flex-grow has no effect in this case. Guarded on totalFlexGrow because
       // this branch is also reached by shrink-only containers, which the old

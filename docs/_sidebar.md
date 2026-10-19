@@ -2,7 +2,9 @@
   - [Basics](/articles/basics.md)
   - [Rendering Hello World](/essentials/render.md)
   - [Migration 1.x to 2.0 (SolidJS 2.0)](/articles/migration-1x-to-2.0.md)
+  - [Migrating from @lightningtv/solid](/migrate.md)
   - [Migration 2.x to 3.0](/articles/migration-2x-to-3.0.md)
+  - [Upgrading to Renderer 1.9](/articles/renderer-1.9-upgrade.md)
 - Core Concepts
   - [Components](/essentials/components.md)
   - [ElementNode](/essentials/elementnode.md)
@@ -38,7 +40,6 @@
   - [Image Component](/primitives/image.md)
   - [borderBox](/primitives/borderBox.md)
   - [createBlurredImage](/primitives/createBlurredImage.md)
-  - [createTag](/primitives/createTag.md)
   - [FPS Counter](/primitives/fpscounter.md)
   - [LazyUp](/primitives/lazyUp.md)
   - [Marquee](/primitives/marquee.md)
@@ -48,6 +49,7 @@
   - [Task Scheduler](/essentials/taskscheduler.md)
   - [Screen Resolution](/essentials/screen_resolution.md)
   - [AI Context](/essentials/ai_context.md)
+  - [Render Telemetry](/articles/telemetry.md)
   - [Real World Performance](/articles/realworldperformance.md)
   - [Boosting SolidTV Performance by 50%](/articles/boostingperf.md)
   - [SolidTV / Blits Framework Comparison](/articles/solidvsblits.md)
@@ -58,8 +60,12 @@
   - [Tizen/Samsung](/deploy/tizen.md)
   - [WebOS/LG](/deploy/lg.md)
   - [Android TV](/deploy/androidtv.md)
+  - [Apple TV](/deploy/appletv.md)
   - [Legacy Devices](/deploy/legacy.md)
 - Tooling
   - [SolidTV Devtools](/tools/solid_devtools.md)
   - [JSX Locator Plugin](/tools/jsx_locator.md)
   - [Hex Color Transform](/tools/hex_color_transform.md)
+- Support
+  - [Commercial Support](https://solidtv.dev/#services)
+  - [Discord Community](https://discord.com/invite/solidjs)

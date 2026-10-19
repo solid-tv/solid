@@ -1,6 +1,6 @@
 {
   "name": "@solidtv/solid",
-  "version": "1.5.1",
+  "version": "1.7.0",
   "description": "SolidTV",
   "type": "module",
   "exports": {
@@ -33,6 +33,20 @@
       }
     },
     "./devtools/jsx-locator": "./src/devtools/jsx-locator.js",
+    "./shaders": {
+      "@solidtv/source": "./src/core/shaders.ts",
+      "import": {
+        "types": "./dist/src/core/shaders.d.ts",
+        "default": "./dist/src/core/shaders.js"
+      }
+    },
+    "./focusManager": {
+      "@solidtv/source": "./src/core/focusManager.ts",
+      "import": {
+        "types": "./dist/src/core/focusManager.d.ts",
+        "default": "./dist/src/core/focusManager.js"
+      }
+    },
     "./jsx-runtime": {
       "@solidtv/source": "./jsx-runtime.d.ts",
       "default": "./dist/jsx-runtime.d.ts"
@@ -41,20 +55,22 @@
   "sideEffects": false,
   "scripts": {
     "start": "pnpm run watch",
+    "bench": "node bench/run.mjs",
     "test": "vitest",
-    "lint": "pnpm run lint:prettier && pnpm run lint:eslint",
-    "lint:fix": "pnpm run lint:fix:prettier && pnpm run lint:fix:eslint",
+    "lint": "pnpm run lint:prettier && pnpm run lint:oxlint",
+    "lint:fix": "pnpm run lint:fix:prettier && pnpm run lint:fix:oxlint",
     "lint:prettier": "prettier --check \"**/*.{ts,js,cjs,md}\"",
     "lint:fix:prettier": "prettier --write \"**/*.{ts,js,cjs,md}\"",
-    "lint:eslint": "eslint .",
-    "lint:fix:eslint": "eslint --fix .",
+    "lint:oxlint": "oxlint",
+    "lint:fix:oxlint": "oxlint --fix",
     "build": "rm -rf dist && pnpm run tsc && cp jsx-runtime.d.ts dist/",
-    "tsc": "tsc",
+    "tsc": "tsc && tsc -p tests/tsconfig.contract.json",
     "watch": "tsc -w",
     "prepare": "husky",
     "prepack": "pnpm run build",
     "release": "release-it",
-    "test:browser": "vitest --config=vitest.browser.config.ts"
+    "test:browser": "vitest --config=vitest.browser.config.ts",
+    "test:webgl": "vitest run --config=vitest.webgl.config.ts"
   },
   "keywords": [
     "lightning",
@@ -74,25 +90,23 @@
     "@solidjs/web": "2.0.0-rc.1"
   },
   "devDependencies": {
-    "@eslint/js": "^9.39.4",
+    "@lightningtv/vite-hex-transform": "^1.1.0",
     "@solid-devtools/debugger": "^0.28.1",
     "@solidjs/router": "2.0.0-next.17",
-    "@typescript-eslint/eslint-plugin": "^8.59.2",
-    "@typescript-eslint/parser": "^8.59.2",
+    "@solidjs/testing-library": "^0.8.10",
     "@vitest/browser-playwright": "^4.1.6",
     "babel-preset-solid": "2.0.0-rc.1",
-    "eslint": "^9.39.4",
-    "eslint-config-prettier": "^9.1.2",
-    "eslint-plugin-prettier": "^5.5.5",
-    "globals": "^17.6.0",
     "husky": "^9.1.7",
     "jsdom": "^26.1.0",
     "lint-staged": "^17.0.4",
+    "oxlint": "^1.88.0",
+    "oxlint-tsgolint": "^7.0.2004",
+    "playwright": "1.56.1",
     "prettier": "^3.8.3",
     "release-it": "^20.0.1",
     "solid-js": "2.0.0-rc.1",
-    "typescript": "^6.0.3",
-    "typescript-eslint": "^8.59.2",
+    "terser": "^5.51.2",
+    "typescript": "^7.0.2",
     "vite": "^8.0.13",
     "vite-plugin-solid": "3.0.0-next.27",
     "vitest": "^4.1.6"
@@ -100,13 +114,13 @@
   "lint-staged": {
     "*.ts": [
       "prettier --write",
-      "eslint --fix"
+      "oxlint --fix"
     ],
     "*.{js,cjs,md}": "prettier --write"
   },
   "peerDependencies": {
     "@solidjs/router": "^2.0.0-next.17",
-    "@solidtv/renderer": "^1.6.3",
+    "@solidtv/renderer": "^2.0.6",
     "solid-js": "^2.0.0-rc.1"
   },
   "peerDependenciesMeta": {

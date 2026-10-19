@@ -26,6 +26,24 @@ interface SpeechError extends Error {
   error?: string;
 }
 
+// The same caveat applies to the rest of the Web Speech API, and it is not just
+// a typing nicety: webOS (Chrome 53) ships no Web Speech API at all, so it
+// declares neither `window.speechSynthesis` nor the `SpeechSynthesisUtterance`
+// constructor. Merely *evaluating* the bare global throws a ReferenceError —
+// including inside an `instanceof` on a code path that never intends to speak,
+// which is how a webOS app running in aria mode (Announcer.aria = true, speech
+// synthesis never touched) still managed to crash. `typeof` is the only safe
+// probe for a possibly-undeclared global, so every use of the API in this file
+// goes through this guard or through a `SpeechSynthesis | undefined` local.
+function isSpeechSynthesisUtterance(
+  phrase: unknown,
+): phrase is SpeechSynthesisUtterance {
+  return (
+    typeof SpeechSynthesisUtterance !== 'undefined' &&
+    phrase instanceof SpeechSynthesisUtterance
+  );
+}
+
 function flattenStrings(series: SpeechType[] = []): SpeechType[] {
   const flattenedSeries = [];
 
@@ -142,9 +160,20 @@ function speak(
   lang = 'en-US',
   voiceName?: string,
 ) {
-  const synth = window.speechSynthesis;
+  // TypeScript's DOM lib types `window.speechSynthesis` as always present, but
+  // on a TV browser without the Web Speech API it is `undefined` at runtime.
+  // Type it honestly so the compiler forces the guard below.
+  const synth: SpeechSynthesis | undefined = window.speechSynthesis;
 
   return new Promise<void>((resolve, reject) => {
+    if (!synth || typeof SpeechSynthesisUtterance === 'undefined') {
+      // No speech engine on this device. Resolve rather than reject so the rest
+      // of the series still runs and the app degrades to silence instead of
+      // throwing a ReferenceError out of the chain.
+      resolve();
+      return;
+    }
+
     let selectedVoice;
     if (voiceName) {
       const availableVoices = synth.getVoices();
@@ -180,7 +209,8 @@ function speak(
  * benign — a newer announcement cancelled or replaced the in-flight one (see
  * synth.cancel()), which happens constantly during directional navigation — so
  * we stop retrying without surfacing them. `network` errors back off and retry.
- * Anything else is genuinely unexpected and is rethrown.
+ * Anything else is a device-level failure of the speech engine: logged, not
+ * rethrown.
  */
 async function handleSpeechError(
   e: unknown,
@@ -202,7 +232,16 @@ async function handleSpeechError(
     return 0; // benign — stop retrying, don't propagate
   }
 
-  throw e;
+  // Everything else — "synthesis-failed", "not-allowed", or an error carrying no
+  // code at all — is the platform's TTS engine declining to speak, not a
+  // programming error. Xumo (Safari 11) and Tizen both report these routinely
+  // when the system voice is unavailable or refuses to start unprompted.
+  // Rethrowing used to abort the whole remaining series *and* surface as an
+  // uncaught exception in the host app, so instead we log it, keep the rest of
+  // the phrases going, and stop retrying (a refused engine won't change its
+  // mind on the next attempt the way a `network` blip might).
+  console.warn(`Speech synthesis failed: ${code || 'no error code'}`);
+  return 0;
 }
 
 function speakSeries(
@@ -212,7 +251,8 @@ function speakSeries(
   voice?: string,
   root = true,
 ): SeriesResult {
-  const synth = window.speechSynthesis;
+  // Possibly-undefined on purpose — see isSpeechSynthesisUtterance above.
+  const synth: SpeechSynthesis | undefined = window.speechSynthesis;
   const remainingPhrases = flattenStrings(
     Array.isArray(series) ? series : [series],
   );
@@ -255,7 +295,7 @@ function speakSeries(
               );
             }
           }
-        } else if (phrase instanceof SpeechSynthesisUtterance) {
+        } else if (isSpeechSynthesisUtterance(phrase)) {
           // Handle SpeechSynthesisUtterance objects with retry logic
           const totalRetries = 3;
           let retriesLeft = totalRetries;
@@ -298,7 +338,16 @@ function speakSeries(
         focusElementForAria();
       }
     }
-  })();
+  })().catch((e) => {
+    // Last line of defence, and the reason the fixes above are not enough on
+    // their own: `SeriesResult.series` is handed to callers who usually never
+    // await it, so anything escaping this chain lands as an `unhandledrejection`
+    // and is reported as an uncaught exception in the host app. A failed
+    // announcement must never do that — whatever the cause (a caller-supplied
+    // function phrase throwing, a future synthesis error code), log it and let
+    // the promise resolve.
+    console.warn('Speech series failed:', e);
+  });
 
   return {
     series: seriesChain,
@@ -320,7 +369,11 @@ function speakSeries(
           // screen reader can finish. Just drop any partially accumulated
           // phrases from this canceled series.
           ariaLabelPhrases = [];
-        } else {
+        } else if (synth) {
+          // Undefined on TV browsers without the Web Speech API. cancel() runs
+          // synchronously in the caller (see the default export, which cancels
+          // the previous series before starting a new one), so an unguarded
+          // call here would throw straight into app code.
           synth.cancel(); // Cancel all ongoing speech
         }
       }

@@ -39,13 +39,20 @@ function findFirstFocusableChildIdx(
   from = 0,
   delta = 1,
 ): number {
-  for (let i = from; ; i += delta) {
-    if (!idxInArray(i, el.children)) {
-      if (el.wrap) {
-        i = (i + el.children.length) % el.children.length;
+  const children = el.children;
+  const length = children.length;
+  const wrap = el.wrap;
+  // Visits each child at most once, so with wrap and every child skipFocus
+  // the search ends (B1). With no children there is nothing to find: -1.
+  let i = from;
+  for (let n = 0; n < length; n++, i += delta) {
+    if (!(i >= 0 && i < length)) {
+      if (wrap) {
+        i = ((i % length) + length) % length;
       } else break;
     }
-    if (!el.children[i]?.skipFocus) {
+    const child = children[i];
+    if (child !== undefined && !child.skipFocus) {
       return i;
     }
   }
@@ -376,6 +383,10 @@ export const spatialHandleNavigation: lng.KeyHandler = function (e) {
       closestDist = distance;
       closestIdx = i;
     }
+
+    // No child in an adjacent column/row - keep the current selection so the
+    // next key press resumes from here instead of resetting to the first child.
+    if (closestIdx === -1) return false;
 
     return selectChild(this as lngp.NavigableElement, closestIdx);
   }

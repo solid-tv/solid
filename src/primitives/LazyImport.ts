@@ -5,6 +5,91 @@ import {
   type Element as JSXElement,
 } from 'solid-js';
 
+// Native ESM's failure message, and ONLY native ESM's. It names exactly one
+// module, and that module is always the one handed to `import()` — never one of
+// its dependencies. Chrome says `Failed to fetch dynamically imported module:
+// <url>` and Firefox `error loading dynamically imported module: <url>`; both
+// carry the phrase this matches on.
+//
+// SystemJS is deliberately NOT matched here. Its message is
+// `<failedUrl>, <parentUrl> (SystemJS …)`, and when the failure is a dependency
+// of the requested chunk the FIRST url is that dependency. Cache-busting it
+// would re-import the wrong module, and `lazy` would then read `.default` off
+// it — a blank route, or worse, someone else's component. SystemJS needs no
+// cache-buster anyway: it drops the failed load from its registry, so simply
+// calling `fn` again re-fetches.
+const NATIVE_ESM_CHUNK =
+  /dynamically imported module:?\s*(https?:\/\/\S+?\.js)/i;
+
+/**
+ * The chunk URL to retry under a cache-buster, or `undefined` when the failure
+ * is one where re-running the loader is the right move instead.
+ *
+ * @internal Exported for tests. The primitives barrel re-exports `lazy` by
+ * name, so this stays out of the package's public API.
+ */
+export const cacheBustableUrl = (error: unknown): string | undefined => {
+  const match = NATIVE_ESM_CHUNK.exec(
+    error instanceof Error ? error.message : String(error),
+  );
+  return match ? match[1] : undefined;
+};
+
+/**
+ * Retry backoff delays in milliseconds (500ms, 2s, 5s). Max of 3 retries.
+ *
+ * @internal Exported for tests — see `cacheBustableUrl`.
+ */
+export const RETRY_DELAYS = [500, 2000, 5000];
+
+/** @internal Exported for tests — see `cacheBustableUrl`. */
+export const cacheBust = (url: string, retry = 1): string => {
+  const cleanUrl = url
+    .replace(/([?&])chunkRetry=\d+(&|$)/, '$1')
+    .replace(/[?&]$/, '');
+  const separator = cleanUrl.indexOf('?') === -1 ? '?' : '&';
+  return cleanUrl + separator + 'chunkRetry=' + retry;
+};
+
+const wait = (ms: number): Promise<void> =>
+  new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * A dynamic `import()`, built at runtime instead of written inline.
+ *
+ * This is not a style choice, and it must not be "simplified" back to a literal
+ * `import(url)`. The token has to stay inside a string, because this file is
+ * bundled into apps that cannot parse it:
+ *
+ * A TV app targeting an old engine may build with no SystemJS transform at all
+ * — plain `iife` output plus a syntax-only `build.target`. Rollup cannot rewrite
+ * a dynamic import in that format, and a `\/* @vite-ignore *\/` one is invisible
+ * to Vite's analysis by design, so the literal survives into the bundle. Dynamic
+ * `import()` arrived in Chrome 63; on anything older the whole script fails to
+ * *parse*, and the app never boots. That is not hypothetical: it shipped, and it
+ * took every Samsung Tizen 4.0 set (Chrome 56) offline until it was rolled back.
+ *
+ * Inside a `Function` body the token is just text until it is compiled, and that
+ * compilation is what the `try` guards. Old engines throw a SyntaxError here and
+ * a CSP without `unsafe-eval` throws an EvalError; either way we return `null`
+ * and the caller re-runs the loader instead — the same fallback every SystemJS
+ * failure already takes. Resolved once and cached, including the `null`.
+ */
+let nativeImport: ((url: string) => Promise<unknown>) | null | undefined;
+
+const getNativeImport = (): ((url: string) => Promise<unknown>) | null => {
+  if (nativeImport === undefined) {
+    try {
+      nativeImport = new Function('u', 'return import(u)') as (
+        url: string,
+      ) => Promise<unknown>;
+    } catch {
+      nativeImport = null;
+    }
+  }
+  return nativeImport;
+};
+
 /**
  * Lazily load a function component asynchronously.
  *
@@ -22,11 +107,83 @@ export function lazy<T extends Component<any>>(
   let comp: (() => T | undefined) | undefined;
   let p: Promise<{ default: T }> | undefined;
 
+  // Retry the import up to 3 times before giving up, with a backoff of 500ms, 2s,
+  // and 5s between retries. On a TV the chunk fetch is the fragile part — a brief
+  // dropout as the viewer presses OK on a rail rejects the import, and because
+  // `p` memoises the promise that single rejection is replayed for the rest of
+  // the session: the route never renders again, not even on a later navigation.
+  // Retries with backoff turn transient failures into a slightly delayed navigation.
+  //
+  // How it retries depends on which module system failed, because the two need
+  // opposite things.
+  //
+  // SystemJS — the `@vitejs/plugin-legacy` output older TV browsers run — drops
+  // the failed load from its registry, so re-running `fn` genuinely re-fetches.
+  // That is also the ONLY safe option there: its message names the failed
+  // dependency before the chunk that pulled it in, so a URL lifted out of it is
+  // frequently not the module we asked for.
+  //
+  // Native ESM does the opposite. The module map memoises the *failure*, so a
+  // second `import()` of the same specifier resolves straight to the cached
+  // rejection without ever touching the network — re-running `fn` is a no-op
+  // exactly where it is needed. It also names one module and only one, the one
+  // handed to `import()`, so a cache-busted re-import of it is both safe and
+  // necessary: each retry gets a distinct URL (`chunkRetry=1`, `chunkRetry=2`,
+  // `chunkRetry=3`), creating a fresh module-map entry that really re-fetches.
+  //
+  // The cost there is a duplicate module record for this one chunk. Its own
+  // imports are unaffected — they resolve to their normal, already-cached URLs —
+  // so the duplication does not spread, and it only happens on a retry that
+  // would otherwise have left the route dead.
+  //
+  // Written using explicit Promise chaining instead of `async`/`await` so older
+  // engines (such as Chrome 38/53 on webOS) and ES5 downleveling do not require
+  // regeneratorRuntime or complex state-machine transpilation helpers.
+  const load = (): Promise<{ default: T }> => {
+    let url: string | undefined;
+
+    const attemptLoad = (attempt: number): Promise<{ default: T }> => {
+      let p: Promise<{ default: T }>;
+      try {
+        if (attempt === 0) {
+          p = fn();
+        } else if (url !== undefined) {
+          // Null when this engine cannot compile a dynamic import, or a CSP
+          // forbids compiling one — see `getNativeImport`. Re-running the
+          // loader is then the best available retry, exactly as it is for
+          // every SystemJS failure.
+          const importer = getNativeImport();
+          p = (
+            importer !== null ? importer(cacheBust(url, attempt)) : fn()
+          ) as Promise<{ default: T }>;
+        } else {
+          p = fn();
+        }
+      } catch (syncError: unknown) {
+        p = Promise.reject(syncError);
+      }
+
+      return p.catch((error: unknown) => {
+        const nextUrl = cacheBustableUrl(error);
+        url = nextUrl !== undefined ? nextUrl : url;
+        if (attempt < RETRY_DELAYS.length) {
+          const delay = RETRY_DELAYS[attempt];
+          if (delay !== undefined) {
+            return wait(delay).then(() => attemptLoad(attempt + 1));
+          }
+        }
+        return Promise.reject(error);
+      });
+    };
+
+    return attemptLoad(0);
+  };
+
   const wrap: T & { preload?: () => void } = ((props: any) => {
     if (!comp) {
       // Returning the promise directly (rather than an `async` compute) keeps
       // this file free of async syntax, which matters for the Chrome 38 target.
-      comp = createMemo(() => (p || (p = fn())).then((mod) => mod.default));
+      comp = createMemo(() => (p || (p = load())).then((mod) => mod.default));
     }
     return createMemo(() => {
       const Comp = comp!();
@@ -34,8 +191,16 @@ export function lazy<T extends Component<any>>(
     }) as unknown as JSXElement;
   }) as T;
 
+  // The `.then` here is a fire-and-forget side effect (it caches the resolved
+  // component); `p` is what the caller gets back. Without the `.catch` that
+  // side-effect promise has no rejection handler of its own, so a failed
+  // preload raises an unhandledrejection even when the caller dutifully catches
+  // the promise it was handed — a warmed route that fails to fetch would report
+  // as an uncaught exception. The real failure still reaches the caller
+  // through `p`.
   wrap.preload = () =>
-    p || ((p = fn()).then((mod) => (comp = () => mod.default)), p);
+    p ||
+    ((p = load()).then((mod) => (comp = () => mod.default)).catch(() => {}), p);
 
   return wrap as T & { preload: () => Promise<{ default: T }> };
 }

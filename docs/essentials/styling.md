@@ -149,7 +149,7 @@ These are found in the Renderer and applicable to all nodes:
 - `width`: The width of the Node, default is `0`.
 - `height`: The height of the Node, default is `0`.
 - `alpha`: The alpha opacity of the Node, ranging from `0` (transparent) to `1` (opaque), default is `1`.
-- `autosize`: When enabled, the Node resizes to the dimensions of its texture, default is `false`.
+- `autosize`: When enabled, the Node resizes to the intrinsic dimensions of its texture once that texture loads, default is `false`. It only applies to nodes with a texture (`src`) — it does not size a container to its children, and it is a no-op on `<text>` nodes. Use flex to size containers.
 - `clipping`: Prevents drawing outside the Node's bounds, default is `false`.
 - `color`: The color of the Node in 0xRRGGBBAA format, default is `0xffffffff` (opaque white).
 - `colorTop`: The color of the Node's top edge for gradient rendering.
@@ -176,7 +176,11 @@ These are found in the Renderer and applicable to all nodes:
 - `pivotX`: X position of the Node's Pivot Point, default is `0.5`.
 - `pivotY`: Y position of the Node's Pivot Point, default is `0.5`.
 - `rotation`: Rotation of the Node in radians.
-- `rtt`: Whether the Node is rendered to a texture, default is `false`.
+
+> **Renderer 1.8 breaking change:** the `rtt` (render-to-texture) prop and the
+> per-node `boundsMargin` prop were removed. There is no replacement for `rtt`;
+> flatten the subtree into a pre-rendered image if you need the effect.
+> `boundsMargin` is now a stage-wide renderer setting only.
 
 ### SDF Text Nodes
 

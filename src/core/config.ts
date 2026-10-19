@@ -54,7 +54,13 @@ export interface Config {
   animationSettings?: AnimationSettings;
   animationsEnabled: boolean;
   fontSettings: Partial<TextProps>;
-  rendererOptions?: Partial<RendererMainSettings> | DomRendererMainSettings;
+  /**
+   * Renderer settings. Typed as an intersection rather than a union so a single
+   * config object can be authored without narrowing per renderer: which fields
+   * are honored depends on the active renderer (WebGL/Canvas vs DOM), and every
+   * field is optional.
+   */
+  rendererOptions?: Partial<RendererMainSettings> & DomRendererMainSettings;
   /**
    * Hook the focus manager calls to publish the active element. Defaults to
    * writing the {@link activeElement} signal directly; a custom focus manager
@@ -67,6 +73,15 @@ export interface Config {
   lockStyles?: boolean;
   fontWeightAlias?: Record<string, number | string>;
   throttleInput?: number;
+  /**
+   * Call `preventDefault()` on every key event the app consumed: a handler
+   * returned `true`, or the focus manager dropped the press itself (a
+   * throttled press, a suppressed repeat). A host that hands the system
+   * whatever the app leaves unhandled, such as the Menu button on tvOS,
+   * reads it to tell the two apart. Off by default: in a browser it would
+   * also stop the default action of every handled key.
+   */
+  preventDefaultOnHandledKeys: boolean;
   taskDelay?: number;
   convertToShader: (_node: ElementNode, v: StyleEffects) => IRendererShader;
   stateOrder?: DollarString[];
@@ -100,6 +115,7 @@ export const Config: Config = {
   },
   focusStateKey: '$focus',
   lockStyles: true,
+  preventDefaultOnHandledKeys: false,
   rendererOptions: {},
   stateOrder: [],
 };

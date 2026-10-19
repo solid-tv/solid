@@ -1,7 +1,7 @@
-import { defineConfig } from 'vitest/config';
+import { configDefaults, defineConfig } from 'vitest/config';
 import solidPlugin from 'vite-plugin-solid';
 
-export default defineConfig(({ mode }) => ({
+export default defineConfig(() => ({
   define: {
     __DEV__: false,
     SOLIDTV_DOM_RENDERING: true,
@@ -18,6 +18,14 @@ export default defineConfig(({ mode }) => ({
   ],
   test: {
     watch: false,
+    // Real-renderer tests run in a browser: vitest.webgl.config.ts.
+    exclude: [
+      ...configDefaults.exclude,
+      'tests/webgl/**',
+      'bench/**',
+      // .claude/** holds nested git worktrees with their own copies of tests.
+      '.claude/**',
+    ],
     isolate: false,
     passWithNoTests: true,
     environment: 'jsdom',

@@ -221,17 +221,20 @@ export function nodeHasTextureSource(node: DOMNode): boolean {
   );
 }
 
+/**
+ * Normalize a `boundsMargin` value (scalar or per-side tuple) into a
+ * `[top, right, bottom, left]` tuple.
+ */
 export function normalizeBoundsMargin(
-  margin: number | [number, number, number, number] | null | undefined,
+  margin: number | number[] | null | undefined,
 ): [number, number, number, number] {
   if (margin == null) return [0, 0, 0, 0];
-  if (typeof margin === 'number') {
-    return [margin, margin, margin, margin];
+  if (Array.isArray(margin) === false) {
+    const m = (margin as number) || 0;
+    return [m, m, m, m];
   }
-  if (Array.isArray(margin) && margin.length === 4) {
-    return [margin[0] ?? 0, margin[1] ?? 0, margin[2] ?? 0, margin[3] ?? 0];
-  }
-  return [0, 0, 0, 0];
+  const arr = margin as number[];
+  return [arr[0] || 0, arr[1] || 0, arr[2] || 0, arr[3] || 0];
 }
 
 export function computeRenderStateForNode(
@@ -249,10 +252,7 @@ export function computeRenderStateForNode(
   const rootRight = rootLeft + rootWidth;
   const rootBottom = rootTop + rootHeight;
 
-  const [marginTop, marginRight, marginBottom, marginLeft] =
-    normalizeBoundsMargin(
-      node.props.boundsMargin ?? node.stage.renderer.boundsMargin,
-    );
+  const margin = normalizeBoundsMargin(node.stage.renderer.boundsMargin);
 
   const width = node.props.w ?? 0;
   const height = node.props.h ?? 0;
@@ -262,10 +262,10 @@ export function computeRenderStateForNode(
   const right = left + width;
   const bottom = top + height;
 
-  const expandedLeft = rootLeft - marginLeft;
-  const expandedTop = rootTop - marginTop;
-  const expandedRight = rootRight + marginRight;
-  const expandedBottom = rootBottom + marginBottom;
+  const expandedLeft = rootLeft - margin[3];
+  const expandedTop = rootTop - margin[0];
+  const expandedRight = rootRight + margin[1];
+  const expandedBottom = rootBottom + margin[2];
 
   const intersectsBounds =
     right >= expandedLeft &&

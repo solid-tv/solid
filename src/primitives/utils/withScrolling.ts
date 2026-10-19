@@ -66,92 +66,97 @@ export function withScrolling(isRow: boolean): Scroller {
       componentRef = selected as ScrollableElement;
       selected = componentRef.selected || 0;
     }
-    if (
-      !componentRef ||
-      componentRef.scroll === 'none' ||
-      selected === lastSelected ||
-      !componentRef.children.length
-    )
+    if (!componentRef) return;
+    // Each input is read once into a local: on renderer v2 every node prop
+    // read goes through an accessor.
+    const scrollProp = componentRef.scroll;
+    const children = componentRef.children;
+    const childCount = children.length;
+    if (scrollProp === 'none' || selected === lastSelected || !childCount)
       return;
 
-    if (componentRef._initialPosition === undefined) {
-      componentRef._initialPosition = componentRef[axis];
+    const position = componentRef[axis];
+    let initialPosition = componentRef._initialPosition;
+    if (initialPosition === undefined) {
+      initialPosition = position;
+      componentRef._initialPosition = position;
     }
 
     const lng = componentRef.lng as unknown as INode;
-    const screenSize = isRow ? lng.stage.root.w : lng.stage.root.h;
+    const root = lng.stage.root;
+    const screenSize = isRow ? root.w : root.h;
     // Determine if movement is incremental or decremental
     const isIncrementing =
       lastSelected === undefined || lastSelected - 1 !== selected;
 
-    if (componentRef._screenOffset === undefined) {
-      if (componentRef.parent!.clipping) {
-        const p = componentRef.parent!;
-        componentRef.endOffset =
-          componentRef.endOffset ??
+    let offset = componentRef.offset;
+    let endOffset = componentRef.endOffset;
+    let screenOffset = componentRef._screenOffset;
+    if (screenOffset === undefined) {
+      const p = componentRef.parent!;
+      if (p.clipping) {
+        endOffset =
+          endOffset ??
           screenSize - ((isRow ? p.absX : p.absY) || 0) - p[dimension];
+        componentRef.endOffset = endOffset;
       }
 
-      componentRef._screenOffset =
-        componentRef.offset ??
-        (isRow ? lng.absX : lng.absY) - componentRef[axis];
+      screenOffset = offset ?? (isRow ? lng.absX : lng.absY) - position;
+      componentRef._screenOffset = screenOffset;
     }
 
-    const screenOffset = componentRef._screenOffset;
     const gap = componentRef.gap || 0;
+    const scrollIndex = componentRef.scrollIndex;
     // when creating we set scroll to always so we setup the right location for selected and scrollIndex
     const scroll =
-      componentRef.scroll ||
+      scrollProp ||
       (lastSelected === undefined
-        ? componentRef.scrollIndex
+        ? scrollIndex
           ? 'center'
           : 'always'
         : 'auto');
 
     // Allows manual position control
-    const targetPosition = componentRef._targetPosition ?? componentRef[axis];
+    const targetPosition = componentRef._targetPosition ?? position;
     const rootPosition = isIncrementing
-      ? Math.min(targetPosition, componentRef[axis])
-      : Math.max(targetPosition, componentRef[axis]);
-    componentRef.offset = componentRef.offset ?? rootPosition;
-    const offset = componentRef.offset;
-    selectedElement = selectedElement || componentRef.children[selected];
+      ? Math.min(targetPosition, position)
+      : Math.max(targetPosition, position);
+    offset = offset ?? rootPosition;
+    componentRef.offset = offset;
+    const selectedEl = selectedElement || children[selected];
 
-    if (!selectedElement) {
+    if (!selectedEl) {
       return;
     }
-    const selectedPosition = selectedElement[axis] ?? 0;
-    const selectedSize = selectedElement[dimension] ?? 0;
+    const selectedPosition = selectedEl[axis] ?? 0;
+    const selectedSize = selectedEl[dimension] ?? 0;
+    // `$focus`, not `style.focus`: the focus state's styles live on the node
+    // under the state key, and the `style` getter allocates when unset.
     const selectedScale =
-      selectedElement.scale ??
-      (selectedElement.style?.focus as Styles)?.scale ??
-      1;
+      selectedEl.scale ?? (selectedEl.$focus as Styles | undefined)?.scale ?? 1;
     const selectedSizeScaled = selectedSize * selectedScale;
     const containerSize = componentRef[dimension] ?? 0;
     const maxOffset = Math.min(
-      screenSize -
-        containerSize -
-        screenOffset -
-        (componentRef.endOffset ?? 2 * gap),
+      screenSize - containerSize - screenOffset - (endOffset ?? 2 * gap),
       offset,
     );
 
     // Determine the next element based on whether incrementing or decrementing
     const nextIndex = isIncrementing ? selected + 1 : selected - 1;
-    const nextElement = componentRef.children[nextIndex] || null;
+    const nextElement = children[nextIndex] || null;
+    const scrollStopLast = componentRef.scrollStopLast;
 
     // Default nextPosition to align with the selected position and offset
     let nextPosition = rootPosition;
 
     // Update nextPosition based on scroll type and specific conditions
-    if (selectedElement.centerScroll) {
+    if (selectedEl.centerScroll) {
       nextPosition = -selectedPosition + (screenSize - selectedSizeScaled) / 2;
     } else if (scroll === 'always') {
       nextPosition = -selectedPosition + offset;
     } else if (scroll === 'bounded') {
-      const totalItems = componentRef.children.length;
       const upCount = componentRef.upCount || 6;
-      const nonScrollableZoneStart = Math.max(0, totalItems - upCount);
+      const nonScrollableZoneStart = Math.max(0, childCount - upCount);
       const isInNonScrollableZone = selected >= nonScrollableZoneStart;
       const isFirstOfNonScrollableZone = selected === nonScrollableZoneStart;
       const isEnteringZone =
@@ -163,11 +168,9 @@ export function withScrolling(isRow: boolean): Scroller {
         nextPosition = -selectedPosition + offset;
       } else if (isIncrementing) {
         if (isEnteringZone) {
-          const firstOfZoneElement =
-            componentRef.children[nonScrollableZoneStart];
-          const firstOfZonePosition = firstOfZoneElement?.[axis] ?? 0;
+          const firstOfZoneElement = children[nonScrollableZoneStart];
           nextPosition = firstOfZoneElement
-            ? -firstOfZonePosition + offset
+            ? -(firstOfZoneElement[axis] ?? 0) + offset
             : rootPosition;
         } else {
           nextPosition = rootPosition;
@@ -186,23 +189,20 @@ export function withScrolling(isRow: boolean): Scroller {
       nextPosition = Math.min(Math.max(centerPosition, maxOffset), offset);
     } else if (!nextElement) {
       // If at the last element, align to end
-      if (componentRef.scrollStopLast && isIncrementing) {
+      if (scrollStopLast && isIncrementing) {
         nextPosition = rootPosition - selectedSize - gap;
       } else {
         nextPosition = isIncrementing ? maxOffset : offset;
       }
     } else if (scroll === 'auto') {
-      if (componentRef.scrollIndex && componentRef.scrollIndex > 0) {
+      if (scrollIndex && scrollIndex > 0) {
         // Prevent scrolling if the selected item is within the last scrollIndex items
-        const totalItems = componentRef.children.length;
-        const nearEndIndex = totalItems - componentRef.scrollIndex;
+        const nearEndIndex = childCount - scrollIndex;
+        const currentSelected = componentRef.selected;
 
-        if (
-          isIncrementing &&
-          componentRef.selected >= componentRef.scrollIndex
-        ) {
+        if (isIncrementing && currentSelected >= scrollIndex) {
           nextPosition = rootPosition - selectedSize - gap;
-        } else if (!isIncrementing && componentRef.selected < nearEndIndex) {
+        } else if (!isIncrementing && currentSelected < nearEndIndex) {
           nextPosition = rootPosition + selectedSize + gap;
         }
       } else if (isIncrementing) {
@@ -211,15 +211,15 @@ export function withScrolling(isRow: boolean): Scroller {
         nextPosition = rootPosition + selectedSize + gap;
       }
     } // Handle Edge scrolling
-    else if (isIncrementing && isNotShown(nextElement)) {
-      nextPosition = rootPosition - selectedSize - gap;
-    } else if (isNotShown(nextElement)) {
-      nextPosition = -selectedPosition + offset;
+    else if (isNotShown(nextElement)) {
+      nextPosition = isIncrementing
+        ? rootPosition - selectedSize - gap
+        : -selectedPosition + offset;
     }
 
     // Prevent container from moving beyond bounds
     const isScrollStopLastCase =
-      componentRef.scrollStopLast && !nextElement && isIncrementing;
+      scrollStopLast && !nextElement && isIncrementing;
     nextPosition =
       isIncrementing &&
       scroll !== 'always' &&
@@ -229,10 +229,11 @@ export function withScrolling(isRow: boolean): Scroller {
         : Math.min(nextPosition, offset);
 
     // Update position if it has changed
-    if (componentRef[axis] !== nextPosition) {
-      if (componentRef.onScrolled) {
-        const isInitial = nextPosition === componentRef._initialPosition;
-        componentRef.onScrolled(componentRef, nextPosition, isInitial);
+    if (position !== nextPosition) {
+      const onScrolled = componentRef.onScrolled;
+      if (onScrolled) {
+        const isInitial = nextPosition === initialPosition;
+        onScrolled.call(componentRef, componentRef, nextPosition, isInitial);
       }
 
       componentRef[axis] = nextPosition;
