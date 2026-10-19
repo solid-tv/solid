@@ -2,6 +2,7 @@ import * as lngr from '@solidtv/renderer';
 import * as lngr_shaders from '@solidtv/renderer/webgl/shaders';
 
 import type {
+  RendererCore,
   HolePunchProps as ShaderHolePunchProps,
   LinearGradientProps as ShaderLinearGradientProps,
   RadialGradientProps as ShaderRadialGradientProps,
@@ -18,9 +19,7 @@ export {
 };
 export { WebGlShader };
 
-import { SHADERS_ENABLED, isDomRendererActive } from './config.js';
-import type { CoreShaderManager } from './intrinsicTypes.js';
-import { IRendererShaderManager } from './dom-renderer/domRendererTypes.js';
+import { SHADERS_ENABLED } from './env.js';
 
 export type Vec4 = [x: number, y: number, z: number, w: number];
 
@@ -119,69 +118,57 @@ function toValidVec4(value: unknown): Vec4 {
   return [0, 0, 0, 0];
 }
 
-export function registerDefaultShaderRounded(
-  shManager: IRendererShaderManager,
-) {
-  if (SHADERS_ENABLED && !isDomRendererActive())
-    shManager.registerShaderType('rounded', defaultShaderRounded);
+// Registration on the core (`core.registerShaderType`), once per type; the
+// app calls registerDefaultShaders(core) after startRenderer.
+export function registerDefaultShaderRounded(core: RendererCore) {
+  if (SHADERS_ENABLED) core.registerShaderType('rounded', defaultShaderRounded);
 }
-export function registerDefaultShaderShadow(shManager: CoreShaderManager) {
-  if (SHADERS_ENABLED && !isDomRendererActive())
-    shManager.registerShaderType('shadow', defaultShaderShadow);
+export function registerDefaultShaderShadow(core: RendererCore) {
+  if (SHADERS_ENABLED) core.registerShaderType('shadow', defaultShaderShadow);
 }
-export function registerDefaultShaderRoundedWithBorder(
-  shManager: CoreShaderManager,
-) {
-  if (SHADERS_ENABLED && !isDomRendererActive())
-    shManager.registerShaderType(
+export function registerDefaultShaderRoundedWithBorder(core: RendererCore) {
+  if (SHADERS_ENABLED)
+    core.registerShaderType(
       'roundedWithBorder',
       defaultShaderRoundedWithBorder,
     );
 }
-export function registerDefaultShaderRoundedWithShadow(
-  shManager: CoreShaderManager,
-) {
-  if (SHADERS_ENABLED && !isDomRendererActive())
-    shManager.registerShaderType(
+export function registerDefaultShaderRoundedWithShadow(core: RendererCore) {
+  if (SHADERS_ENABLED)
+    core.registerShaderType(
       'roundedWithShadow',
       defaultShaderRoundedWithShadow,
     );
 }
 export function registerDefaultShaderRoundedWithBorderAndShadow(
-  shManager: CoreShaderManager,
+  core: RendererCore,
 ) {
-  if (SHADERS_ENABLED && !isDomRendererActive())
-    shManager.registerShaderType(
+  if (SHADERS_ENABLED)
+    core.registerShaderType(
       'roundedWithBorderWithShadow',
       defaultShaderRoundedWithBorderAndShadow,
     );
 }
-export function registerDefaultShaderHolePunch(shManager: CoreShaderManager) {
-  if (SHADERS_ENABLED && !isDomRendererActive())
-    shManager.registerShaderType('holePunch', defaultShaderHolePunch);
+export function registerDefaultShaderHolePunch(core: RendererCore) {
+  if (SHADERS_ENABLED)
+    core.registerShaderType('holePunch', defaultShaderHolePunch);
 }
-export function registerDefaultShaderRadialGradient(
-  shManager: CoreShaderManager,
-) {
-  if (SHADERS_ENABLED && !isDomRendererActive())
-    shManager.registerShaderType('radialGradient', defaultShaderRadialGradient);
+export function registerDefaultShaderRadialGradient(core: RendererCore) {
+  if (SHADERS_ENABLED)
+    core.registerShaderType('radialGradient', defaultShaderRadialGradient);
 }
-export function registerDefaultShaderLinearGradient(
-  shManager: CoreShaderManager,
-) {
-  if (SHADERS_ENABLED && !isDomRendererActive())
-    shManager.registerShaderType('linearGradient', defaultShaderLinearGradient);
+export function registerDefaultShaderLinearGradient(core: RendererCore) {
+  if (SHADERS_ENABLED)
+    core.registerShaderType('linearGradient', defaultShaderLinearGradient);
 }
 
-export function registerDefaultShaders(shManager: CoreShaderManager) {
-  if (SHADERS_ENABLED && !isDomRendererActive()) {
-    registerDefaultShaderRounded(shManager);
-    registerDefaultShaderShadow(shManager);
-    registerDefaultShaderRoundedWithBorder(shManager);
-    registerDefaultShaderRoundedWithShadow(shManager);
-    registerDefaultShaderRoundedWithBorderAndShadow(shManager);
-    registerDefaultShaderHolePunch(shManager);
-    registerDefaultShaderRadialGradient(shManager);
-    registerDefaultShaderLinearGradient(shManager);
-  }
+export function registerDefaultShaders(core: RendererCore) {
+  registerDefaultShaderRounded(core);
+  registerDefaultShaderShadow(core);
+  registerDefaultShaderRoundedWithBorder(core);
+  registerDefaultShaderRoundedWithShadow(core);
+  registerDefaultShaderRoundedWithBorderAndShadow(core);
+  registerDefaultShaderHolePunch(core);
+  registerDefaultShaderRadialGradient(core);
+  registerDefaultShaderLinearGradient(core);
 }

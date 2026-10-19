@@ -1,0 +1,615 @@
+import { NULL, setShader, type ShaderNode } from '@solidtv/renderer';
+import { Config } from '../config.js';
+import { SHADERS_ENABLED } from '../env.js';
+import type { BorderStyle, SingleBorderStyle } from '../intrinsicTypes.js';
+import type { ElementNode } from './ElementNode.js';
+import {
+  SET_BORDER,
+  SET_BORDER_BOTTOM,
+  SET_BORDER_LEFT,
+  SET_BORDER_RADIUS,
+  SET_BORDER_RIGHT,
+  SET_BORDER_TOP,
+  SET_HOLE_PUNCH,
+  SET_LINEAR_GRADIENT,
+  SET_RADIAL_GRADIENT,
+  SET_SHADER,
+  SET_SHADOW,
+} from './defaults.js';
+
+// The shader props (spec 5.4). A write stores the app's object in
+// `node._shaderProps` under the accessor's name (for the getter and for
+// style undo), parses it once per object identity into the facade's
+// flattened keys (`shaderParse`), merges those keys into the same bag (under
+// their facade names, `border-width`, `radius`: a shader keeps only the
+// props its type declares, so what a swapped-in type needs must be kept
+// here), and writes them to the node's ShaderNode facade. The raw object is
+// not written to the shader.
+//
+// The rounded family (`rounded`, `roundedWithBorder`, `roundedWithShadow`,
+// `roundedWithBorderWithShadow`) is made by `convertToShader`, from the
+// feature bits of what `_shaderProps` holds: at attach, or on the first
+// shader prop written after it. A border width crossing 0 swaps the type
+// (`syncShaderType`). `linearGradient`, `radialGradient`, `holePunch` and
+// `shader` make their shader at once and replace the node's.
+
+/** The raw shader prop objects, by the accessor that wrote them. */
+type ShaderKey =
+  | 'border'
+  | 'borderTop'
+  | 'borderRight'
+  | 'borderBottom'
+  | 'borderLeft'
+  | 'shadow'
+  | 'rounded'
+  | 'linearGradient'
+  | 'radialGradient'
+  | 'holePunch';
+
+/**
+ * `_shaderFeatures` while the node's shader is not one convertToShader made
+ * (none yet, or a gradient, `holePunch` or `shader`): never swapped.
+ */
+export const SHADER_UNMANAGED = -1;
+
+/** A border or shadow object as facade props, in the order they are written. */
+export interface ShaderParse {
+  /** One facade key per key of the object (`border-width`, `shadow-blur`). */
+  readonly keys: string[];
+  readonly values: unknown[];
+  /** False when the object has a getter: parsed again on each write. */
+  readonly cached: boolean;
+}
+
+/** A border side's width key. */
+const BORDER_SIDES: Record<string, string | undefined> = {
+  borderTop: 'top',
+  borderRight: 'right',
+  borderBottom: 'bottom',
+  borderLeft: 'left',
+};
+
+/** One parse cache per style key: the same object parses differently under each. */
+const shaderParses: Record<string, WeakMap<object, ShaderParse>> = {
+  border: new WeakMap(),
+  borderTop: new WeakMap(),
+  borderRight: new WeakMap(),
+  borderBottom: new WeakMap(),
+  borderLeft: new WeakMap(),
+  shadow: new WeakMap(),
+};
+
+function isGetter(obj: object, key: string): boolean {
+  const desc = Object.getOwnPropertyDescriptor(obj, key);
+  return desc !== undefined && desc.get !== undefined;
+}
+
+function isObject(value: unknown): value is object {
+  return value !== null && typeof value === 'object';
+}
+
+/**
+ * The facade props a `border`, `borderTop`/`Right`/`Bottom`/`Left` or
+ * `shadow` object stands for: `<prefix>-<key>` per key, with `w` written
+ * `width` (a side's width is the side: `border-top`). Parsed once per
+ * object identity (1.8's `shaderParse`; `width` is `border-width` here, not
+ * `border-w`). `key` is one of the six style keys that take a border or
+ * shadow object.
+ */
+export function shaderParse(key: string, obj: object): ShaderParse {
+  const cache = shaderParses[key];
+  let parse = cache !== undefined ? cache.get(obj) : undefined;
+  if (parse !== undefined) {
+    return parse;
+  }
+  const side = BORDER_SIDES[key];
+  const prefix = side !== undefined ? 'border' : key;
+  const keys: string[] = [];
+  const values: unknown[] = [];
+  // The position of each facade key, to merge `width` and `w`.
+  const index = Object.create(null) as Record<string, number | undefined>;
+  // The keys of a plain object the app wrote, which `obj` is for a border or
+  // shadow: read by name, as a getter on it is read once per parse.
+  const source = obj as Record<string, unknown>;
+  let cached = true;
+  const own = Object.keys(obj);
+  for (let i = 0; i < own.length; i++) {
+    const name = own[i]!;
+    if (isGetter(obj, name)) {
+      cached = false;
+    }
+    let sub = name === 'w' ? 'width' : name;
+    if (side !== undefined && sub === 'width') {
+      sub = side;
+    }
+    const facadeKey = prefix + '-' + sub;
+    const at = index[facadeKey];
+    if (at !== undefined) {
+      // `width` and `w` both given: the later one wins, as it did.
+      values[at] = source[name];
+    } else {
+      index[facadeKey] = keys.length;
+      keys.push(facadeKey);
+      values.push(source[name]);
+    }
+  }
+  parse = { keys, values, cached };
+  if (cached && cache !== undefined) {
+    cache.set(obj, parse);
+  }
+  return parse;
+}
+
+// The shader types convertToShader makes, by feature bits.
+const BORDER_FEATURE = 1;
+const SHADOW_FEATURE = 2;
+const ROUNDED_SHADER_TYPES = [
+  'rounded',
+  'roundedWithBorder',
+  'roundedWithShadow',
+  'roundedWithBorderWithShadow',
+];
+
+/** The facade keys that hold a border width. */
+const BORDER_WIDTH_KEYS = [
+  'border-width',
+  'border-top',
+  'border-right',
+  'border-bottom',
+  'border-left',
+];
+
+/** Whether a border width (a number or an array of them) is above 0. */
+function positive(w: unknown): boolean {
+  if (Array.isArray(w)) {
+    for (let i = 0; i < w.length; i++) {
+      if ((w[i] as number) > 0) {
+        return true;
+      }
+    }
+    return false;
+  }
+  return (w as number) > 0;
+}
+
+/**
+ * Whether a border width is above 0: read from `change` where it has the
+ * key (the values an animation moves to), else from the bag. A border of
+ * width 0 needs no border shader.
+ */
+function hasBorderWidth(
+  bag: Record<string, unknown>,
+  change?: Record<string, unknown>,
+): boolean {
+  for (let i = 0; i < BORDER_WIDTH_KEYS.length; i++) {
+    const key = BORDER_WIDTH_KEYS[i]!;
+    if (
+      positive(change !== undefined && key in change ? change[key] : bag[key])
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/** The raw keys of the rounded family. */
+const ROUNDED_KEYS = [
+  'border',
+  'borderTop',
+  'borderRight',
+  'borderBottom',
+  'borderLeft',
+  'shadow',
+  'rounded',
+] as const;
+
+/** Whether the bag holds a raw prop of the rounded family. */
+function hasRoundedProps(bag: Record<string, unknown>): boolean {
+  for (let i = 0; i < ROUNDED_KEYS.length; i++) {
+    const v = bag[ROUNDED_KEYS[i]!];
+    if (v !== undefined && v !== null) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Merge what a rounded-family object stands for into the bag's facade keys,
+ * as the facade write does: a key the object does not name keeps its value,
+ * so a `$focus` border of `{ width: 4 }` keeps the base border's colour.
+ */
+function mergeIntoBag(
+  bag: Record<string, unknown>,
+  key: ShaderKey,
+  value: unknown,
+): void {
+  if (key === 'rounded') {
+    bag.radius = value;
+    return;
+  }
+  const parse = shaderParse(key, value as object);
+  const keys = parse.keys;
+  const values = parse.values;
+  for (let i = 0; i < keys.length; i++) {
+    bag[keys[i]!] = values[i];
+  }
+}
+
+/** Make `shader` the node's shader (null: none). */
+function useShader(node: ElementNode, shader: ShaderNode | null): void {
+  node._shader = shader === null ? undefined : shader;
+  setShader(node.core, node.slot, shader);
+}
+
+/**
+ * Make the rounded-family shader of what `_shaderProps` holds and give it to
+ * the node: what attach calls when the node has shader props and no shader
+ * (through `Config.convertToShader`), and the first shader prop written
+ * after attach. Does nothing with no rounded-family prop set.
+ */
+export function convertToShader(node: ElementNode): void {
+  const bag = node._shaderProps;
+  if (bag === undefined || node.slot === NULL || !hasRoundedProps(bag)) {
+    return;
+  }
+  const features =
+    (hasBorderWidth(bag) ? BORDER_FEATURE : 0) |
+    (bag.shadow ? SHADOW_FEATURE : 0);
+  // The bag is the props: createShader reads the keys the type declares.
+  const shader = node.core.createShader(ROUNDED_SHADER_TYPES[features]!, bag);
+  if (shader === null) {
+    return;
+  }
+  node._shaderFeatures = features;
+  useShader(node, shader);
+}
+
+/**
+ * Swap the shader convertToShader made when a border width moves to or from
+ * 0. For an animated write, `change` holds what animates (facade keys to
+ * their values): a border it adds is swapped in before the animation reads
+ * its start values, one it removes stays until the animation stops (call it
+ * again without `change`). A shader the app made (`shader`, a gradient) is
+ * never swapped.
+ */
+export function syncShaderType(
+  node: ElementNode,
+  change?: Record<string, unknown>,
+): void {
+  const bag = node._shaderProps;
+  const features = node._shaderFeatures;
+  if (bag === undefined || features === SHADER_UNMANAGED) {
+    return;
+  }
+  let next = bag.shadow ? SHADOW_FEATURE : 0;
+  if (hasBorderWidth(bag, change)) {
+    next |= BORDER_FEATURE;
+  } else if (change !== undefined) {
+    next |= features & BORDER_FEATURE;
+  }
+  if (next === features) {
+    return;
+  }
+  const shader = node.core.createShader(ROUNDED_SHADER_TYPES[next]!, bag);
+  if (shader === null) {
+    return;
+  }
+  node._shaderFeatures = next;
+  useShader(node, shader);
+}
+
+/** Write what `value` stands for to `shader`'s facade: only what changed. */
+function writeFacade(shader: ShaderNode, key: ShaderKey, value: unknown): void {
+  const props = shader.props;
+  if (key === 'rounded') {
+    if (value !== undefined && value !== null && props.radius !== value) {
+      props.radius = value;
+    }
+    return;
+  }
+  if (!isObject(value)) {
+    return;
+  }
+  const parse = shaderParse(key, value);
+  const keys = parse.keys;
+  const values = parse.values;
+  for (let i = 0; i < keys.length; i++) {
+    // A facade write repacks every node using the shader: not for a value
+    // it holds already.
+    if (props[keys[i]!] !== values[i]) {
+      props[keys[i]!] = values[i];
+    }
+  }
+}
+
+/** The bag of a node's raw shader objects; the first write makes it. */
+function bagOf(node: ElementNode): Record<string, unknown> {
+  let bag = node._shaderProps;
+  if (bag === undefined) {
+    bag = {};
+    node._shaderProps = bag;
+  }
+  return bag;
+}
+
+/**
+ * `border`, a side, `shadow`, `borderRadius`: store the object, then reach
+ * the facade. Before attach (no shader yet, not rendered) the object only
+ * waits in the bag for convertToShader.
+ */
+function writeRounded(node: ElementNode, key: ShaderKey, value: unknown): void {
+  const bag = bagOf(node);
+  bag[key] = value;
+  if (
+    isObject(value) ||
+    (key === 'rounded' && value !== undefined && value !== null)
+  ) {
+    mergeIntoBag(bag, key, value);
+  }
+  if (!SHADERS_ENABLED) {
+    return;
+  }
+  const shader = node._shader;
+  if (shader === undefined) {
+    if (node.rendered) {
+      Config.convertToShader(node);
+    }
+    return;
+  }
+  if (node._shaderFeatures !== SHADER_UNMANAGED) {
+    const before = node._shaderFeatures;
+    syncShaderType(node);
+    if (node._shaderFeatures !== before) {
+      // The new shader was made from the bag, which holds this write.
+      return;
+    }
+  }
+  writeFacade(shader, key, value);
+}
+
+/**
+ * `linearGradient`, `radialGradient`, `holePunch`: a shader of a type other
+ * than the rounded family, replacing the node's. No value takes it away,
+ * and the rounded shader of the border props comes back after attach.
+ */
+function writeReplacing(
+  node: ElementNode,
+  key: ShaderKey,
+  type: string,
+  value: unknown,
+): void {
+  const bag = bagOf(node);
+  bag[key] = value;
+  if (!SHADERS_ENABLED) {
+    return;
+  }
+  if (value === undefined || value === null) {
+    node._shaderFeatures = SHADER_UNMANAGED;
+    useShader(node, null);
+    if (node.rendered) {
+      Config.convertToShader(node);
+    }
+    return;
+  }
+  // The gradient and hole punch props are an object, as written.
+  const shader = node.core.createShader(type, value as Record<string, unknown>);
+  node._shaderFeatures = SHADER_UNMANAGED;
+  useShader(node, shader);
+}
+
+/** `shader`: a ShaderNode, or `[type, props]` for one to make. */
+function writeShader(
+  node: ElementNode,
+  value: ShaderNode | [type: string, props: Record<string, unknown>] | null,
+): void {
+  if (!SHADERS_ENABLED) {
+    return;
+  }
+  node._shaderFeatures = SHADER_UNMANAGED;
+  if (Array.isArray(value)) {
+    useShader(node, node.core.createShader(value[0], value[1]));
+  } else {
+    useShader(node, value);
+  }
+}
+
+/**
+ * The shader prop accessors (spec 5.4), written out for the same reason as
+ * accessors.ts. Every setter returns on a destroyed node and records the
+ * write in `_set`; every getter returns what was written. `rounded` is the
+ * alias of `borderRadius`: one prop, one `_set` byte.
+ */
+export function installShaderAccessors(proto: ElementNode): void {
+  Object.defineProperties(proto, {
+    border: {
+      get(this: ElementNode): BorderStyle | undefined {
+        const bag = this._shaderProps;
+        // The bag holds what the setter stored under this key.
+        return bag === undefined
+          ? undefined
+          : (bag.border as BorderStyle | undefined);
+      },
+      set(this: ElementNode, v: BorderStyle | undefined) {
+        if (this.slot === NULL) {
+          return;
+        }
+        this._set[SET_BORDER] = 1;
+        writeRounded(this, 'border', v);
+      },
+    },
+    borderTop: {
+      get(this: ElementNode): SingleBorderStyle | undefined {
+        const bag = this._shaderProps;
+        return bag === undefined
+          ? undefined
+          : (bag.borderTop as SingleBorderStyle | undefined);
+      },
+      set(this: ElementNode, v: SingleBorderStyle | undefined) {
+        if (this.slot === NULL) {
+          return;
+        }
+        this._set[SET_BORDER_TOP] = 1;
+        writeRounded(this, 'borderTop', v);
+      },
+    },
+    borderRight: {
+      get(this: ElementNode): SingleBorderStyle | undefined {
+        const bag = this._shaderProps;
+        return bag === undefined
+          ? undefined
+          : (bag.borderRight as SingleBorderStyle | undefined);
+      },
+      set(this: ElementNode, v: SingleBorderStyle | undefined) {
+        if (this.slot === NULL) {
+          return;
+        }
+        this._set[SET_BORDER_RIGHT] = 1;
+        writeRounded(this, 'borderRight', v);
+      },
+    },
+    borderBottom: {
+      get(this: ElementNode): SingleBorderStyle | undefined {
+        const bag = this._shaderProps;
+        return bag === undefined
+          ? undefined
+          : (bag.borderBottom as SingleBorderStyle | undefined);
+      },
+      set(this: ElementNode, v: SingleBorderStyle | undefined) {
+        if (this.slot === NULL) {
+          return;
+        }
+        this._set[SET_BORDER_BOTTOM] = 1;
+        writeRounded(this, 'borderBottom', v);
+      },
+    },
+    borderLeft: {
+      get(this: ElementNode): SingleBorderStyle | undefined {
+        const bag = this._shaderProps;
+        return bag === undefined
+          ? undefined
+          : (bag.borderLeft as SingleBorderStyle | undefined);
+      },
+      set(this: ElementNode, v: SingleBorderStyle | undefined) {
+        if (this.slot === NULL) {
+          return;
+        }
+        this._set[SET_BORDER_LEFT] = 1;
+        writeRounded(this, 'borderLeft', v);
+      },
+    },
+    shadow: {
+      get(this: ElementNode): Record<string, unknown> | undefined {
+        const bag = this._shaderProps;
+        return bag === undefined
+          ? undefined
+          : (bag.shadow as Record<string, unknown> | undefined);
+      },
+      set(this: ElementNode, v: Record<string, unknown> | undefined) {
+        if (this.slot === NULL) {
+          return;
+        }
+        this._set[SET_SHADOW] = 1;
+        writeRounded(this, 'shadow', v);
+      },
+    },
+    borderRadius: {
+      get(this: ElementNode): number | number[] | undefined {
+        const bag = this._shaderProps;
+        return bag === undefined
+          ? undefined
+          : (bag.rounded as number | number[] | undefined);
+      },
+      set(this: ElementNode, v: number | number[] | undefined) {
+        if (this.slot === NULL) {
+          return;
+        }
+        this._set[SET_BORDER_RADIUS] = 1;
+        writeRounded(this, 'rounded', v);
+      },
+    },
+    // The alias of borderRadius.
+    rounded: {
+      get(this: ElementNode): number | number[] | undefined {
+        const bag = this._shaderProps;
+        return bag === undefined
+          ? undefined
+          : (bag.rounded as number | number[] | undefined);
+      },
+      set(this: ElementNode, v: number | number[] | undefined) {
+        if (this.slot === NULL) {
+          return;
+        }
+        this._set[SET_BORDER_RADIUS] = 1;
+        writeRounded(this, 'rounded', v);
+      },
+    },
+
+    linearGradient: {
+      get(this: ElementNode): Record<string, unknown> | undefined {
+        const bag = this._shaderProps;
+        return bag === undefined
+          ? undefined
+          : (bag.linearGradient as Record<string, unknown> | undefined);
+      },
+      set(this: ElementNode, v: Record<string, unknown> | undefined) {
+        if (this.slot === NULL) {
+          return;
+        }
+        this._set[SET_LINEAR_GRADIENT] = 1;
+        writeReplacing(this, 'linearGradient', 'linearGradient', v);
+      },
+    },
+    radialGradient: {
+      get(this: ElementNode): Record<string, unknown> | undefined {
+        const bag = this._shaderProps;
+        return bag === undefined
+          ? undefined
+          : (bag.radialGradient as Record<string, unknown> | undefined);
+      },
+      set(this: ElementNode, v: Record<string, unknown> | undefined) {
+        if (this.slot === NULL) {
+          return;
+        }
+        this._set[SET_RADIAL_GRADIENT] = 1;
+        writeReplacing(this, 'radialGradient', 'radialGradient', v);
+      },
+    },
+    holePunch: {
+      get(this: ElementNode): Record<string, unknown> | undefined {
+        const bag = this._shaderProps;
+        return bag === undefined
+          ? undefined
+          : (bag.holePunch as Record<string, unknown> | undefined);
+      },
+      set(this: ElementNode, v: Record<string, unknown> | undefined) {
+        if (this.slot === NULL) {
+          return;
+        }
+        this._set[SET_HOLE_PUNCH] = 1;
+        writeReplacing(this, 'holePunch', 'holePunch', v);
+      },
+    },
+
+    // The shader itself: not parsed, not swapped by a border width.
+    shader: {
+      get(this: ElementNode): ShaderNode | undefined {
+        return this._shader;
+      },
+      set(
+        this: ElementNode,
+        v:
+          | ShaderNode
+          | [type: string, props: Record<string, unknown>]
+          | null
+          | undefined,
+      ) {
+        if (this.slot === NULL) {
+          return;
+        }
+        this._set[SET_SHADER] = 1;
+        writeShader(this, v === undefined ? null : v);
+      },
+    },
+  });
+}

@@ -32,7 +32,11 @@ import {
   type TextVerticalAlign,
   type TextWordBreak,
 } from '@solidtv/renderer';
-import type { Styles } from '../intrinsicTypes.js';
+import type {
+  BorderStyle,
+  SingleBorderStyle,
+  Styles,
+} from '../intrinsicTypes.js';
 import { NodeType, type TextNode } from '../nodeTypes.js';
 import type States from '../states.js';
 import {
@@ -44,6 +48,7 @@ import {
   writeWidth,
 } from './accessors.js';
 import { SET_COUNT, type StoreProp, type TextNumberProp } from './defaults.js';
+import { installShaderAccessors, SHADER_UNMANAGED } from './shader.js';
 import { installTextAccessors, writeTextNumber } from './textProps.js';
 
 /** The two kinds of ElementNode: a `<view>` and a `<text>`. */
@@ -99,7 +104,10 @@ export class ElementNode implements SlotOwner {
   declare _style: Styles | undefined;
   declare _theme: Styles | undefined;
   declare _shader: ShaderNode | undefined;
+  /** The raw shader prop objects, by accessor name (shader.ts). */
   declare _shaderProps: Record<string, unknown> | undefined;
+  /** The feature bits of the rounded shader made, or SHADER_UNMANAGED. */
+  declare _shaderFeatures: number;
   declare _textProps: Record<string, unknown> | undefined;
   declare _transition: TransitionSetting | undefined;
   declare _animationSettings: AnimationSettings | undefined;
@@ -282,6 +290,24 @@ export class ElementNode implements SlotOwner {
   declare letterSpacing: number;
   declare offsetY: number;
   declare forceLoad: boolean;
+  // The shader props (shader.ts): the raw objects, written to the node's
+  // shader once parsed.
+  declare border: BorderStyle | undefined;
+  declare borderTop: SingleBorderStyle | undefined;
+  declare borderRight: SingleBorderStyle | undefined;
+  declare borderBottom: SingleBorderStyle | undefined;
+  declare borderLeft: SingleBorderStyle | undefined;
+  declare shadow: Record<string, unknown> | undefined;
+  declare borderRadius: number | number[] | undefined;
+  declare rounded: number | number[] | undefined;
+  declare linearGradient: Record<string, unknown> | undefined;
+  declare radialGradient: Record<string, unknown> | undefined;
+  declare holePunch: Record<string, unknown> | undefined;
+  declare shader:
+    | ShaderNode
+    | [type: string, props: Record<string, unknown>]
+    | null
+    | undefined;
 
   /**
    * A node on a new slot of `core` (a text slot for a `<text>`), or on
@@ -304,6 +330,7 @@ export class ElementNode implements SlotOwner {
     this._theme = undefined;
     this._shader = undefined;
     this._shaderProps = undefined;
+    this._shaderFeatures = SHADER_UNMANAGED;
     this._textProps = undefined;
     this._transition = undefined;
     this._animationSettings = undefined;
@@ -571,3 +598,4 @@ export class ElementNode implements SlotOwner {
 
 installAccessors(ElementNode.prototype);
 installTextAccessors(ElementNode.prototype);
+installShaderAccessors(ElementNode.prototype);

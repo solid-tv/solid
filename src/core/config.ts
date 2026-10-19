@@ -7,8 +7,10 @@ import type {
 } from './intrinsicTypes.js';
 import {
   type ElementNode,
-  convertToShader as defaultConvertToShader,
+  convertToShader as convertToShaderOfOldNode,
 } from './elementNode.js';
+import type { ElementNode as StoreElementNode } from './node/ElementNode.js';
+import { convertToShader as convertToShaderOfStoreNode } from './node/shader.js';
 import { setActiveElement as setActiveElementSignal } from './activeElement.js';
 import { IRendererShader } from './dom-renderer/domRendererTypes.js';
 
@@ -75,9 +77,36 @@ export interface Config {
    */
   preventDefaultOnHandledKeys: boolean;
   taskDelay?: number;
-  convertToShader: (_node: ElementNode, v: StyleEffects) => IRendererShader;
+  /**
+   * Make the shader a node's shader props call for, and give it to the node
+   * (attach, and the first shader prop written after it).
+   */
+  convertToShader: ConvertToShader;
   stateOrder?: DollarString[];
 }
+
+/**
+ * Both nodes' hooks: the store node's takes the node alone; the old node's
+ * (removed with elementNode.ts) takes the style object too.
+ */
+interface ConvertToShader {
+  (node: StoreElementNode): void;
+  (node: ElementNode, v: StyleEffects): IRendererShader;
+}
+
+// The casts follow the call's arity: one argument is the store node, two the
+// old node. Both go with elementNode.ts.
+const defaultConvertToShader = ((
+  node: ElementNode | StoreElementNode,
+  v?: StyleEffects,
+) =>
+  v === undefined
+    ? // No style object: the store node's call.
+      convertToShaderOfStoreNode(node as StoreElementNode)
+    : convertToShaderOfOldNode(
+        node as ElementNode,
+        v,
+      )) as unknown as ConvertToShader;
 
 export const Config: Config = {
   debug: false,

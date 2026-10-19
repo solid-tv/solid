@@ -99,8 +99,21 @@ export const SET_WORD_BREAK = 45;
 export const SET_LETTER_SPACING = 46;
 export const SET_OFFSET_Y = 47;
 export const SET_FORCE_LOAD = 48;
+// The shader props (Task 5), in the order of their accessors. `rounded` is
+// the alias of `borderRadius` and shares its byte.
+export const SET_BORDER = 49;
+export const SET_BORDER_TOP = 50;
+export const SET_BORDER_RIGHT = 51;
+export const SET_BORDER_BOTTOM = 52;
+export const SET_BORDER_LEFT = 53;
+export const SET_SHADOW = 54;
+export const SET_BORDER_RADIUS = 55;
+export const SET_LINEAR_GRADIENT = 56;
+export const SET_RADIAL_GRADIENT = 57;
+export const SET_HOLE_PUNCH = 58;
+export const SET_SHADER = 59;
 /** The length of a node's `_set`. */
-export const SET_COUNT = 49;
+export const SET_COUNT = 60;
 
 /**
  * What a store prop reads on a destroyed node, and what style undo writes
