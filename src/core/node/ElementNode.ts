@@ -347,6 +347,8 @@ export class ElementNode implements SlotOwner {
   /** Dev tooling: emitted by the Babel devtools plugin. */
   declare componentName: string | undefined;
   declare componentLocation: string | undefined;
+  /** `destroy()` ran (its onDestroy at most once). */
+  declare _destroyed: boolean;
 
   // Prototype accessors (animation.ts).
   declare transition: TransitionSetting | undefined;
@@ -544,6 +546,7 @@ export class ElementNode implements SlotOwner {
     this._focusGen = 0;
     this.componentName = undefined;
     this.componentLocation = undefined;
+    this._destroyed = false;
     core.nodes.handles[slot] = this;
   }
 

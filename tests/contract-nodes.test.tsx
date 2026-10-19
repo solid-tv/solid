@@ -678,19 +678,25 @@ v.describe('Nodes: onCreate and onDestroy returning a promise', () => {
         </s.Show>
       ));
       const slot = el.slot;
-      let atDestroy: { y: number; alpha: number } | undefined;
+      // Where it is drawn at destroy: still linked under its parent (the
+      // root), so the exit animation is seen.
+      let atDestroy: { y: number; alpha: number; parent: number } | undefined;
       const destroySlot = core.destroySlot.bind(core);
       v.vi.spyOn(core, 'destroySlot').mockImplementation((id) => {
         if (id === slot) {
           const node = rec(el, slot);
-          atDestroy = { y: node.y, alpha: node.alpha };
+          atDestroy = { y: node.y, alpha: node.alpha, parent: node.parent };
         }
         destroySlot(id);
       });
 
       setShow(false);
       await frames(() => v.expect(atDestroy).toBeDefined());
-      v.expect(atDestroy).toEqual({ y: 200, alpha: 0 });
+      v.expect(atDestroy).toEqual({
+        y: 200,
+        alpha: 0,
+        parent: renderer.rootNode.slot,
+      });
       dispose();
     },
   );

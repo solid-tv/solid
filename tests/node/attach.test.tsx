@@ -1,7 +1,14 @@
 import { describe, expect, it, vi } from 'vitest';
-import { I_PARENT, I_STRIDE, NULL, RendererCore } from '@solidtv/renderer';
+import {
+  I_FIRST_CHILD,
+  I_PARENT,
+  I_STRIDE,
+  NULL,
+  RendererCore,
+} from '@solidtv/renderer';
 import { ElementNode } from '../../src/core/node/ElementNode.js';
 import { insertChild, removeChild } from '../../src/core/node/lifecycle.js';
+import { SET_WIDTH } from '../../src/core/node/defaults.js';
 import { NodeType } from '../../src/core/nodeTypes.js';
 import { registerDefaultShaders } from '../../src/core/shaders.js';
 
@@ -84,7 +91,7 @@ describe('attach', () => {
     expect(full.width).toBe(640);
     expect(full.height).toBe(360);
     // A default is not the app's: no `_set` byte.
-    expect(child._set[2]).toBe(0);
+    expect(child._set[SET_WIDTH]).toBe(0);
   });
 
   it('right/bottom/center resolve once at attach', () => {
@@ -153,13 +160,93 @@ describe('attach', () => {
     const destroySlot = vi.spyOn(core, 'destroySlot');
     const slot = a.slot;
     removeChild(parent, a);
-    // Unlinked at once, freed in the post-mutation pass.
-    expect(core.nodes.i32[slot * I_STRIDE + I_PARENT]).toBe(NULL);
+    // Out of the children at once; still linked (drawn) until the
+    // post-mutation pass destroys it, which unlinks and frees it.
+    expect(parent.children).not.toContain(a);
+    expect(core.nodes.i32[slot * I_STRIDE + I_PARENT]).toBe(parent.slot);
     expect(a.slot).toBe(slot);
     expect(destroySlot).not.toHaveBeenCalled();
     await microtasks();
     expect(destroySlot).toHaveBeenCalledTimes(1);
     expect(destroySlot).toHaveBeenCalledWith(slot);
+    expect(a.slot).toBe(NULL);
+    expect(core.nodes.i32[parent.slot * I_STRIDE + I_FIRST_CHILD]).toBe(NULL);
+  });
+
+  it('a removed node stays linked while the promise onDestroy returns is pending', async () => {
+    const { core, root } = scene();
+    const parent = view(core);
+    insertChild(root, parent);
+    const a = view(core);
+    let finish!: () => void;
+    const onDestroy = vi.fn(
+      () => new Promise<void>((resolve) => (finish = resolve)),
+    );
+    a.onDestroy = onDestroy;
+    insertChild(parent, a);
+    const slot = a.slot;
+    removeChild(parent, a);
+    await microtasks();
+    // The exit animation's node is still drawn.
+    expect(onDestroy).toHaveBeenCalledTimes(1);
+    expect(a.slot).toBe(slot);
+    expect(core.nodes.i32[slot * I_STRIDE + I_PARENT]).toBe(parent.slot);
+    finish();
+    await microtasks();
+    expect(a.slot).toBe(NULL);
+    expect(core.nodes.i32[parent.slot * I_STRIDE + I_FIRST_CHILD]).toBe(NULL);
+  });
+
+  it('a child removed, then its parent removed: one flush destroys both, the child onDestroy once', async () => {
+    const { core, root } = scene();
+    const parent = view(core);
+    const child = view(core);
+    const onDestroy = vi.fn();
+    child.onDestroy = onDestroy;
+    insertChild(root, parent);
+    insertChild(parent, child);
+    removeChild(parent, child);
+    removeChild(root, parent);
+    await microtasks();
+    expect(onDestroy).toHaveBeenCalledTimes(1);
+    expect(child.slot).toBe(NULL);
+    expect(parent.slot).toBe(NULL);
+  });
+
+  it('a parent removed, then its child: the parent frees the child, whose onDestroy still runs once', async () => {
+    const { core, root } = scene();
+    const parent = view(core);
+    const child = view(core);
+    const onDestroy = vi.fn();
+    child.onDestroy = onDestroy;
+    insertChild(root, parent);
+    insertChild(parent, child);
+    const destroySlot = vi.spyOn(core, 'destroySlot');
+    // The parent is first in the delete queue: its destroySlot frees the
+    // child's slot (still linked under it) before the child's turn.
+    removeChild(root, parent);
+    removeChild(parent, child);
+    await microtasks();
+    expect(onDestroy).toHaveBeenCalledTimes(1);
+    expect(onDestroy.mock.contexts[0]).toBe(child);
+    expect(parent.slot).toBe(NULL);
+    expect(child.slot).toBe(NULL);
+    // Once, for the parent's subtree: the child's slot was already freed.
+    expect(destroySlot).toHaveBeenCalledTimes(1);
+  });
+
+  it('a second destroy() does not run onDestroy again', () => {
+    // 2.0: destroy runs once per node (1.x ran onDestroy on every call).
+    const { core, root } = scene();
+    const a = view(core);
+    const onDestroy = vi.fn();
+    a.onDestroy = onDestroy;
+    insertChild(root, a);
+    const destroySlot = vi.spyOn(core, 'destroySlot');
+    a.destroy();
+    a.destroy();
+    expect(onDestroy).toHaveBeenCalledTimes(1);
+    expect(destroySlot).toHaveBeenCalledTimes(1);
     expect(a.slot).toBe(NULL);
   });
 
@@ -175,7 +262,7 @@ describe('attach', () => {
     insertChild(parent, b, c);
     const order = () => {
       const out: ElementNode[] = [];
-      let s = core.nodes.i32[parent.slot * I_STRIDE + 4 /* I_FIRST_CHILD */]!;
+      let s = core.nodes.i32[parent.slot * I_STRIDE + I_FIRST_CHILD]!;
       while (s !== NULL) {
         out.push(core.nodes.handles[s] as ElementNode);
         s = core.nodes.next[s]!;

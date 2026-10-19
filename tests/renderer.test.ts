@@ -1,4 +1,12 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  afterAll,
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from 'vitest';
 import { RendererCore } from '@solidtv/renderer';
 
 // `core` is a module singleton, so each case loads a fresh copy of the module.
@@ -12,6 +20,13 @@ describe('startRenderer', () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
+  });
+
+  // Leave the module registry clean for the files that run after this one
+  // in the worker (isolate: false): the last case's render.ts and renderer.ts
+  // hold its own core, which a later createRenderer would adopt.
+  afterAll(() => {
+    vi.resetModules();
   });
 
   it('uses the core it is given, with no Renderer', async () => {

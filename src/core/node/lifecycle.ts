@@ -141,9 +141,9 @@ export function insertChild(
 }
 
 /**
- * Take `node` out of `parent`'s children; an element is unlinked from the
- * store at once and queued for the delete flush, which destroys it unless it
- * is inserted again first (it then keeps its slot).
+ * Take `node` out of `parent`'s children; an element is queued for the
+ * delete flush, which destroys it (and so unlinks it from the store) unless
+ * it is inserted again first (it then keeps its slot).
  */
 export function removeChild(parent: ElementNode, node: SolidNode): void {
   const children: SolidNode[] = parent.children;
@@ -169,15 +169,10 @@ export function removeChild(parent: ElementNode, node: SolidNode): void {
     return;
   }
 
-  const slot = node.slot;
-  if (slot !== NULL) {
-    const nodes = node.core.nodes;
-    const linked = nodes.i32[slot * I_STRIDE + I_PARENT]!;
-    if (linked !== NULL) {
-      nodes.unlink(slot);
-      nodes.markDirty(linked, 0);
-    }
-  }
+  // The store link stays until the node is destroyed (destroySlot unlinks
+  // it, at the delete flush or after onDestroy's promise), so that an exit
+  // animation (onDestroy, onRemove's fade) is drawn, as today. Inserted
+  // again first, insertChild relinks it at its anchor.
   if (node.onRemove !== undefined) {
     node.onRemove.call(node, node);
   }
@@ -434,13 +429,17 @@ export function attach(node: ElementNode): void {
 /**
  * `destroy()`: run `onDestroy` (the removed node's own: not its children's,
  * as today), waiting for the promise it returns (an exit animation), then
- * destroy the subtree in the store (its slots are freed and its handles get
- * slot NULL). Once per subtree root: the store frees the descendants.
+ * destroy the subtree in the store: `destroySlot` unlinks it, frees its
+ * slots and gives its handles slot NULL. Once per subtree root: the store
+ * frees the descendants. Once per node: a second call does nothing. A node
+ * whose slot a destroyed ancestor freed first (it was removed, then its old
+ * parent was) still runs its `onDestroy`.
  */
 export function destroy(node: ElementNode): void {
-  if (node.slot === NULL) {
+  if (node._destroyed) {
     return;
   }
+  node._destroyed = true;
   const onDestroy = node.onDestroy;
   if (onDestroy !== undefined) {
     const result = onDestroy.call(node, node);
@@ -448,10 +447,14 @@ export function destroy(node: ElementNode): void {
     // animation's waitUntilStopped.
     if (result instanceof Promise) {
       void result.then(() => {
-        node.core.destroySlot(node.slot);
+        if (node.slot !== NULL) {
+          node.core.destroySlot(node.slot);
+        }
       });
       return;
     }
   }
-  node.core.destroySlot(node.slot);
+  if (node.slot !== NULL) {
+    node.core.destroySlot(node.slot);
+  }
 }

@@ -150,7 +150,6 @@ v.describe('contract: states accepts a string, an array or an object', () => {
 
       setStates([]);
       s.flush();
-      s.flush();
       v.expect(statesOf(node)).toEqual([]);
       v.expect(node.color).toBe(RED);
       dispose();

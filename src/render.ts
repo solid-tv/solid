@@ -47,21 +47,22 @@ export function createRenderer(
   }
   const started = startRenderer(options);
   const core = started.core;
+  // Once per core: a second call returns the first core (startRenderer).
   if (rootNode === undefined || rootNode.core !== core) {
     rootNode = ElementNode.fromSlot(core, core.root.slot);
     rootNode.rendered = true;
     initClickInspector(rootNode);
+    // The Renderer emits 'idle' when its frame loop stops. A headless core
+    // has no loop and never emits it unless its host does: the tasks run at
+    // once.
+    if (started.renderer === null) {
+      tasksEnabled = true;
+    }
+    core.on('idle', () => {
+      tasksEnabled = true;
+      processTasks();
+    });
   }
-  // The Renderer emits 'idle' when its frame loop stops. A headless core
-  // has no loop and never emits it unless its host does: the tasks run at
-  // once.
-  if (started.renderer === null) {
-    tasksEnabled = true;
-  }
-  core.on('idle', () => {
-    tasksEnabled = true;
-    processTasks();
-  });
 
   return {
     renderer: core,
