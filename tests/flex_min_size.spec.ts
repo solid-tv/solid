@@ -1,4 +1,8 @@
-import { ElementNode } from '../src/core/elementNode.ts';
+import { RendererCore } from '@solidtv/renderer';
+import { ElementNode } from '../src/core/node/ElementNode.ts';
+import { NodeType } from '../src/core/nodeTypes.ts';
+
+const core = new RendererCore({ appWidth: 1920, appHeight: 1080 });
 import calculateFlex from '../src/core/flex.ts';
 import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { isElementNode } from '../src/core/utils.ts';
@@ -18,7 +22,10 @@ function createTestElement(
 
   const nodeTypeName =
     initialProps.nodeType === 'textNode' ? 'text' : 'element';
-  const node = new ElementNode(nodeTypeName);
+  const node = new ElementNode(
+    core,
+    nodeTypeName === 'text' ? NodeType.TextNode : NodeType.Element,
+  );
 
   for (const key in initialProps) {
     if (Object.prototype.hasOwnProperty.call(initialProps, key)) {

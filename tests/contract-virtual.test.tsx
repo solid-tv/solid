@@ -17,7 +17,7 @@ import {
   useFocusManager,
   type KeyEventTarget,
 } from '@solidtv/solid/primitives';
-import { renderer } from './setup.js';
+import { core, renderer } from './setup.js';
 
 // Real KeyboardEvents on the target the focus manager listens to. A private
 // target (instead of `document`) keeps listeners other files leave on
@@ -471,21 +471,20 @@ v.describe('VirtualRow: window and scroll modes', () => {
   // the wrap and initial-selected paths). factorScale has no effect now: the
   // positions are the same with and without it.
   //
-  // Animations are on, as in an app. The DOM renderer's animations run on
-  // requestAnimationFrame, and jsdom's frame time is on another clock than
-  // the performance.now() the animations start from, so frames are driven
-  // here with a time far ahead: each shift animation ends on its first frame.
+  // Animations are on, as in an app. The headless core's animations step
+  // when a frame is driven, so frames are driven here with a step far ahead:
+  // each shift animation ends on its first frame.
   v.it(
     'B14: with factorScale and a $focus scale, the focused item keeps its screen x across window shifts (animations on)',
     async () => {
       const settle = async () => {
-        for (let i = 0; i < 4; i++) await flush();
+        for (let i = 0; i < 4; i++) {
+          await flush();
+          core.step(1e6);
+          core.update();
+          core.events.flush();
+        }
       };
-      v.vi.stubGlobal(
-        'requestAnimationFrame',
-        (cb: (time: number) => void) =>
-          setTimeout(() => cb(performance.now() + 1e6), 0),
-      );
       lng.Config.animationsEnabled = true;
       try {
         // Focused item's screen x (row x + its x) at mount, then after Right
@@ -554,7 +553,6 @@ v.describe('VirtualRow: window and scroll modes', () => {
         }
       } finally {
         lng.Config.animationsEnabled = false;
-        v.vi.unstubAllGlobals();
       }
     },
   );

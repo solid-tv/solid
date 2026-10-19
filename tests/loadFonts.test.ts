@@ -1,28 +1,16 @@
 import { describe, it, expect, beforeEach, afterAll, vi } from 'vitest';
+import { RendererCore } from '@solidtv/renderer';
 
-// `loadFonts()` may be called either side of `createRenderer()`. Calling it
+// `loadFonts()` may be called either side of `startRenderer()`. Calling it
 // first is the point of the prefetch: the download overlaps renderer boot
 // instead of queueing behind it. Calling it after must keep behaving exactly
 // as it always did.
 //
-// Both paths hinge on the module-level `renderer` in lightningInit being unset,
-// so each case re-imports the module against a mocked renderer package.
+// Both paths hinge on the module-level `core` in renderer.ts being unset, so
+// each case re-imports the module, with the renderer's prefetch mocked (the
+// real one would start a network request) and a headless core.
 
 const prefetchFont = vi.fn();
-const loadFont = vi.fn(() => Promise.resolve());
-
-vi.mock('@solidtv/renderer', () => {
-  class RendererMain {
-    root = {};
-    stage = {
-      renderer: { mode: 'webgl' },
-      textRenderers: { sdf: {} },
-      loadFont,
-    };
-    on() {}
-  }
-  return { RendererMain, prefetchFont };
-});
 
 const sdfFont = {
   type: 'msdf' as const,
@@ -33,7 +21,20 @@ const sdfFont = {
 
 async function freshInit() {
   vi.resetModules();
-  return import('../src/core/lightningInit.js');
+  vi.doMock('@solidtv/renderer', async (original) => ({
+    ...(await original<typeof import('@solidtv/renderer')>()),
+    prefetchFont,
+  }));
+  const mod = await import('../src/core/renderer.js');
+  vi.doUnmock('@solidtv/renderer');
+  return mod;
+}
+
+/** A headless core whose loadFont resolves (or does what `impl` does). */
+function headless(impl: () => Promise<void> = () => Promise.resolve()) {
+  const core = new RendererCore({ appWidth: 640, appHeight: 360 });
+  const loadFont = vi.spyOn(core, 'loadFont').mockImplementation(impl);
+  return { core, loadFont };
 }
 
 const flush = () => new Promise((r) => setTimeout(r, 0));
@@ -41,7 +42,6 @@ const flush = () => new Promise((r) => setTimeout(r, 0));
 describe('loadFonts', () => {
   beforeEach(() => {
     prefetchFont.mockClear();
-    loadFont.mockClear();
   });
 
   // Leave the module registry clean for any test file that loads afterwards.
@@ -51,6 +51,7 @@ describe('loadFonts', () => {
 
   it('starts the download before the renderer exists, and attaches once it does', async () => {
     const init = await freshInit();
+    const { core, loadFont } = headless();
 
     const pending = init.loadFonts([sdfFont]);
     let settled = false;
@@ -58,51 +59,53 @@ describe('loadFonts', () => {
       settled = true;
     });
 
-    // Network started; nothing handed to a stage that does not exist yet.
+    // Network started; nothing handed to a core that does not exist yet.
     expect(prefetchFont).toHaveBeenCalledWith(sdfFont);
     expect(loadFont).not.toHaveBeenCalled();
     await flush();
     expect(settled).toBe(false);
 
-    init.startLightningRenderer({}, document.createElement('div'));
+    init.startRenderer({ core });
 
     await pending;
-    expect(loadFont).toHaveBeenCalledWith('sdf', sdfFont);
+    expect(loadFont).toHaveBeenCalledWith(sdfFont);
   });
 
   it('attaches immediately when the renderer already exists', async () => {
     const init = await freshInit();
-    init.startLightningRenderer({}, document.createElement('div'));
+    const { core, loadFont } = headless();
+    init.startRenderer({ core });
 
     await init.loadFonts([sdfFont]);
 
-    expect(loadFont).toHaveBeenCalledWith('sdf', sdfFont);
-    // Nothing to prefetch — the stage is right there.
+    expect(loadFont).toHaveBeenCalledWith(sdfFont);
+    // Nothing to prefetch: the core is right there.
     expect(prefetchFont).not.toHaveBeenCalled();
   });
 
   it('rejects the deferred call when attaching fails', async () => {
     const init = await freshInit();
-    loadFont.mockImplementationOnce(() => Promise.reject(new Error('boom')));
+    const { core } = headless(() => Promise.reject(new Error('boom')));
 
     const pending = init.loadFonts([sdfFont]);
-    init.startLightningRenderer({}, document.createElement('div'));
+    init.startRenderer({ core });
 
     await expect(pending).rejects.toThrow('boom');
   });
 
   it('registers every alias of a multi-name font', async () => {
     const init = await freshInit();
+    const { core, loadFont } = headless();
     const aliased = { ...sdfFont, fontFamily: ['Roboto', 'Roboto500'] };
 
     const pending = init.loadFonts([aliased]);
     expect(prefetchFont).toHaveBeenCalledWith(aliased);
 
-    init.startLightningRenderer({}, document.createElement('div'));
+    init.startRenderer({ core });
     await pending;
 
-    // One descriptor, one load — the renderer registers every name from it.
+    // One descriptor, one load: the core registers every name from it.
     expect(loadFont).toHaveBeenCalledTimes(1);
-    expect(loadFont).toHaveBeenCalledWith('sdf', aliased);
+    expect(loadFont).toHaveBeenCalledWith(aliased);
   });
 });

@@ -31,9 +31,16 @@
  * Solid or the renderer may change them. Add `--reporter=verbose` if the reporter hides them.
  */
 import * as v from 'vitest';
+import { F_HEIGHT, F_STRIDE, F_WIDTH } from '@solidtv/renderer';
 import * as s from 'solid-js';
 import { loadFonts, type ElementNode } from '@solidtv/solid';
 import { frameCount, latoFont, render, settle } from './setup.js';
+
+/** A text's laid-out size in the store (1.x: its renderer node's w and h). */
+const laidOut = (el: ElementNode) => ({
+  w: el.core.nodes.f64[el.slot * F_STRIDE + F_WIDTH]!,
+  h: el.core.nodes.f64[el.slot * F_STRIDE + F_HEIGHT]!,
+});
 
 /** x, y, width and height, as the app reads them from the ElementNode. */
 function expectBox(
@@ -153,7 +160,7 @@ v.test(
     expectBox(subtitle, 0, 66.08, 75.394, 31.68); // 12 + 46.08 + 8
     // contain="width": width reads maxWidth (276), two lines of 28.8.
     expectBox(description, 0, 105.76, 276, 57.6); // 66.08 + 31.68 + 8
-    v.expect(description.lng.w).toBeCloseTo(271.7, 3); // the laid-out lines
+    v.expect(laidOut(description).w).toBeCloseTo(271.7, 3); // the laid-out lines
     // Width as given; height fits: 105.76 + 57.6 + 12.
     expectBox(tile, 0, 0, 300, 175.36);
 
@@ -445,16 +452,16 @@ v.test('text with a fixed width and contain in a flex row', async () => {
   // maxHeight, which Solid sets to the font size (30) without a lineHeight,
   // though the laid-out line is 43.2 high.
   expectBox(widthText, 0, 0, 200, 30);
-  v.expect(widthText.lng.w).toBeCloseTo(171.54, 3);
-  v.expect(widthText.lng.h).toBeCloseTo(LINE_30, 3);
+  v.expect(laidOut(widthText).w).toBeCloseTo(171.54, 3);
+  v.expect(laidOut(widthText).h).toBeCloseTo(LINE_30, 3);
   expectBox(widthAfter, 210, 0, 69.51, LINE_30); // 200 + 10
   expectBox(widthRow, 0, 0, 279.51, LINE_30);
 
   // contain="both": width and height read maxWidth and maxHeight; one line
   // of 34.56 fits in 60.
   expectBox(bothText, 0, 0, 150, 60);
-  v.expect(bothText.lng.w).toBeCloseTo(124.992, 3);
-  v.expect(bothText.lng.h).toBeCloseTo(34.56, 3);
+  v.expect(laidOut(bothText).w).toBeCloseTo(124.992, 3);
+  v.expect(laidOut(bothText).h).toBeCloseTo(34.56, 3);
   expectBox(bothAfter, 160, 0, 69.51, LINE_30); // 150 + 10
   expectBox(bothRow, 0, 100, 229.51, 60);
 

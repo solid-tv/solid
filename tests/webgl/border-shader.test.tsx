@@ -22,7 +22,7 @@ const RED = 0xff0000ff;
 registerDefaultShaders(renderer);
 
 const shaderOf = (node: ElementNode) =>
-  node.lng.shader as unknown as {
+  node._shader as unknown as {
     shaderType: unknown;
     props: Record<string, unknown>;
   };

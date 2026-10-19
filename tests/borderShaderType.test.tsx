@@ -16,6 +16,7 @@ import {
   defaultShaderRoundedWithShadow,
   registerDefaultShaders,
 } from '../src/core/shaders.js';
+import { renderer } from './setup.js';
 
 const RED = 0xff0000ff;
 
@@ -117,20 +118,26 @@ v.describe('rounded shader type from the border width', () => {
   });
 
   v.test('a $focus border width swaps the shader on focus and blur', () => {
-    // A state block writes its border object through the accessor (Task 7
-    // wires the states); the base and the $focus objects are written here.
-    const base = { width: 0, color: RED };
-    const focus = { width: 4, color: RED };
-    const node = renderView((n) => {
-      n.borderRadius = 8;
-      n.border = base;
-    });
+    // A real `$focus` state through JSX: the state block writes its border
+    // object through the accessor; blur undoes it to the style's.
+    let node!: ElementNode;
+    const dispose = renderer.render(() => (
+      <view
+        ref={node}
+        borderRadius={8}
+        style={{
+          border: { width: 0, color: RED },
+          $focus: { border: { width: 4, color: RED } },
+        }}
+      />
+    ));
     v.expect(shaderType(node)).toBe('rounded');
-    node.border = focus;
+    node.states.add('$focus');
     v.expect(shaderType(node)).toBe('roundedWithBorder');
     v.expect(propsOf(node)['border-width']).toEqual([4, 4, 4, 4]);
-    node.border = base;
+    node.states.remove('$focus');
     v.expect(shaderType(node)).toBe('rounded');
+    dispose();
   });
 
   v.test('effects with a border width swap in roundedWithBorder', () => {

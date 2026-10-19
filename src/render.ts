@@ -52,16 +52,16 @@ export function createRenderer(
     rootNode.rendered = true;
     initClickInspector(rootNode);
   }
-  const renderer = started.renderer;
-  if (renderer === null) {
-    // Headless: no frame loop, so never idle: the tasks run at once.
+  // The Renderer emits 'idle' when its frame loop stops. A headless core
+  // has no loop and never emits it unless its host does: the tasks run at
+  // once.
+  if (started.renderer === null) {
     tasksEnabled = true;
-  } else {
-    renderer.on('idle', () => {
-      tasksEnabled = true;
-      processTasks();
-    });
   }
+  core.on('idle', () => {
+    tasksEnabled = true;
+    processTasks();
+  });
 
   return {
     renderer: core,

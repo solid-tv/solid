@@ -1,16 +1,19 @@
 // Contract tests: Styles (`style`, combineStyles, transitions).
 //
 // These pin today's behaviour (1.7) through public node props, the public
-// `combineStyles` helper and, for transitions, calls to the public
-// `ElementNode.prototype.animate`. Where today's behaviour is odd it is pinned
-// anyway and the comment says so.
+// `combineStyles` helper and, for transitions, the animations a write
+// starts. (1.x started them through the public `ElementNode.prototype.animate`;
+// 2.0 through `_animate`, the renderer's per-prop animation, which the
+// `animate` mock below records in the same shape: `({ [prop]: value },
+// settings)`.) Where today's behaviour is odd it is pinned anyway and the
+// comment says so.
 //
 // vitest runs with `isolate: false`: Config is shared across files in a
 // worker, so every test disposes its render and restores Config and spies.
 import * as v from 'vitest';
 import * as s from 'solid-js';
 import * as lng from '@solidtv/solid';
-import { renderer } from './setup.js';
+import { renderer, tick } from './setup.js';
 
 const RED = 0xff0000ff;
 const BLUE = 0x0000ffff;
@@ -26,9 +29,15 @@ v.afterEach(() => {
   v.vi.restoreAllMocks();
 });
 
-/** Wait for an animation to land. The DOM renderer animates on rAF. */
+/** Wait for an animation to land, driving a frame per try. */
 const settle = (check: () => void) =>
-  v.vi.waitFor(check, { timeout: 3000, interval: 10 });
+  v.vi.waitFor(
+    () => {
+      tick();
+      check();
+    },
+    { timeout: 3000, interval: 10 },
+  );
 
 // A static module-level style object: the most common pattern in apps.
 const Tile: lng.NodeStyles = {
@@ -235,8 +244,7 @@ v.describe('contract: object spread', () => {
     },
   );
 
-  // 2.0: passes from Task 8
-  v.it.skip(
+  v.it(
     'spreading a style object as JSX props ({...obj}) sets its keys as props; undo then treats them as JSX props and the prop reads the renderer default',
     () => {
       // The pattern in docs/essentials/theming.md. The values are props, not
@@ -518,9 +526,26 @@ v.describe('contract: explicit props override style', () => {
 });
 
 v.describe('contract: transition', () => {
-  let animate: v.MockInstance<lng.ElementNode['animate']>;
+  // Each transition a write starts: ({ [prop]: value }, settings), the
+  // settings the renderer's animation of the prop runs with.
+  let animate: v.Mock<(props: Record<string, number>, settings: unknown) => void>;
   v.beforeEach(() => {
-    animate = v.vi.spyOn(lng.ElementNode.prototype, 'animate');
+    animate = v.vi.fn();
+    const record = animate;
+    const original = lng.ElementNode.prototype._animate;
+    v.vi.spyOn(lng.ElementNode.prototype, '_animate').mockImplementation(
+      function (this: lng.ElementNode, name, value) {
+        const started = original.call(this, name, value);
+        if (started) {
+          const slots = this.core.nodes.animations[this.slot] as Record<
+            string,
+            { settings: unknown }
+          >;
+          record({ [name]: value }, slots[name]!.settings);
+        }
+        return started;
+      },
+    );
   });
 
   v.it(
@@ -707,8 +732,7 @@ v.describe('contract: transition', () => {
     },
   );
 
-  // 2.0: passes from Task 8
-  v.it.skip(
+  v.it(
     'a state change writes only the keys whose value changed: a second state does not restart the first state transition',
     () => {
       // 1.7 (design 3.3.2): each key is written only when its resolved value

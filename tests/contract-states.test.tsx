@@ -150,6 +150,7 @@ v.describe('contract: states accepts a string, an array or an object', () => {
 
       setStates([]);
       s.flush();
+      s.flush();
       v.expect(statesOf(node)).toEqual([]);
       v.expect(node.color).toBe(RED);
       dispose();
@@ -271,8 +272,7 @@ v.describe('contract: state keys with and without $', () => {
     },
   );
 
-  // 2.0: passes from Task 8
-  v.it.skip(
+  v.it(
     'setting states to an unchanged value changes nothing (styles are not re-applied), in every form',
     () => {
       // 1.7 (design 3.3.3): `set states` compares before it merges. Before,
@@ -291,6 +291,7 @@ v.describe('contract: state keys with and without $', () => {
       v.expect(node.color).toBe(BLUE);
       node.color = WHITE;
       setStates(['$focus']);
+      s.flush();
       v.expect(node.color).toBe(WHITE);
       node.states = '$focus';
       node.states = { $focus: true, $active: false };
@@ -300,6 +301,7 @@ v.describe('contract: state keys with and without $', () => {
       v.expect(statesOf(node)).toEqual(['$focus']);
       v.expect(node.color).toBe(WHITE);
       setStates([]);
+      s.flush();
       v.expect(node.color).toBe(RED);
       dispose();
     },
@@ -510,8 +512,7 @@ v.describe('contract: $state blocks inside style apply and undo', () => {
     },
   );
 
-  // 2.0: passes from Task 8
-  v.it.skip(
+  v.it(
     'undo: a prop only in JSX, overridden by $focus, reads the renderer default (the JSX value is lost)',
     () => {
       let node!: lng.ElementNode;
@@ -545,8 +546,7 @@ v.describe('contract: $state blocks inside style apply and undo', () => {
     },
   );
 
-  // 2.0: passes from Task 8
-  v.it.skip(
+  v.it(
     'undo: a prop with no base value anywhere reads the renderer default',
     () => {
       let node!: lng.ElementNode;
@@ -883,8 +883,7 @@ v.describe('contract: forwardStates', () => {
     },
   );
 
-  // 2.0: passes from Task 8
-  v.it.skip(
+  v.it(
     "a child's $active alpha is undone by the parent's states: it reads the renderer default",
     () => {
       let parent!: lng.ElementNode;

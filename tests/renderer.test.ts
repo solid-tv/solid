@@ -122,4 +122,16 @@ describe('startRenderer', () => {
     await pending;
     expect(loadFont).toHaveBeenCalledWith(font);
   });
+
+  it('createRenderer({ core }) wraps the core root in the root ElementNode', async () => {
+    const { createRenderer } = await import('../src/render.js');
+    const given = new RendererCore({ appWidth: 100, appHeight: 50 });
+    const { rootNode, renderer } = createRenderer({ core: given });
+    expect(renderer).toBe(given);
+    expect(rootNode.slot).toBe(given.root.slot);
+    expect(rootNode.rendered).toBe(true);
+    expect(rootNode.width).toBe(100);
+    expect(rootNode.height).toBe(50);
+    expect(given.nodes.handles[given.root.slot]).toBe(rootNode);
+  });
 });

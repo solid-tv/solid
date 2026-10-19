@@ -2,7 +2,7 @@ import * as v from 'vitest';
 import * as lng from '@solidtv/solid';
 import { useMouse } from '../src/primitives/useMouse.js';
 import { useFocusManager } from '../src/core/focusManager.js';
-import { renderer } from './setup.js';
+import { renderer, tick } from './setup.js';
 
 const dispatchClick = (x: number, y: number) =>
   window.dispatchEvent(
@@ -19,7 +19,10 @@ const dispatchMouseMove = (x: number, y: number) =>
     new MouseEvent('mousemove', { clientX: x, clientY: y, bubbles: true }),
   );
 
-const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+// Time passes and a frame draws (the headless core has no frame loop): the
+// world positions useMouse hit-tests against are a frame's.
+const wait = (ms: number) =>
+  new Promise((r) => setTimeout(r, ms)).then(tick);
 
 v.describe('useMouse', () => {
   v.test('click invokes onMouseClick on the focused element', async () => {

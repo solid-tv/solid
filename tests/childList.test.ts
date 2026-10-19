@@ -1,11 +1,15 @@
 // insertChild/removeChild called directly: the children order, and onRemove,
 // for the cases contract-nodes does not cover.
 import * as v from 'vitest';
-import { ElementNode } from '../src/core/elementNode.ts';
+import { RendererCore } from '@solidtv/renderer';
+import { ElementNode } from '../src/core/node/ElementNode.ts';
+import { NodeType } from '../src/core/nodeTypes.ts';
+
+const core = new RendererCore({ appWidth: 640, appHeight: 360 });
 
 function views(...names: string[]) {
   return names.map((name) => {
-    const node = new ElementNode('view');
+    const node = new ElementNode(core, NodeType.Element);
     node.id = name;
     return node;
   });
@@ -46,8 +50,10 @@ v.describe('child list', () => {
     v.expect(ids(parent)).toEqual(['d', 'b', 'c', 'a']);
     parent.insertChild(a, b); // backward
     v.expect(ids(parent)).toEqual(['d', 'a', 'b', 'c']);
-    parent.insertChild(b, b); // before itself: appended
-    v.expect(ids(parent)).toEqual(['d', 'a', 'c', 'b']);
+    // Before itself: it stays (DOM semantics, 1.8: Solid's swap of
+    // adjacent items asks for this); 1.x appended it.
+    parent.insertChild(b, b);
+    v.expect(ids(parent)).toEqual(['d', 'a', 'b', 'c']);
   });
 
   v.test('moving a child from another parent', () => {

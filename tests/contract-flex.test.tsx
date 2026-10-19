@@ -12,10 +12,10 @@
 import { describe, it, expect, vi } from 'vitest';
 import * as s from 'solid-js';
 import * as lng from '@solidtv/solid';
-import { ElementNode } from '../src/core/elementNode.ts';
-import { TextNode } from '../src/core/nodeTypes.ts';
+import { ElementNode } from '../src/core/node/ElementNode.ts';
+import { NodeType, TextNode } from '../src/core/nodeTypes.ts';
 import flexOld from '../src/core/flex.ts';
-import { renderer, waitForUpdate } from './setup.js';
+import { core, renderer, waitForUpdate } from './setup.js';
 
 // ---------------------------------------------------------------------------
 // Part 1: table of flex cases, run on both engines
@@ -52,12 +52,13 @@ const view = (width: number, height: number, extra: Props = {}): KidSpec => ({
 const A = (extra: Props = {}) => view(50, 50, extra);
 const B = (extra: Props = {}) => view(60, 40, extra);
 
-// "untouched" = the engine never wrote the prop (unrendered nodes start
-// undefined), so a case can tell "set to 0" from "not positioned".
-const U = undefined;
+// "untouched" = the engine never wrote the prop. 1.x read it as undefined
+// (unrendered nodes started undefined); 2.0's store-backed props read the
+// store default, 0, before any write (spec 5.6).
+const U = 0;
 
 function build(container: Props, kids: KidSpec[]) {
-  const node = new ElementNode('view');
+  const node = new ElementNode(core, NodeType.Element);
   Object.assign(node, { display: 'flex' }, container);
   const children: Array<ElementNode | TextNode> = [];
   for (const k of kids) {
@@ -66,7 +67,10 @@ function build(container: Props, kids: KidSpec[]) {
       c = new TextNode('raw string child');
       (c as TextNode).parent = node as never;
     } else {
-      c = new ElementNode(k.kind === 'text' ? 'text' : 'view');
+      c = new ElementNode(
+        core,
+        k.kind === 'text' ? NodeType.TextNode : NodeType.Element,
+      );
       Object.assign(c, k.props);
       c.parent = node;
     }

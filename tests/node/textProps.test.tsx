@@ -10,7 +10,10 @@ import {
   textStateOf,
 } from '@solidtv/renderer';
 import { Config } from '../../src/core/config.js';
-import { ElementNode } from '../../src/core/node/ElementNode.js';
+import {
+  ElementNode,
+  type SolidNode,
+} from '../../src/core/node/ElementNode.js';
 import { SET_FONT_SIZE, SET_WIDTH } from '../../src/core/node/defaults.js';
 import { applyTextSizeAtAttach } from '../../src/core/node/textProps.js';
 import { NodeType, TextNode } from '../../src/core/nodeTypes.js';
@@ -205,9 +208,11 @@ describe('ElementNode text props', () => {
     const core = headless();
     const text = new ElementNode(core, NodeType.TextNode);
     expect(text.getText()).toBe('');
-    text.children.push(new TextNode('ab'));
+    // A <text>'s children are strings (`children` types them out).
+    const strings: SolidNode[] = text.children;
+    strings.push(new TextNode('ab'));
     expect(text.getText()).toBe('ab');
-    text.children.push(new TextNode('cd'), new TextNode('ef'));
+    strings.push(new TextNode('cd'), new TextNode('ef'));
     expect(text.getText()).toBe('abcdef');
   });
 

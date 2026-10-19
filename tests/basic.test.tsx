@@ -2,7 +2,7 @@ import * as v from 'vitest'
 import * as s from 'solid-js'
 import * as lng from '@solidtv/solid'
 
-import {renderer} from './setup.js'
+import {core, renderer} from './setup.js'
 
 v.test('Basic test', () => {
   const dispose = renderer.render(() => <></>)
@@ -50,14 +50,16 @@ v.test('static JSX props reach the node (Solid 2.0 createElement staticProps)', 
   let node!: lng.ElementNode
 
   const dispose = renderer.render(() => <>
-    <view ref={node} width={100} height={50} x={7} y={9} color="#ff0000ff" />
+    <view ref={node} width={100} height={50} x={7} y={9} color={0xff0000ff} />
   </>)
 
   v.assert.equal(node.width, 100, 'width')
   v.assert.equal(node.height, 50, 'height')
   v.assert.equal(node.x, 7, 'x')
   v.assert.equal(node.y, 9, 'y')
-  v.assert.equal(node.color, '#ff0000ff', 'color')
+  // A store-backed colour reads back as the number it is (2.0: the DOM
+  // renderer kept the string).
+  v.assert.equal(node.color, 0xff0000ff, 'color')
 
   dispose()
 })
@@ -70,7 +72,7 @@ v.test('static and reactive props coexist on one element', () => {
   let node!: lng.ElementNode
 
   const dispose = renderer.render(() => <>
-    <view ref={node} width={w()} height={50} color="#00ff00ff" />
+    <view ref={node} width={w()} height={50} color={0x00ff00ff} />
   </>)
 
   v.assert.equal(node.width, 10)
@@ -85,7 +87,7 @@ v.test('static and reactive props coexist on one element', () => {
 })
 
 v.test('Unrendered node animate start noop', () => {
-  const node = new lng.ElementNode('view')
+  const node = new lng.ElementNode(core, lng.NodeType.Element)
   const anim = node.animate({ alpha: 0 })
   v.assert.equal(typeof anim.start, 'function')
   v.assert.doesNotThrow(() => anim.start())

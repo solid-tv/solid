@@ -15,7 +15,7 @@ import {
   useFocusManager,
   type KeyEventTarget,
 } from '@solidtv/solid/primitives';
-import { renderer } from './setup.js';
+import { renderer, tick } from './setup.js';
 
 // The focus manager listens for `keydown` on the target given to
 // useFocusManager (`document` by default). A private target gets the same
@@ -23,7 +23,10 @@ import { renderer } from './setup.js';
 // leave on `document` (vitest runs with isolate: false) from handling a press
 // twice.
 const keys = new EventTarget();
-const flush = () => new Promise<void>((r) => setTimeout(r, 0));
+// A task, then a frame (the headless core has no loop): world positions
+// (absX/absY, which the scroll reads) are a frame's, as between presses in
+// an app.
+const flush = () => new Promise<void>((r) => setTimeout(r, 0)).then(tick);
 
 async function press(...names: string[]) {
   for (const key of names) {

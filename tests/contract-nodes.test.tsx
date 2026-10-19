@@ -1,9 +1,24 @@
-// Contract tests: nodes (props, el.lng, animate, events, child order).
+// Contract tests: nodes (props, store records, animate, events, child order).
 //
-// Behavioural, through the public API only: JSX props, ElementNode members
-// apps use, and `el.lng` (the raw renderer node, which apps also use). These
-// run on the DOM renderer (SOLIDTV_DOM_RENDERING), so `el.lng` is a DOMNode.
+// Behavioural, through the public API: JSX props and the ElementNode members
+// apps use. 1.x also read the raw renderer node (`lng`); in 2.0 the
+// ElementNode is the renderer's handle and its props live in the store, so
+// those reads are store reads (`rec` below). These run on a headless
+// RendererCore (tests/setup.ts): frames are driven with `tick()`.
 import * as v from 'vitest';
+import {
+  F_ALPHA,
+  F_HEIGHT,
+  F_STRIDE,
+  F_WIDTH,
+  F_X,
+  F_Y,
+  I_COLOR_TL,
+  I_PARENT,
+  I_STRIDE,
+  NULL,
+  type TextState,
+} from '@solidtv/renderer';
 import * as s from 'solid-js';
 import * as lng from '@solidtv/solid';
 import {
@@ -11,17 +26,63 @@ import {
   type KeyEventLike,
   type KeyEventTarget,
 } from '@solidtv/solid/primitives';
-import { renderer } from './setup.js';
+import { core, renderer, tick } from './setup.js';
 
-/** Lets every queued microtask and the post-mutation pass run. */
-const settle = () => new Promise<void>((r) => setTimeout(r, 0));
+/** Lets every queued microtask and the post-mutation pass run, then a frame. */
+const settle = () => new Promise<void>((r) => setTimeout(r, 0)).then(tick);
 
-// Under jsdom the DOM renderer's animations finish a few hundred ms late
-// (its rAF clock and performance.now() differ), so give them room.
 const ANIMATION_WAIT = { timeout: 3000 };
 
-/** The renderer node behind an element, as the DOM renderer makes it. */
-const dom = (el: lng.ElementNode) => el.lng as unknown as lng.DOMNode;
+/** Drive frames until `check` passes. */
+const frames = (check: () => void) =>
+  v.vi.waitFor(() => {
+    tick();
+    check();
+  }, ANIMATION_WAIT);
+
+/** Drive frames until `promise` settles (an animation's waitUntilStopped). */
+async function drive<T>(promise: Promise<T>): Promise<T> {
+  let done = false;
+  void promise.then(
+    () => (done = true),
+    () => (done = true),
+  );
+  while (!done) {
+    tick();
+    await new Promise<void>((r) => setTimeout(r, 0));
+  }
+  return promise;
+}
+
+/**
+ * The store record of an element (what the 1.x renderer node, `lng`, held in
+ * 1.x): read through the store's arrays at the node's slot.
+ */
+const rec = (el: lng.ElementNode, slot = el.slot) => {
+  const nodes = core.nodes;
+  const f = slot * F_STRIDE;
+  return {
+    x: nodes.f64[f + F_X]!,
+    y: nodes.f64[f + F_Y]!,
+    width: nodes.f64[f + F_WIDTH]!,
+    height: nodes.f64[f + F_HEIGHT]!,
+    alpha: nodes.f64[f + F_ALPHA]!,
+    color: nodes.u32[slot * I_STRIDE + I_COLOR_TL]!,
+    parent: nodes.i32[slot * I_STRIDE + I_PARENT]!,
+    src: nodes.srcs[slot],
+  };
+};
+
+// The destroy cases spy on the shared core: each spy goes after its test.
+v.afterEach(() => {
+  v.vi.restoreAllMocks();
+});
+
+/** How many times `core.destroySlot` destroyed `slot`. */
+const destroyedTimes = (
+  spy: v.MockInstance<typeof core.destroySlot>,
+  slot: number,
+) => spy.mock.calls.filter((call) => call[0] === slot).length;
 
 // Child ids, with the empty text nodes Solid uses as placeholders shown as
 // '#text' (they are children too: code walking children must skip them).
@@ -116,21 +177,18 @@ v.describe(
         v.expect(readInHandler).toBe('/b');
         v.expect(row.children[0]).toBe(tile);
 
-        // Today data props stay on the ElementNode: they are not forwarded to
-        // the renderer node (a renderer node could take an unknown name as
-        // a field of its own).
-        v.expect((tile.lng as unknown as Record<string, unknown>).item).toBe(
-          undefined,
-        );
+        // Today data props stay on the ElementNode, as fields of its own:
+        // they are not renderer state (2.0: the node is the renderer's handle).
+        v.expect(Object.prototype.hasOwnProperty.call(tile, 'item')).toBe(true);
         dispose();
       },
     );
   },
 );
 
-v.describe('Nodes: el.lng is the raw renderer node, with props applied', () => {
+v.describe('Nodes: the store record of a node, with props applied', () => {
   v.test(
-    'a rendered view and text expose their renderer node through .lng',
+    'a rendered view and text are the renderer handles of their store records (1.x: their renderer node)',
     () => {
       let parent!: lng.ElementNode;
       let el!: lng.ElementNode;
@@ -152,19 +210,20 @@ v.describe('Nodes: el.lng is the raw renderer node, with props applied', () => {
         </view>
       ));
 
-      v.expect(el.lng).toBeInstanceOf(lng.DOMNode);
-      const node = dom(el);
+      v.expect(core.nodes.handles[el.slot]).toBe(el);
+      const node = rec(el);
       v.expect(node.x).toBe(10);
       v.expect(node.y).toBe(20);
-      v.expect(node.w).toBe(100);
-      v.expect(node.h).toBe(50);
+      v.expect(node.width).toBe(100);
+      v.expect(node.height).toBe(50);
       v.expect(node.color).toBe(0xff0000ff);
       v.expect(node.alpha).toBe(0.5);
       // The renderer tree mirrors the element tree.
-      v.expect(node.parent).toBe(parent.lng);
+      v.expect(node.parent).toBe(parent.slot);
 
-      v.expect(txt.lng).toBeInstanceOf(lng.DOMNode);
-      const textNode = txt.lng as unknown as { text: string; fontSize: number };
+      v.expect(core.nodes.handles[txt.slot]).toBe(txt);
+      // The store keeps a TextState for every text slot.
+      const textNode = core.nodes.texts[txt.slot] as TextState;
       v.expect(textNode.text).toBe('Hello');
       v.expect(textNode.fontSize).toBe(30);
       dispose();
@@ -172,13 +231,13 @@ v.describe('Nodes: el.lng is the raw renderer node, with props applied', () => {
   );
 
   v.test(
-    'a write straight to el.lng reads back through the element (KeepAlive.tsx pattern)',
+    'a write straight to the store (setNow; 1.x: to the renderer node) reads back through the element (KeepAlive.tsx pattern)',
     () => {
       let el!: lng.ElementNode;
       const dispose = renderer.render(() => <view ref={el} x={10} y={20} />);
 
-      dom(el).x = 42;
-      dom(el).y = 43;
+      el.setNow('x', 42);
+      el.setNow('y', 43);
       v.expect(el.x).toBe(42);
       v.expect(el.y).toBe(43);
       dispose();
@@ -200,10 +259,10 @@ v.describe('Nodes: .animate(...).start().waitUntilStopped()', () => {
         .start()
         .waitUntilStopped();
       v.expect(done).toBeInstanceOf(Promise);
-      await done;
+      await drive(done);
 
-      v.expect(dom(el).x).toBe(100);
-      v.expect(dom(el).alpha).toBe(0.5);
+      v.expect(rec(el).x).toBe(100);
+      v.expect(rec(el).alpha).toBe(0.5);
       v.expect(el.x).toBe(100);
       v.expect(el.alpha).toBe(0.5);
       dispose();
@@ -237,10 +296,10 @@ v.describe('Nodes: direct writes from handlers reach the renderer node', () => {
 
     keys.press('Enter', 13);
     v.expect(self).toBe(el);
-    v.expect(dom(el).x).toBe(50);
-    v.expect(dom(el).y).toBe(60);
-    v.expect(dom(el).alpha).toBe(0.25);
-    v.expect(dom(el).color).toBe(0x00ff00ff);
+    v.expect(rec(el).x).toBe(50);
+    v.expect(rec(el).y).toBe(60);
+    v.expect(rec(el).alpha).toBe(0.25);
+    v.expect(rec(el).color).toBe(0x00ff00ff);
     dispose();
   });
 
@@ -268,14 +327,14 @@ v.describe('Nodes: direct writes from handlers reach the renderer node', () => {
       ));
 
       // A view with neither color nor src renders transparent.
-      v.expect(dom(plain).color).toBe(0x00000000);
+      v.expect(rec(plain).color).toBe(0x00000000);
 
       keys.press('Enter', 13);
-      v.expect(dom(plain).src).toBe('poster.png');
+      v.expect(rec(plain).src).toBe('poster.png');
       v.expect(plain.src).toBe('poster.png');
-      v.expect(dom(plain).color).toBe(0xffffffff);
-      v.expect(dom(tinted).src).toBe('tinted.png');
-      v.expect(dom(tinted).color).toBe(0x336699ff);
+      v.expect(rec(plain).color).toBe(0xffffffff);
+      v.expect(rec(tinted).src).toBe('tinted.png');
+      v.expect(rec(tinted).color).toBe(0x336699ff);
       dispose();
     },
   );
@@ -335,9 +394,7 @@ v.describe('Nodes: direct writes from handlers reach the renderer node', () => {
 
       el.updateLayout();
       v.expect(el.children.map((c) => c.x)).toEqual([0, 10]);
-      v.expect(el.children.map((c) => dom(c as lng.ElementNode).x)).toEqual([
-        0, 10,
-      ]);
+      v.expect(el.children.map((c) => rec(c).x)).toEqual([0, 10]);
       dispose();
     },
   );
@@ -413,7 +470,9 @@ v.describe('Nodes: .rendered', () => {
         'create parent rendered=true child=false',
         'create child rendered=true',
       ]);
-      v.expect(new lng.ElementNode('view').rendered).toBe(false);
+      v.expect(new lng.ElementNode(core, lng.NodeType.Element).rendered).toBe(
+        false,
+      );
 
       // Today `rendered` is not reset when the node is removed and destroyed.
       setShow(false);
@@ -439,20 +498,21 @@ v.describe('Nodes: destroy()', () => {
           </s.Show>
         </view>
       ));
-      const destroySpy = v.vi.spyOn(dom(el), 'destroy');
+      const destroySpy = v.vi.spyOn(core, 'destroySlot');
+      const slot = el.slot;
 
       setShow(false);
       s.flush();
       // Out of the element tree at once; destroyed in the post-mutation pass.
       v.expect(parent.children).not.toContain(el);
       v.expect(onDestroy).not.toHaveBeenCalled();
-      v.expect(destroySpy).not.toHaveBeenCalled();
+      v.expect(destroyedTimes(destroySpy, slot)).toBe(0);
 
       await settle();
       v.expect(onDestroy).toHaveBeenCalledTimes(1);
       v.expect(onDestroy.mock.contexts[0]).toBe(el);
       v.expect(onDestroy.mock.calls[0]).toEqual([el]);
-      v.expect(destroySpy).toHaveBeenCalledTimes(1);
+      v.expect(destroyedTimes(destroySpy, slot)).toBe(1);
       dispose();
     },
   );
@@ -495,24 +555,27 @@ v.describe('Nodes: destroy()', () => {
           <view ref={bare} />
         </view>
       ));
-      const destroySpy = v.vi.spyOn(dom(el), 'destroy');
-      const bareSpy = v.vi.spyOn(dom(bare), 'destroy');
+      const destroySpy = v.vi.spyOn(core, 'destroySlot');
+      const slot = el.slot;
+      const bareSlot = bare.slot;
 
       el.destroy();
       v.expect(onDestroy).toHaveBeenCalledTimes(1);
       v.expect(onDestroy.mock.contexts[0]).toBe(el);
       // onDestroy returned no promise, so the renderer node goes at once.
-      v.expect(destroySpy).toHaveBeenCalledTimes(1);
+      v.expect(destroyedTimes(destroySpy, slot)).toBe(1);
 
       bare.destroy();
-      v.expect(bareSpy).toHaveBeenCalledTimes(1);
+      v.expect(destroyedTimes(destroySpy, bareSlot)).toBe(1);
 
       // Today destroy() tears down the renderer node only: the ElementNode
       // stays in its parent's children until Solid removes it.
       v.expect(parent.children).toContain(el);
 
       // A node that never rendered has no renderer node to destroy.
-      v.expect(() => new lng.ElementNode('view').destroy()).not.toThrow();
+      v.expect(() =>
+        new lng.ElementNode(core, lng.NodeType.Element).destroy(),
+      ).not.toThrow();
       dispose();
     },
   );
@@ -561,11 +624,11 @@ v.describe('Nodes: onCreate and onDestroy returning a promise', () => {
         />
       ));
 
-      v.expect(dom(el).y).toBe(-100);
-      v.expect(dom(el).alpha).toBe(0);
-      await animatedIn;
-      v.expect(dom(el).y).toBe(0);
-      v.expect(dom(el).alpha).toBe(1);
+      v.expect(rec(el).y).toBe(-100);
+      v.expect(rec(el).alpha).toBe(0);
+      await drive(animatedIn);
+      v.expect(rec(el).y).toBe(0);
+      v.expect(rec(el).alpha).toBe(1);
       dispose();
     },
   );
@@ -584,16 +647,17 @@ v.describe('Nodes: onCreate and onDestroy returning a promise', () => {
           <view ref={el} onDestroy={onDestroy} />
         </s.Show>
       ));
-      const destroySpy = v.vi.spyOn(dom(el), 'destroy');
+      const destroySpy = v.vi.spyOn(core, 'destroySlot');
+      const slot = el.slot;
 
       setShow(false);
       await settle();
       v.expect(onDestroy).toHaveBeenCalledTimes(1);
-      v.expect(destroySpy).not.toHaveBeenCalled();
+      v.expect(destroyedTimes(destroySpy, slot)).toBe(0);
 
       finishExit();
       await settle();
-      v.expect(destroySpy).toHaveBeenCalledTimes(1);
+      v.expect(destroyedTimes(destroySpy, slot)).toBe(1);
       dispose();
     },
   );
@@ -613,19 +677,19 @@ v.describe('Nodes: onCreate and onDestroy returning a promise', () => {
           <view ref={el} width={10} height={10} onDestroy={animateOut} />
         </s.Show>
       ));
-      const node = dom(el);
+      const slot = el.slot;
       let atDestroy: { y: number; alpha: number } | undefined;
-      const destroy = node.destroy.bind(node);
-      v.vi.spyOn(node, 'destroy').mockImplementation(() => {
-        atDestroy = { y: node.y, alpha: node.alpha };
-        destroy();
+      const destroySlot = core.destroySlot.bind(core);
+      v.vi.spyOn(core, 'destroySlot').mockImplementation((id) => {
+        if (id === slot) {
+          const node = rec(el, slot);
+          atDestroy = { y: node.y, alpha: node.alpha };
+        }
+        destroySlot(id);
       });
 
       setShow(false);
-      await v.vi.waitFor(
-        () => v.expect(atDestroy).toBeDefined(),
-        ANIMATION_WAIT,
-      );
+      await frames(() => v.expect(atDestroy).toBeDefined());
       v.expect(atDestroy).toEqual({ y: 200, alpha: 0 });
       dispose();
     },
@@ -634,7 +698,7 @@ v.describe('Nodes: onCreate and onDestroy returning a promise', () => {
 
 v.describe('Nodes: onEvent={{ loaded }}', () => {
   v.test(
-    'a text fires loaded with (node, payload) once the DOM renderer measures it',
+    'a text fires loaded with (node, payload) once the core lays it out',
     async () => {
       let el!: lng.ElementNode;
       const loaded = v.vi.fn();
@@ -644,48 +708,73 @@ v.describe('Nodes: onEvent={{ loaded }}', () => {
         </text>
       ));
 
-      await v.vi.waitFor(() => v.expect(loaded).toHaveBeenCalled());
+      await frames(() => v.expect(loaded).toHaveBeenCalled());
       v.expect(loaded.mock.contexts[0]).toBe(el);
       const [target, payload] = loaded.mock.calls[0]!;
       v.expect(target).toBe(el);
+      // renderer 2.1: the dimensions are width and height (1.x: w and h).
       v.expect(payload).toMatchObject({
         type: 'text',
-        dimensions: { w: v.expect.any(Number), h: v.expect.any(Number) },
+        dimensions: {
+          width: v.expect.any(Number),
+          height: v.expect.any(Number),
+        },
       });
       dispose();
     },
   );
 
-  v.test(
-    'an image view fires loaded and failed from the DOM renderer image',
-    () => {
-      let el!: lng.ElementNode;
-      const loaded = v.vi.fn();
-      const failed = v.vi.fn();
-      const dispose = renderer.render(() => (
+  v.test('an image view fires loaded and failed from its texture', () => {
+    let el!: lng.ElementNode;
+    let broken!: lng.ElementNode;
+    const loaded = v.vi.fn();
+    const failed = v.vi.fn();
+    const dispose = renderer.render(() => (
+      <view>
         <view
           ref={el}
-          src="poster.png"
+          src="contract-loads.png"
           width={10}
           height={10}
           onEvent={{ loaded, failed }}
         />
-      ));
+        <view
+          ref={broken}
+          src="contract-fails.png"
+          width={10}
+          height={10}
+          onEvent={{ loaded, failed }}
+        />
+      </view>
+    ));
 
-      const img = dom(el).imgEl!;
-      img.dispatchEvent(new Event('load'));
-      v.expect(loaded).toHaveBeenCalledTimes(1);
-      v.expect(loaded.mock.contexts[0]).toBe(el);
-      v.expect(loaded.mock.calls[0]![0]).toBe(el);
-      v.expect(loaded.mock.calls[0]![1]).toMatchObject({ type: 'texture' });
+    // The headless core's loader and uploader are the test: one image
+    // loads and uploads, the other fails for good (headless: no retry).
+    tick();
+    const textures = core.textures;
+    for (let r = textures.nextQueued(); r !== NULL; r = textures.nextQueued()) {
+      if (String(textures.keys[r]).indexOf('contract-fails') !== -1) {
+        textures.failed(r, new Error('404'));
+      } else {
+        textures.decoded(r, {}, 10, 10, false);
+        textures.nextDecoded();
+        textures.uploaded(r, 400);
+      }
+    }
+    core.events.flush();
+    core.events.flush();
+    tick();
 
-      img.dispatchEvent(new Event('error'));
-      v.expect(failed).toHaveBeenCalledTimes(1);
-      v.expect(failed.mock.calls[0]![0]).toBe(el);
-      v.expect(failed.mock.calls[0]![1]).toMatchObject({ type: 'texture' });
-      dispose();
-    },
-  );
+    v.expect(loaded).toHaveBeenCalledTimes(1);
+    v.expect(loaded.mock.contexts[0]).toBe(el);
+    v.expect(loaded.mock.calls[0]![0]).toBe(el);
+    v.expect(loaded.mock.calls[0]![1]).toMatchObject({ type: 'texture' });
+
+    v.expect(failed).toHaveBeenCalledTimes(1);
+    v.expect(failed.mock.calls[0]![0]).toBe(broken);
+    v.expect(failed.mock.calls[0]![1]).toMatchObject({ type: 'texture' });
+    dispose();
+  });
 
   v.test('every onEvent entry listens on the renderer node', () => {
     let el!: lng.ElementNode;
@@ -695,7 +784,9 @@ v.describe('Nodes: onEvent={{ loaded }}', () => {
     ));
 
     const payload = { previous: 0, current: 8 };
-    dom(el).emit('inViewport', payload);
+    // The core delivers its events to the node's listeners.
+    core.events.queue(el, 'inViewport', payload);
+    core.events.flush();
     v.expect(inViewport).toHaveBeenCalledTimes(1);
     v.expect(inViewport.mock.contexts[0]).toBe(el);
     v.expect(inViewport.mock.calls[0]).toEqual([el, payload]);
@@ -733,14 +824,11 @@ v.describe('Nodes: onAnimation={{ animating, stopped }}', () => {
       v.expect(stopped).not.toHaveBeenCalled();
 
       // `stopped` is a timer for duration + delay, not the animation's own end.
-      await v.vi.waitFor(
-        () => v.expect(stopped).toHaveBeenCalledTimes(1),
-        ANIMATION_WAIT,
-      );
+      await frames(() => v.expect(stopped).toHaveBeenCalledTimes(1));
       v.expect(stopped.mock.contexts[0]).toBe(el);
       v.expect(stopped.mock.calls[0]).toEqual(['x', 100]);
 
-      await v.vi.waitFor(() => v.expect(dom(el).x).toBe(100), ANIMATION_WAIT);
+      await frames(() => v.expect(rec(el).x).toBe(100));
       dispose();
     },
   );
@@ -755,9 +843,11 @@ v.describe('Nodes: onAnimation={{ animating, stopped }}', () => {
         <view ref={el} x={0} onAnimation={{ animating, stopped }} />
       ));
 
-      await el.animate({ x: 50 }, { duration: 10 }).start().waitUntilStopped();
+      await drive(
+        el.animate({ x: 50 }, { duration: 10 }).start().waitUntilStopped(),
+      );
       await settle();
-      v.expect(dom(el).x).toBe(50);
+      v.expect(rec(el).x).toBe(50);
       v.expect(animating).not.toHaveBeenCalled();
       v.expect(stopped).not.toHaveBeenCalled();
       dispose();
@@ -844,9 +934,9 @@ v.describe('Nodes: insertChild ordering with a before anchor', () => {
   );
 
   v.test('insertChild(node, before) called directly', () => {
-    const parent = new lng.ElementNode('view');
+    const parent = new lng.ElementNode(core, lng.NodeType.Element);
     const [a, b, c, d] = ['a', 'b', 'c', 'd'].map((id) => {
-      const n = new lng.ElementNode('view');
+      const n = new lng.ElementNode(core, lng.NodeType.Element);
       n.id = id;
       return n;
     }) as [lng.ElementNode, lng.ElementNode, lng.ElementNode, lng.ElementNode];
@@ -862,7 +952,7 @@ v.describe('Nodes: insertChild ordering with a before anchor', () => {
     v.expect(ids(parent)).toEqual(['b', 'a', 'c']);
 
     // An anchor that is not a child appends.
-    parent.insertChild(d, new lng.ElementNode('view'));
+    parent.insertChild(d, new lng.ElementNode(core, lng.NodeType.Element));
     v.expect(ids(parent)).toEqual(['b', 'a', 'c', 'd']);
   });
 });

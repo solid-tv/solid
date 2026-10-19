@@ -1,4 +1,8 @@
-import { ElementNode } from '../src/core/elementNode.ts';
+import { RendererCore } from '@solidtv/renderer';
+import { ElementNode } from '../src/core/node/ElementNode.ts';
+import { NodeType } from '../src/core/nodeTypes.ts';
+
+const core = new RendererCore({ appWidth: 1920, appHeight: 1080 });
 import calculateFlex from '../src/core/flex.ts';
 import {
   describe,
@@ -21,7 +25,10 @@ function createTestElement(
 ): ElementNode {
   const nodeTypeName =
     initialProps.nodeType === 'textNode' ? 'text' : 'element';
-  const node = new ElementNode(nodeTypeName);
+  const node = new ElementNode(
+    core,
+    nodeTypeName === 'text' ? NodeType.TextNode : NodeType.Element,
+  );
 
   // Assign all properties. The ElementNode's own setters will handle lng delegation.
   for (const key in initialProps) {
