@@ -142,6 +142,7 @@ export default defineConfig({
     __emitBoundsEvents__: false,
     __enableCompressedTextures__: false,
     __renderTextBatching__: true,
+    // Arm A's tree (e63c88d) still reads it in src/core/env.ts; arm C does not.
     SOLIDTV_DOM_RENDERING: false,
     __BENCH_ARM__: JSON.stringify(arm),
     __BENCH_RENDERER_MAJOR__: rendererMajor,

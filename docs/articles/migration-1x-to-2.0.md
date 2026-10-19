@@ -335,7 +335,13 @@ its replacement.
 
 Types that went with them: `Effects`, `StyleEffects`, `RenderedNode` (every
 node reads numbers now), `IntrinsicNodeProps`, `IntrinsicNodeStyleProps` and
-`IntrinsicTextNodeStyleProps` (use `NodeProps`, `NodeStyles` and `TextStyles`).
+`IntrinsicTextNodeStyleProps` (use `NodeProps`, `NodeStyles` and `TextStyles`;
+`NodeStyles` is also the replacement for `Effects` and `StyleEffects`).
+`AnyFunction` is now `(this: never, ...args: never[]) => unknown`: it still
+constrains `chainFunctions` and accepts every function, but a value typed
+`AnyFunction` can no longer be called, and unannotated lambdas in an
+all-lambda `chainFunctions` call are contextually typed `never`. `isArray` is
+`isArray(item): item is unknown[]` (it was `any[]`).
 `createRawShaderAccessor` and `shaderAccessor` are no longer exported. The
 `endValue` parameter of an `onAnimation` handler is named `value` (the
 animating handler gets the value written, the stopped handler the value at the

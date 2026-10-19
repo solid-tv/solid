@@ -1,4 +1,8 @@
-import { type NodeProps, RendererMain } from '@solidtv/solid';
+import {
+  type NodeProps,
+  type RendererCore,
+  type RendererMain,
+} from '@solidtv/solid';
 import { createSignal } from 'solid-js';
 
 const fpsStyle = {
@@ -81,19 +85,22 @@ function updateMemoryInfo(renderer: RendererMain) {
 }
 
 let frameCount = 0;
-export function setupFPS(root: { renderer: RendererMain }) {
-  root.renderer.on('fpsUpdate', (target: RendererMain, fpsData: number | { fps: number }) => {
-    const fps = typeof fpsData === 'number' ? fpsData : fpsData.fps;
-    // ignore really low fps which occur on page loads
-    if (fps > 5) {
-      calcFps(fps);
-      if (frameCount % 10 === 0) {
-        updateMemoryInfo(target);
-        frameCount = 0;
+export function setupFPS(root: { renderer: RendererCore }) {
+  root.renderer.on(
+    'fpsUpdate',
+    (target: RendererMain, fpsData: number | { fps: number }) => {
+      const fps = typeof fpsData === 'number' ? fpsData : fpsData.fps;
+      // ignore really low fps which occur on page loads
+      if (fps > 5) {
+        calcFps(fps);
+        if (frameCount % 10 === 0) {
+          updateMemoryInfo(target);
+          frameCount = 0;
+        }
+        frameCount++;
       }
-      frameCount++;
-    }
-  });
+    },
+  );
 
   root.renderer.on(
     'renderUpdate',

@@ -68,6 +68,7 @@ async function bundle(entry, index) {
     root,
     configFile: false,
     logLevel: 'warn',
+    // SOLIDTV_DOM_RENDERING: arm A's tree (e63c88d) still reads it; arm C does not.
     define: { __DEV__: false, SOLIDTV_DOM_RENDERING: false },
     plugins: [
       solidPlugin({

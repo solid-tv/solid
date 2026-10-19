@@ -51,7 +51,7 @@ Run a single test file: `npx vitest tests/flex.spec.ts`
 ### Build-Time Globals
 
 - `SOLIDTV_DISABLE_SHADERS` — disables shader processing
-- `__DEV__` — development mode flag
+- Dev-only code (logging, warnings) checks `isDev` in `src/core/env.ts`, which reads `import.meta.env.DEV`; `__DEV__` is not read by `src/`
 
 ### Entry Points (package exports)
 

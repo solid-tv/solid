@@ -151,7 +151,7 @@ These are found in the Renderer and applicable to all nodes:
 - `alpha`: The alpha opacity of the Node, ranging from `0` (transparent) to `1` (opaque), default is `1`.
 - `autosize`: When enabled, the Node resizes to the intrinsic dimensions of its texture once that texture loads, default is `false`. It only applies to nodes with a texture (`src`) — it does not size a container to its children, and it is a no-op on `<text>` nodes. Use flex to size containers.
 - `clipping`: Prevents drawing outside the Node's bounds, default is `false`.
-- `color`: The color of the Node in 0xRRGGBBAA format, default is `0xffffffff` (opaque white).
+- `color`: The color of the Node in 0xRRGGBBAA format, default is `0x00000000` (transparent).
 - `colorTop`: The color of the Node's top edge for gradient rendering.
 - `colorBottom`: The color of the Node's bottom edge for gradient rendering.
 - `colorLeft`: The color of the Node's left edge for gradient rendering.
@@ -232,7 +232,6 @@ The following props are aliases to help with layout and shaders:
 - `holePunch`: HolePunchProps
 - `linearGradient`: LinearGradientProps
 - `radialGradient`: RadialGradientProps
-- `radialProgress`: RadialProgressEffectProps
 - `margin`: number | [number, number] | [number, number, number] | [number, number, number, number]
 - `marginBottom`: number
 - `marginLeft`: number

@@ -9,7 +9,8 @@ import type {
   NodeStyles,
   TextStyles,
 } from '@solidtv/solid';
-import { useFocusManager } from '@solidtv/solid/primitives';
+import { renderer } from '@solidtv/solid';
+import { setupFPS, useFocusManager } from '@solidtv/solid/primitives';
 import type { KeyMap as PrimitivesKeyMap } from '@solidtv/solid/primitives';
 
 // --- Types: augmentable with `declare module "@solidtv/solid"` -------------
@@ -79,6 +80,31 @@ export function elementNodeSurface(el: ElementNode) {
   // @ts-expect-error -- shadow takes the shadow shader's props
   el.shadow = { blur: 'big' };
   return [width, alpha, shadow, unknown, w, h, lng, effects, worldX];
+}
+
+// The renderer delivers six events to a node: each is an `onEvent` key.
+export function onEventNames() {
+  const ok = (
+    <view
+      onEvent={{
+        loaded() {},
+        failed() {},
+        freed() {},
+        inViewport() {},
+        outOfViewport() {},
+        renderable(_node, e) {
+          const isRenderable: boolean | undefined = e?.isRenderable;
+          return isRenderable;
+        },
+      }}
+    />
+  );
+  return ok;
+}
+
+// The documented call: the app's `renderer` (a RendererCore) in an object.
+export function setupFPSCall() {
+  setupFPS({ renderer });
 }
 
 export function nodePropsAugmentation() {

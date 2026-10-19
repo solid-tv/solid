@@ -191,6 +191,7 @@ type EventPayloadMap = {
   freed: Event;
   inViewport: lngr.NodeViewportPayload;
   outOfViewport: lngr.NodeViewportPayload;
+  renderable: lngr.NodeRenderablePayload;
 };
 
 type NodeEvents = keyof EventPayloadMap;
