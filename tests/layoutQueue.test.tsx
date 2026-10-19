@@ -449,6 +449,46 @@ describe('post-mutation scheduling', () => {
   });
 });
 
+describe('post-mutation scheduling: the animation track', () => {
+  it('a text layout prop the animation track writes (writeProp, inside the frame) schedules the pass in-frame; an app write does not', async () => {
+    const reprocess = vi
+      .spyOn(core, 'reprocessUpdates')
+      .mockImplementation(() => {});
+    let t!: lng.ElementNode;
+    let last!: lng.ElementNode;
+    const dispose = renderer.render(() => (
+      <view display="flex" gap={10}>
+        <text ref={t} {...MOCK}>
+          Hello
+        </text>
+        <view ref={last} width={50} height={50} />
+      </view>
+    ));
+    await settle();
+    expect(last.x).toBe(60); // 5 * 10 + 10
+
+    // An app write: the microtask alone.
+    t.fontSize = 15; // 12 per glyph
+    expect(reprocess).not.toHaveBeenCalled();
+    await settle();
+    expect(last.x).toBe(70); // 5 * 12 + 10
+    expect(reprocess).not.toHaveBeenCalled();
+
+    // The track's write, as from core.step(): the pass runs in this frame.
+    t.writeProp('fontSize', 25); // 20 per glyph
+    expect(reprocess).toHaveBeenCalledTimes(1);
+    const cb = reprocess.mock.calls[0]![0];
+    expect(typeof cb).toBe('function');
+    // The core runs it after the walk, before the draw.
+    cb!();
+    expect(last.x).toBe(110); // 5 * 20 + 10
+    // A store prop the track writes on a text schedules nothing.
+    t.writeProp('alpha', 0.5);
+    expect(reprocess).toHaveBeenCalledTimes(1);
+    dispose();
+  });
+});
+
 describe('text measurement in the layout phase', () => {
   it('stops re-measuring after 16 sweeps of texts that never settle, warns once, and leaves later runs working', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});

@@ -93,11 +93,14 @@ export function schedulePostMutation(): void {
 /**
  * Also runs the post-mutation pass inside the core's current or next update,
  * after its walk and before the draw, so what it writes is drawn in that
- * frame. For handlers the core calls between its walks (`loaded`): an
- * autosize node's, a text's while its font loads. No core before
- * createRenderer (a node built in a unit test): the microtask alone runs it.
+ * frame. For what the core raises inside its own frame: the handlers it
+ * calls between its walks (`loaded`: an autosize node's, a text's while its
+ * font loads) and the animation track's writes of a text's layout props
+ * (`writeProp`, from `step()`, before the walk). App mutations stay
+ * microtask-only. No core before createRenderer (a node built in a unit
+ * test): the microtask alone runs it.
  */
-function schedulePostMutationInFrame(): void {
+export function schedulePostMutationInFrame(): void {
   schedulePostMutation();
   if (postMutationInFrame || core === undefined) {
     return;
@@ -472,8 +475,7 @@ function measureText(t: ElementNode): boolean {
  */
 export function autosizeLoaded(node: ElementNode): void {
   const m = node._text;
-  const parent = node.parent;
-  if (m === undefined || parent === undefined || node._detached) {
+  if (m === undefined) {
     return;
   }
   const w = node.width;
@@ -481,8 +483,14 @@ export function autosizeLoaded(node: ElementNode): void {
   if (w === m.w && h === m.h) {
     return;
   }
+  // Recorded even while removed, as 1.8's closure did: a parent it joins
+  // again compares with the size it has now.
   m.w = w;
   m.h = h;
+  const parent = node.parent;
+  if (parent === undefined || node._detached) {
+    return;
+  }
   enqueueLayout(parent);
   schedulePostMutationInFrame();
 }

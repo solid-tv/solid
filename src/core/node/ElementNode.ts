@@ -83,6 +83,7 @@ import { installTextAccessors, writeTextNumber } from './textProps.js';
 import { destroy, insertChild, removeChild } from './lifecycle.js';
 import {
   deferFocus,
+  schedulePostMutationInFrame,
   setFocus,
   updateLayout,
   type TextMeasure,
@@ -1168,6 +1169,16 @@ export class ElementNode implements SlotOwner {
     // store props and the numeric text props (a name outside both falls
     // through setNow's default).
     this.setNow(name as StoreProp | TextNumberProp, value);
+    // The track writes from the core's step(), inside the frame: a text
+    // layout prop it changed (the measure is due) is measured and its
+    // container laid out in this frame, after the walk, not in a microtask
+    // after the draw (siblings would be placed for the previous size).
+    if (this._type === NodeType.TextNode) {
+      const m = this._text;
+      if (m !== undefined && m.due) {
+        schedulePostMutationInFrame();
+      }
+    }
   }
 
   /**

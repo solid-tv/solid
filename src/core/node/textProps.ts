@@ -46,11 +46,12 @@ import {
 // the write changes: `relayoutText` for a prop the layout reads, `reboxText`
 // for a prop that only places the block (contain, verticalAlign, offsetY);
 // a relayout also queues the text for Solid's measure before its container's
-// flex (`textLayoutDirty`, postMutation.ts). On a `<view>` they land in `_textProps` and draw nothing (B20). Every
-// setter returns on a destroyed node and records the write in `_set`, on
-// both kinds. An `undefined` write is the renderer's default for the prop,
-// as the renderer's TextNode setters have it (a style undo writes it), and
-// clears the `_set` byte: no value is not a value the app set.
+// flex (`textLayoutDirty`, postMutation.ts). On a `<view>` they land in
+// `_textProps` and draw nothing (B20). Every setter returns on a destroyed
+// node and records the write in `_set`, on both kinds. An `undefined` write
+// is the renderer's default for the prop, as the renderer's TextNode setters
+// have it (a style undo writes it), and clears the `_set` byte: no value is
+// not a value the app set.
 //
 // Written out, one accessor per prop, for the same reason as accessors.ts:
 // each keeps its own inline cache and no keyed store goes through one site.
