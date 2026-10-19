@@ -249,10 +249,11 @@ export const printFocusHistory = (count: number): void => {
  * through the focus-path logic.
  */
 export const setActiveElementCore = (elm: ElementNode) => {
-  const prev = activeElement();
-  if (elm === prev) return;
-  updateFocusPath(elm, prev);
-  recordFocusHistory(elm, prev);
+  // No local: terser inlines this single-use function into its caller, and a
+  // block-scoped local there would make it an IIFE (a closure per change).
+  // updateFocusPath hands back the previous element for the history.
+  if (elm === activeElement()) return;
+  recordFocusHistory(elm, updateFocusPath(elm, activeElement()));
   // Reset key attribution so programmatic focus changes show '—' for key fields
   _pendingHistoryKey.keyPressed = undefined;
   _pendingHistoryKey.mappedKey = undefined;
@@ -268,15 +269,31 @@ export const [focusPath, setFocusPath] = createSignal<ElementNode[]>([], {
   ownedWrite: true,
 });
 
+// The new path is built here, leaf first, then published as an exact-size
+// copy: the signal's value must be a fresh array per change, since readers
+// keep it. A focus callback that calls setActiveElementCore re-enters
+// updateFocusPath; the inner change builds into its own array.
+const pathBuffer: ElementNode[] = [];
+let updatingPath = false;
+
+// The path publishFocusPath writes, so the owner's run takes no closure.
+let pathToPublish: ElementNode[] = [];
+const publishFocusPath = (): void => {
+  setFocusPath(pathToPublish);
+};
+
+/** Returns `prevFocusedElm`, for the history. */
 const updateFocusPath = (
   currentFocusedElm: ElementNode,
   prevFocusedElm: ElementNode | undefined,
-) => {
+): ElementNode | undefined => {
   let current: ElementNode | undefined = currentFocusedElm;
-  // fp escapes through the focusPath signal, so it must be a fresh array; the
-  // membership test below runs on paths of a handful of elements every single
-  // keypress, where a linear scan beats allocating and hashing a Set.
-  const fp: ElementNode[] = [];
+  const nested = updatingPath;
+  updatingPath = true;
+  // The membership test below runs on paths of a handful of elements every
+  // single keypress, where a linear scan beats allocating and hashing a Set.
+  const fp: ElementNode[] = nested ? [] : pathBuffer;
+  let length = 0;
   while (current) {
     if (
       !current.states.has(Config.focusStateKey) ||
@@ -297,9 +314,12 @@ const updateFocusPath = (
         current,
       );
     }
-    fp.push(current);
+    fp[length++] = current;
     current = current.parent;
   }
+  // Never 0 (the focused element is on it): a length of 0 would drop the
+  // array's store.
+  fp.length = length;
 
   const prevFp = focusPath();
   for (let i = 0; i < prevFp.length; i++) {
@@ -317,16 +337,26 @@ const updateFocusPath = (
     }
   }
 
+  updatingPath = nested;
+  pathToPublish = fp.slice();
   if (Config.focusDebug) {
-    addFocusDebug(prevFp, fp);
+    addFocusDebug(prevFp, pathToPublish);
   }
 
-  _signalWrapper(() => setFocusPath(fp));
+  _signalWrapper(publishFocusPath);
   // Solid 2.0 defers signal writes to a microtask, but the focus path has to
   // be visible to the very next key event — on a TV a keypress can land
   // immediately after a focus change, and handleKeyEvents bails out on an
   // empty path. Settle the write here so key handling stays synchronous.
   flush();
+  return prevFocusedElm;
+};
+
+// The element useFocusManager's Config.setActiveElement publishes, so the
+// owner's run takes no closure per change.
+let publishedElement: ElementNode | undefined;
+const publishActiveElement = (): void => {
+  setActiveElementSignal(publishedElement);
 };
 
 let lastGlobalKeyPressTime = 0;
@@ -709,8 +739,10 @@ export const useFocusManager = (
   // Drive the active-element signal inside this owner so its effect subscribers
   // have a parent for cleanup. Consumers replacing the focus manager can wire
   // Config.setActiveElement themselves instead of calling useFocusManager.
-  Config.setActiveElement = (elm) =>
-    ownerContext(() => setActiveElementSignal(elm));
+  Config.setActiveElement = (elm) => {
+    publishedElement = elm;
+    runWithOwner(owner, publishActiveElement);
+  };
 
   // One listener per event type, run inside the owner like ownerContext,
   // with no closure per event.

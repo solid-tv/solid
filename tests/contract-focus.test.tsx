@@ -10,6 +10,7 @@ import {
   type ElementNode,
   activeElement as coreActiveElement,
   setActiveElement,
+  setActiveElementCore,
 } from '@solidtv/solid';
 import { activeElement, focusPath, Row } from '@solidtv/solid/primitives';
 import { flush, mount, recorder } from './contract-focus-helpers.js';
@@ -389,6 +390,55 @@ v.describe('contract: focusPath', () => {
       v.expect(focusPath()).toEqual([n.A, n.P1, n.G, renderer.rootNode]);
       await focus(n.C);
       v.expect(focusPath()).toEqual([n.C, n.P2, n.G, renderer.rootNode]);
+      dispose();
+    },
+  );
+
+  v.it(
+    'each change publishes a fresh array; a path kept from an earlier change keeps its entries',
+    async () => {
+      const { n, dispose } = await mountTree();
+      const first = focusPath();
+      await focus(n.C);
+      const second = focusPath();
+      v.expect(second).not.toBe(first);
+      v.expect(first).toEqual([n.A, n.P1, n.G, renderer.rootNode]);
+      await focus(n.B);
+      v.expect(second).toEqual([n.C, n.P2, n.G, renderer.rootNode]);
+      dispose();
+    },
+  );
+
+  v.it(
+    'a focus change made from an onFocus callback builds its own path (the outer path is intact)',
+    async () => {
+      const n = {} as Record<'G' | 'P1' | 'A' | 'B' | 'P2' | 'C', ElementNode>;
+      let redirect = true;
+      // P2 gains focus after C is on the new path: its onFocus re-enters.
+      const { dispose } = await mount(() => (
+        <view id="G" ref={n.G}>
+          <view id="P1" ref={n.P1}>
+            <view id="A" ref={n.A} autofocus />
+            <view id="B" ref={n.B} />
+          </view>
+          <view
+            id="P2"
+            ref={n.P2}
+            onFocus={() => {
+              if (redirect) {
+                redirect = false;
+                setActiveElementCore(n.B);
+              }
+            }}
+          >
+            <view id="C" ref={n.C} />
+          </view>
+        </view>
+      ));
+      await focus(n.C);
+      v.expect(activeElement()).toBe(n.C);
+      v.expect(focusPath()).toEqual([n.C, n.P2, n.G, renderer.rootNode]);
+      v.expect(hasFocusState(n.B)).toBe(false);
       dispose();
     },
   );
