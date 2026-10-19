@@ -163,8 +163,35 @@ export function updateLayout(node: ElementNode): void {
     return;
   }
 
-  const flexChanged = node.display === 'flex' && calculateFlex(node);
+  const isFlex = node.display === 'flex';
+  let flexChanged = isFlex && calculateFlex(node);
   layoutQueue.delete(node);
+
+  if (isFlex && node._containsFlexGrow === true) {
+    // This pass changed its children's sizes: lay out the flex ones again,
+    // directly, so they do not queue this container back through their
+    // own size. If one of them resized, lay this container out once more.
+    let childResized = false;
+    for (let i = 0; i < children.length; i++) {
+      const c = children[i]!;
+      // A TextNode may be a child (`children` types it out).
+      if ((c as SolidNode)._type !== NodeType.Text && c.display === 'flex') {
+        if (calculateFlex(c)) {
+          childResized = true;
+        }
+        const childLayout = c.onLayout;
+        if (typeof childLayout === 'function') {
+          childLayout.call(c, c);
+        }
+      }
+    }
+    if (childResized && calculateFlex(node)) {
+      flexChanged = true;
+    }
+    node._containsFlexGrow = null;
+  }
+
+  // One onLayout, after the final layout (the children's included).
   const onLayout = node.onLayout;
   // Truthy when it changed something: the parent is laid out too.
   const onLayoutChanged: unknown =
@@ -172,22 +199,5 @@ export function updateLayout(node: ElementNode): void {
 
   if ((flexChanged || onLayoutChanged) && node.parent !== undefined) {
     queueLayout(node.parent);
-  }
-
-  if (node._containsFlexGrow === true) {
-    // Need to reprocess children
-    for (let i = 0; i < children.length; i++) {
-      const c = children[i]!;
-      // A TextNode may be a child (`children` types it out).
-      if ((c as SolidNode)._type !== NodeType.Text && c.display === 'flex') {
-        // calculating directly to prevent infinite loops recalculating parents
-        calculateFlex(c);
-        const childLayout = c.onLayout;
-        if (typeof childLayout === 'function') {
-          childLayout.call(c, c);
-        }
-        queueLayout(node);
-      }
-    }
   }
 }

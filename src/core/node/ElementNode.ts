@@ -182,6 +182,10 @@ export class ElementNode implements SlotOwner {
   declare _flexY: number | undefined;
   declare _flexWidth: number | undefined;
   declare _flexHeight: number | undefined;
+  /** flexGrow record (B8): the size before the last growth. */
+  declare _flexBase: number | undefined;
+  /** flexGrow record (B8): the size the last growth wrote. */
+  declare _flexGrown: number | undefined;
   declare _queueDelete: number | undefined;
   declare _layoutDepth: number | undefined;
   // The flex props: plain fields, never renderer state.
@@ -465,6 +469,8 @@ export class ElementNode implements SlotOwner {
     this._flexY = undefined;
     this._flexWidth = undefined;
     this._flexHeight = undefined;
+    this._flexBase = undefined;
+    this._flexGrown = undefined;
     this._queueDelete = undefined;
     this._layoutDepth = undefined;
     this.display = undefined;

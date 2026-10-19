@@ -327,9 +327,8 @@ describe('Flexbox Layout (calculateFlex)', () => {
       calculateFlex(parent);
       expect(child1.width).toBe(150); // Unchanged
       expect(child2.width).toBe(150); // Unchanged
-      expect(console.warn).toHaveBeenCalledWith(
-        'No available space for flex-grow items to expand, or items overflow.',
-      );
+      // 5.3: flex.ts warned here (in production too) until 1.7.
+      expect(console.warn).not.toHaveBeenCalled();
     });
 
     it('should not apply flexGrow if only one child', () => {
