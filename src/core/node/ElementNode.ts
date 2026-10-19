@@ -74,7 +74,11 @@ export type NodeEventHandler = (node: ElementNode, data: unknown) => void;
 /** The `onEvent` prop: a listener per event name (`loaded`, `failed`, ...). */
 export type OnEventProp = Record<string, NodeEventHandler | undefined>;
 
-/** An `onAnimation` handler: the prop's name and its end value. */
+/**
+ * An `onAnimation` handler: the prop's name and a value. `animating` gets
+ * the value written (the target); `stopped` gets the prop's value at the
+ * stop: the target on completion, where it stopped if interrupted.
+ */
 export type AnimationEventHandler = (
   this: ElementNode,
   name: string,

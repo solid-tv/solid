@@ -209,10 +209,44 @@ describe('ElementNode shader props', () => {
   });
 
   it('a border write with no transition, or before attach, lands at once', () => {
-    const { node } = rendered();
+    const { core, node } = rendered();
     node.transition = { x: { duration: 10 } };
     node.border = { width: 4, color: RED };
     expect(node._shader!.props['border-width']).toEqual([4, 4, 4, 4]);
+
+    // Before attach, under a border transition: the bag takes it at once,
+    // nothing animates, and attach builds the shader from it.
+    const detached = new ElementNode(core, NodeType.Element);
+    detached.transition = { border: { duration: 10 } };
+    detached.borderRadius = 8;
+    detached.border = { width: 3, color: RED };
+    expect(detached._shader).toBeUndefined();
+    expect(detached._shaderProps!['border-width']).toBe(3);
+    expect(core.nodes.animations[detached.slot]).toBeNull();
+    attach(detached);
+    expect(typeName(detached)).toBe('roundedWithBorder');
+    expect(detached._shader!.props['border-width']).toEqual([3, 3, 3, 3]);
+    expect(detached._shader!.props['border-color']).toBe(RED);
+  });
+
+  it('transition true animates a border with the default settings', () => {
+    const saved = Config.animationSettings;
+    Config.animationSettings = { duration: 20 };
+    try {
+      const { core, node } = rendered();
+      node.transition = true;
+      node.border = { width: 4, color: RED };
+      expect(typeName(node)).toBe('roundedWithBorder');
+      expect(node._shader!.props['border-width']).toEqual([0, 0, 0, 0]);
+      core.step(10);
+      core.update();
+      expect(node._shader!.props['border-width']).toEqual([2, 2, 2, 2]);
+      core.step(10);
+      core.update();
+      expect(node._shader!.props['border-width']).toEqual([4, 4, 4, 4]);
+    } finally {
+      Config.animationSettings = saved;
+    }
   });
 
   it('shadow and border give roundedWithShadow and roundedWithBorderWithShadow', () => {
