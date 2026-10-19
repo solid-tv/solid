@@ -38,7 +38,10 @@ function createVirtual<T>(
 ) {
   const isRow = component === lngp.Row;
   const axis = isRow ? 'x' : 'y';
-  const [cursor, setCursor] = s.createSignal(props.selected ?? 0);
+  // ownedWrite: written from key handlers, which the focus manager runs inside the render owner (Solid 2.0 rejects such writes otherwise).
+  const [cursor, setCursor] = s.createSignal(props.selected ?? 0, {
+    ownedWrite: true,
+  });
   const bufferSize = s.createMemo(() => props.bufferSize || 2);
   const scrollIndex = s.createMemo(() => props.scrollIndex || 0);
   const items = s.createMemo(() => props.each || []);
@@ -49,7 +52,9 @@ function createVirtual<T>(
     !!props.skipInitialWrap &&
     !!props.wrap &&
     (props.selected ?? 0) === 0;
-  const [wrapUnlocked, setWrapUnlocked] = s.createSignal(!initiallyLocked);
+  const [wrapUnlocked, setWrapUnlocked] = s.createSignal(!initiallyLocked, {
+    ownedWrite: true,
+  });
   const effectiveWrap = s.createMemo(() => !!props.wrap && wrapUnlocked());
 
   const selected = () => {
@@ -91,7 +96,9 @@ function createVirtual<T>(
     atStart: true,
     cursor: 0,
   };
-  const [sliceItems, setSliceItems] = s.createSignal<T[]>(noItems);
+  const [sliceItems, setSliceItems] = s.createSignal<T[]>(noItems, {
+    ownedWrite: true,
+  });
   // Set when the window's items change, cleared by the row's next flex pass
   // (onLayout): the window shift lays the row out only if nothing else has.
   let layoutPending = false;

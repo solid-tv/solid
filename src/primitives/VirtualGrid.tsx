@@ -32,28 +32,44 @@ export type VirtualGridProps<T> = lng.NewOmit<lngp.RowProps, 'children'> & {
 
 export function VirtualGrid<T>(props: VirtualGridProps<T>): s.Element {
   const bufferSize = () => props.buffer ?? 2;
-  const [ cursor, setCursor ] = s.createSignal(props.selected ?? 0);
+  // ownedWrite: written from key handlers, which the focus manager runs inside the render owner (Solid 2.0 rejects such writes otherwise).
+  const [ cursor, setCursor ] = s.createSignal(props.selected ?? 0, { ownedWrite: true });
   const items = s.createMemo(() => props.each || []);
   const itemCount = () => items().length;
   const itemsPerRow = () => props.columns;
   const numberOfRows = () => props.rows ?? 1;
   const totalVisibleItems = () => itemsPerRow() * numberOfRows();
 
-  const start = s.createMemo(() => {
+  // The window for a cursor. Solid 2.0 batches signal writes, so right after
+  // setCursor() the start/end memos still see the previous cursor: a press
+  // that just moved derives its window from the new cursor through these.
+  function windowStart(c: number) {
     const perRow = itemsPerRow();
-    const newRowIndex = Math.floor(cursor() / perRow);
+    const newRowIndex = Math.floor(c / perRow);
     const rawStart = newRowIndex * perRow - bufferSize() * perRow;
     return Math.max(0, rawStart);
-  });
+  }
 
-  const end = s.createMemo(() => {
+  function windowEnd(c: number) {
     const perRow = itemsPerRow();
-    const newRowIndex = Math.floor(cursor() / perRow);
+    const newRowIndex = Math.floor(c / perRow);
     const rawEnd = (newRowIndex + bufferSize()) * perRow + totalVisibleItems();
     return Math.min(items().length, rawEnd);
-  });
+  }
 
-  const [slice, setSliceSignal] = s.createSignal(items().slice(start(), end()));
+  const start = s.createMemo(() => windowStart(cursor()));
+  const end = s.createMemo(() => windowEnd(cursor()));
+
+  // The cursor as last written. An effect that runs in the same flush as the
+  // write (the items effect after updateSelected moved the cursor) reads it
+  // here, since cursor() and the start/end memos still hold the old value.
+  let cursorNow = s.untrack(cursor);
+  function moveCursor(c: number) {
+    cursorNow = c;
+    setCursor(c);
+  }
+
+  const [slice, setSliceSignal] = s.createSignal(items().slice(start(), end()), { ownedWrite: true });
   // Set when the window's items change, cleared by the grid's next flex pass
   // (onLayout): a window shift lays the grid out only if nothing else has.
   let layoutPending = false;
@@ -118,20 +134,22 @@ export function VirtualGrid<T>(props: VirtualGridProps<T>): s.Element {
     const newRowIndex = Math.floor(idx / perRow);
     const prevRowIndex = Math.floor((lastIdx || 0) / perRow);
     const prevStart = start();
+    const newCursor = prevStart + idx;
 
-    setCursor(prevStart + idx);
+    moveCursor(newCursor);
     if (newRowIndex === prevRowIndex) return;
 
-    setSlice(items().slice(start(), end()));
+    const newStart = windowStart(newCursor);
+    setSlice(items().slice(newStart, windowEnd(newCursor)));
 
     // this.selected is relative to the slice
     // and it doesn't get corrected automatically after children change
-    const idxCorrection = prevStart - start();
+    const idxCorrection = prevStart - newStart;
     if (lastIdx) lastIdx += idxCorrection;
     idx += idxCorrection;
     this.selected += idxCorrection;
 
-    if (props.onEndReachedThreshold !== undefined && cursor() >= items().length - props.onEndReachedThreshold) {
+    if (props.onEndReachedThreshold !== undefined && newCursor >= items().length - props.onEndReachedThreshold) {
       props.onEndReached?.();
     }
 
@@ -207,8 +225,8 @@ export function VirtualGrid<T>(props: VirtualGridProps<T>): s.Element {
       }
       applySelected(active, lastSelected);
     } else {
-      setCursor(selected);
-      setSlice(items().slice(start(), end()));
+      moveCursor(selected);
+      setSlice(items().slice(windowStart(selected), windowEnd(selected)));
 
       queueMicrotask(() => {
         if (layoutPending) viewRef.updateLayout();
@@ -240,15 +258,15 @@ export function VirtualGrid<T>(props: VirtualGridProps<T>): s.Element {
       }
 
       if (gridItems.length === 0) {
-        setCursor(0);
+        moveCursor(0);
         cachedSelected = undefined;
         setSlice([]);
-      } else if (cursor() >= itemCount()) {
+      } else if (cursorNow >= itemCount()) {
         updateSelected([Math.max(0, itemCount() - 1)]);
       } else if (prevSize === 0) {
         updateSelected([0]);
       } else {
-        setSlice(items().slice(start(), end()));
+        setSlice(items().slice(windowStart(cursorNow), windowEnd(cursorNow)));
       }
 
       return gridItems.length;

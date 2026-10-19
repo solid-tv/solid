@@ -439,11 +439,10 @@ v.describe('VirtualGrid', () => {
       v.expect(state()).toEqual(['g25', 4, 25, -60, '21-29', 1]);
       // B15 (1.7): lastIdx is the previous child index, in the previous
       // window (g10 was child 4 of 6-17), not the data index (25) the
-      // `selected` prop wrote to the node.
-      v.expect(calls).toEqual([
-        [4, 'g25', 4],
-        [4, 'g25', 4],
-      ]);
+      // `selected` prop wrote to the node. Under 1.x this fired twice (the
+      // items effect and the selected effect each applied it); 2.0 applies
+      // the pending selection once.
+      v.expect(calls).toEqual([[4, 'g25', 4]]);
 
       await press('ArrowRight');
       v.expect(state()).toEqual(['g26', 5, 26, -60, '21-29', 1]);

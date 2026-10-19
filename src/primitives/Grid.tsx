@@ -26,7 +26,8 @@ export interface GridProps<T> extends NewOmit<NodeProps, 'children'> {
 
 export function Grid<T>(props: GridProps<T>): JSXElement {
 
-  const [focusedIndex, setFocusedIndex] = createSignal(0);
+  // ownedWrite: written from key handlers, which the focus manager runs inside the render owner (Solid 2.0 rejects such writes otherwise).
+  const [focusedIndex, setFocusedIndex] = createSignal(0, { ownedWrite: true });
   const baseColumns = 4;
 
   createTrackedEffect(() => {
@@ -45,11 +46,14 @@ export function Grid<T>(props: GridProps<T>): JSXElement {
   const totalHeight = createMemo(() => itemHeight() + (props.itemOffset ?? 0));
   const rows = createMemo(() => Math.ceil(props.items.length / columns()));
 
-  function focus() {
-    const focusedElm = gridRef.children[focusedIndex()];
+  // Solid 2.0 batches signal writes, so focusedIndex() still returns the old
+  // index right after setFocusedIndex(). Callers that just moved pass the new
+  // index explicitly instead of reading it back.
+  function focus(index: number = focusedIndex()) {
+    const focusedElm = gridRef.children[index];
     if (focusedElm instanceof ElementNode && !hasFocus(focusedElm)) {
       focusedElm.setFocus();
-      props.onSelectedChanged?.call(gridRef, focusedIndex(), gridRef, focusedElm);
+      props.onSelectedChanged?.call(gridRef, index, gridRef, focusedElm);
       return true;
     }
     return false;
@@ -57,40 +61,46 @@ export function Grid<T>(props: GridProps<T>): JSXElement {
 
   function moveFocus(delta: number) {
     if (!props.items || props.items.length === 0) return false;
-    const newIndex = focusedIndex() + delta;
+    const current = focusedIndex();
+    const newIndex = current + delta;
+    let target: number;
 
     if (newIndex >= 0 && newIndex < props.items.length) {
-      setFocusedIndex(newIndex);
+      target = newIndex;
     } else if (props.looping) {
       const totalItems = props.items.length;
       if (delta < 0) {
         const lastRowStart = totalItems - (totalItems % columns()) || totalItems - columns();
-        const target = lastRowStart + (focusedIndex() % columns());
-        setFocusedIndex(target < totalItems ? target : target - columns());
+        const wrapped = lastRowStart + (current % columns());
+        target = wrapped < totalItems ? wrapped : wrapped - columns();
       } else {
-        setFocusedIndex(focusedIndex() % columns());
+        target = current % columns();
       }
     } else {
       return false;
     }
-    return focus();
+    setFocusedIndex(target);
+    return focus(target);
   };
 
   function handleHorizontalFocus(delta: number) {
     if (!props.items || props.items.length === 0) return false;
-    const newIndex = focusedIndex() + delta;
-    const isWithinRow = Math.floor(newIndex / columns()) === Math.floor(focusedIndex() / columns());
+    const current = focusedIndex();
+    const newIndex = current + delta;
+    const isWithinRow = Math.floor(newIndex / columns()) === Math.floor(current / columns());
+    let target: number;
 
     if (newIndex >= 0 && newIndex < props.items.length && isWithinRow) {
-      setFocusedIndex(newIndex);
+      target = newIndex;
     } else if (props.looping) {
-      const rowStart = Math.floor(focusedIndex() / columns()) * columns();
+      const rowStart = Math.floor(current / columns()) * columns();
       const rowEnd = Math.min(rowStart + columns() - 1, props.items.length - 1);
-      setFocusedIndex(delta > 0 ? (newIndex > rowEnd ? rowStart : newIndex) : newIndex < rowStart ? rowEnd : newIndex);
+      target = delta > 0 ? (newIndex > rowEnd ? rowStart : newIndex) : newIndex < rowStart ? rowEnd : newIndex;
     } else {
       return false;
     }
-    return focus();
+    setFocusedIndex(target);
+    return focus(target);
   };
 
   // Handle focus when items change - important for autofocus
@@ -110,7 +120,7 @@ export function Grid<T>(props: GridProps<T>): JSXElement {
 
       const clampedIndex = Math.max(0, Math.min(index, props.items.length - 1));
       setFocusedIndex(clampedIndex);
-      queueMicrotask(focus);
+      queueMicrotask(() => focus(clampedIndex));
     });
   }
 
