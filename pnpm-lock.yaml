@@ -26,9 +26,6 @@ importers:
       '@solidjs/web':
         specifier: 2.0.0-rc.1
         version: 2.0.0-rc.1(solid-js@2.0.0-rc.1)
-      '@solidtv/renderer':
-        specifier: ^2.0.6
-        version: 2.0.6
     devDependencies:
       '@lightningtv/vite-hex-transform':
         specifier: ^1.1.0
@@ -42,6 +39,9 @@ importers:
       '@solidjs/testing-library':
         specifier: ^0.8.10
         version: 0.8.10(@solidjs/router@2.0.0-next.17(@solidjs/web@2.0.0-rc.1(solid-js@2.0.0-rc.1))(solid-js@2.0.0-rc.1))(solid-js@2.0.0-rc.1)
+      '@solidtv/renderer':
+        specifier: link:../renderer
+        version: link:../renderer
       '@vitest/browser-playwright':
         specifier: ^4.1.6
         version: 4.1.6(playwright@1.56.1)(vite@8.0.13(@types/node@22.14.1)(esbuild@0.27.7)(jiti@2.7.0)(terser@5.51.2)(yaml@2.8.4))(vitest@4.1.6)
@@ -1348,10 +1348,6 @@ packages:
     resolution: {integrity: sha512-wLuxGtQUxaFfqxqhIUJGGSZB/upd3GzokQRFJKvO7biJGNZLAws+eanMqi0kK2Amg+MZZ7aVyPPKydf8mzdhkg==}
     peerDependencies:
       solid-js: ^2.0.0-rc.1
-
-  '@solidtv/renderer@2.0.6':
-    resolution: {integrity: sha512-G16KPGKFiWP6W3xcA3Dur394AHqM3er++sgFLdg8w1ywYewhMwHIMtmGascCEAuRyDuUSvI6TlC33X2OIa0N+Q==}
-    engines: {node: '>= 18.0.0', npm: '>= 10.0.0', pnpm: '>= 10.17.0'}
 
   '@standard-schema/spec@1.1.0':
     resolution: {integrity: sha512-l2aFy5jALhniG5HgqrD6jXLi/rUWrKvqN/qJx6yoJsgKhblVd+iqqU4RCXavm/jPityDo5TCvKMnpjKnOriy0w==}
@@ -3775,8 +3771,6 @@ snapshots:
       seroval: 1.5.6
       seroval-plugins: 1.5.6(seroval@1.5.6)
       solid-js: 2.0.0-rc.1
-
-  '@solidtv/renderer@2.0.6': {}
 
   '@standard-schema/spec@1.1.0': {}
 

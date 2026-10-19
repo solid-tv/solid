@@ -1,4 +1,4 @@
-import type { RendererMainSettings } from '@solidtv/renderer';
+import type { RendererOptions } from './renderer.js';
 import type {
   TextProps,
   AnimationSettings,
@@ -10,10 +10,7 @@ import {
   convertToShader as defaultConvertToShader,
 } from './elementNode.js';
 import { setActiveElement as setActiveElementSignal } from './activeElement.js';
-import {
-  DomRendererMainSettings,
-  IRendererShader,
-} from './dom-renderer/domRendererTypes.js';
+import { IRendererShader } from './dom-renderer/domRendererTypes.js';
 
 /**
   STATIC LIGHTNING CONFIGURATION \
@@ -54,13 +51,8 @@ export interface Config {
   animationSettings?: AnimationSettings;
   animationsEnabled: boolean;
   fontSettings: Partial<TextProps>;
-  /**
-   * Renderer settings. Typed as an intersection rather than a union so a single
-   * config object can be authored without narrowing per renderer: which fields
-   * are honored depends on the active renderer (WebGL/Canvas vs DOM), and every
-   * field is optional.
-   */
-  rendererOptions?: Partial<RendererMainSettings> & DomRendererMainSettings;
+  /** Renderer settings: what `startRenderer` takes. */
+  rendererOptions?: RendererOptions;
   /**
    * Hook the focus manager calls to publish the active element. Defaults to
    * writing the {@link activeElement} signal directly; a custom focus manager

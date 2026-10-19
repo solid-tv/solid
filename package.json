@@ -94,6 +94,7 @@
     "@solid-devtools/debugger": "^0.28.1",
     "@solidjs/router": "2.0.0-next.17",
     "@solidjs/testing-library": "^0.8.10",
+    "@solidtv/renderer": "link:../renderer",
     "@vitest/browser-playwright": "^4.1.6",
     "babel-preset-solid": "2.0.0-rc.1",
     "husky": "^9.1.7",
@@ -120,7 +121,7 @@
   },
   "peerDependencies": {
     "@solidjs/router": "^2.0.0-next.17",
-    "@solidtv/renderer": "^2.0.6",
+    "@solidtv/renderer": "^2.1.0-0",
     "solid-js": "^2.0.0-rc.1"
   },
   "peerDependenciesMeta": {
