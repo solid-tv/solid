@@ -49,6 +49,7 @@ import {
 } from '@solidtv/renderer';
 import { NodeType } from '../nodeTypes.js';
 import type { ElementNode } from './ElementNode.js';
+import { textLayoutDirty } from './postMutation.js';
 import {
   DEFAULT,
   EMPTY_TEXTURE_OPTIONS,
@@ -126,6 +127,7 @@ export function writeTextWidth(node: ElementNode, v: number): void {
   if (t.maxWidth !== v) {
     t.maxWidth = v;
     relayoutText(nodes, s);
+    textLayoutDirty(node);
   }
 }
 
@@ -144,6 +146,7 @@ export function writeTextHeight(node: ElementNode, v: number): void {
   if (t.maxHeight !== v) {
     t.maxHeight = v;
     relayoutText(nodes, s);
+    textLayoutDirty(node);
   }
 }
 

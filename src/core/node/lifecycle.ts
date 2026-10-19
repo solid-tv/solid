@@ -7,6 +7,7 @@ import {
 } from '@solidtv/renderer';
 import { Config } from '../config.js';
 import { isDev } from '../env.js';
+import { getArrayValue } from '../flex.js';
 import { NodeType } from '../nodeTypes.js';
 import {
   SET_COLOR,
@@ -22,10 +23,13 @@ import {
 } from './defaults.js';
 import type { ElementNode, SolidNode } from './ElementNode.js';
 import {
-  addToLayoutQueue,
+  autosizeLoaded,
   enqueueDelete,
+  enqueueLayout,
   queueLayout,
   schedulePostMutation,
+  TextMeasure,
+  textLayoutDirty,
 } from './postMutation.js';
 import { readKey, writeKey } from './styles.js';
 import { applyTextSizeAtAttach } from './textProps.js';
@@ -104,6 +108,8 @@ export function insertChild(
     return;
   }
   node.parent = parent;
+  // In a child list again (removeChild marked it detached).
+  node._detached = false;
 
   // Link: draw before the next element sibling (B19), else last.
   const slot = node.slot;
@@ -172,7 +178,9 @@ export function removeChild(parent: ElementNode, node: SolidNode): void {
   // The store link stays until the node is destroyed (destroySlot unlinks
   // it, at the delete flush or after onDestroy's promise), so that an exit
   // animation (onDestroy, onRemove's fade) is drawn, as today. Inserted
-  // again first, insertChild relinks it at its anchor.
+  // again first, insertChild relinks it at its anchor. `parent` stays too:
+  // `_detached` says it has no place there.
+  node._detached = true;
   if (node.onRemove !== undefined) {
     node.onRemove.call(node, node);
   }
@@ -209,15 +217,6 @@ export function cleanChildren(node: ElementNode): void {
 let fontTemplate: string[] | undefined;
 let fontTemplateValues: unknown[] | undefined;
 
-/** `_layoutOnLoad`: a laid-out text or a loaded image lays its parent out. */
-function layoutParentOnLoad(node: ElementNode): void {
-  schedulePostMutation();
-  const parent = node.parent;
-  if (parent !== undefined) {
-    parent.updateLayout();
-  }
-}
-
 /**
  * Attach `node`, then its children, outside-in (spec 5.2): resolve its
  * parent-dependent defaults for the props the app did not set (spec 5.3),
@@ -229,7 +228,7 @@ function layoutParentOnLoad(node: ElementNode): void {
 export function attach(node: ElementNode): void {
   const parent = node.parent!;
   if (parent.requiresLayout()) {
-    addToLayoutQueue(parent);
+    enqueueLayout(parent);
   }
 
   if (node.rendered) {
@@ -317,23 +316,35 @@ export function attach(node: ElementNode): void {
           node.setNow('maxLines', 99);
         }
       }
+      // B11: the margin on the far side, resolved as flex resolves it (a
+      // side, else the margin array).
       if (node.maxWidth === 0) {
-        node.setNow('maxWidth', parentWidth - node.x);
-      }
-      if (contain === 'both' && node.maxHeight === 0) {
-        node.setNow('maxHeight', parentHeight - node.y);
-      } else if (node.maxLines === 1 && node.maxHeight === 0) {
         node.setNow(
-          'maxHeight',
-          set[SET_LINE_HEIGHT] === 1 ? node.lineHeight : node.fontSize,
+          'maxWidth',
+          parentWidth -
+            node.x -
+            (node.marginRight || getArrayValue(node.margin, 1)),
         );
       }
-    }
-    if (
-      parent.requiresLayout() &&
-      (node.maxWidth === 0 || node.maxHeight === 0)
-    ) {
-      node.on('loaded', layoutParentOnLoad);
+      if (contain === 'both' && node.maxHeight === 0) {
+        node.setNow(
+          'maxHeight',
+          parentHeight -
+            node.y -
+            (node.marginBottom || getArrayValue(node.margin, 2)),
+        );
+      } else if (node.maxLines === 1 && node.maxHeight === 0) {
+        // B12: a lineHeight at or below 3 multiplies the font size, as the
+        // renderer reads it.
+        const lineHeight = set[SET_LINE_HEIGHT] === 1 ? node.lineHeight : 0;
+        const fontSize = node.fontSize;
+        node.setNow(
+          'maxHeight',
+          lineHeight > 0 && lineHeight <= 3
+            ? lineHeight * fontSize
+            : lineHeight || fontSize,
+        );
+      }
     }
   } else if (set[SET_TEXTURE] === 0) {
     // Not a texture: the size of the parent less the offset, for a size
@@ -397,8 +408,21 @@ export function attach(node: ElementNode): void {
     Config.convertToShader(node);
   }
 
-  if (node.autosize && parent.requiresLayout()) {
-    node.on('loaded', layoutParentOnLoad);
+  if (parent.requiresLayout()) {
+    if (node._type === NodeType.TextNode) {
+      // Its parent's flex reads its size: it is measured in the post-mutation
+      // pass, before the parent's layout (queued above) and before the
+      // frame, instead of waiting for the walk's `loaded`. Not here: a write
+      // later in this tick would measure it twice.
+      textLayoutDirty(node);
+    } else if (node.autosize) {
+      // The size its parent sees now: a load that keeps it lays nothing out.
+      const m = new TextMeasure();
+      m.w = node.width;
+      m.h = node.height;
+      node._text = m;
+      node.on('loaded', autosizeLoaded);
+    }
   }
 
   if (node.onCreate !== undefined) {

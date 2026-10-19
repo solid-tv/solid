@@ -17,6 +17,7 @@ import {
 import { Config } from '../config.js';
 import { NodeType } from '../nodeTypes.js';
 import type { ElementNode } from './ElementNode.js';
+import { textLayoutDirty } from './postMutation.js';
 import {
   SET_CONTAIN,
   SET_FONT_FAMILY,
@@ -43,8 +44,9 @@ import {
 // The text props (spec 5.1). On a `<text>` each accessor writes the
 // renderer's TextState (`core.nodes.texts[slot]`) and tells the renderer what
 // the write changes: `relayoutText` for a prop the layout reads, `reboxText`
-// for a prop that only places the block (contain, verticalAlign, offsetY).
-// On a `<view>` they land in `_textProps` and draw nothing (B20). Every
+// for a prop that only places the block (contain, verticalAlign, offsetY);
+// a relayout also queues the text for Solid's measure before its container's
+// flex (`textLayoutDirty`, postMutation.ts). On a `<view>` they land in `_textProps` and draw nothing (B20). Every
 // setter returns on a destroyed node and records the write in `_set`, on
 // both kinds. An `undefined` write is the renderer's default for the prop,
 // as the renderer's TextNode setters have it (a style undo writes it), and
@@ -139,6 +141,7 @@ function writeFontFamily(node: ElementNode): void {
   }
   t.fontFamily = family;
   relayoutText(nodes, s);
+  textLayoutDirty(node);
 }
 
 /**
@@ -182,6 +185,7 @@ export function writeTextNumber(
       return;
   }
   relayoutText(nodes, s);
+  textLayoutDirty(node);
 }
 
 /**
@@ -253,6 +257,7 @@ export function installTextAccessors(proto: ElementNode): void {
         }
         t.text = v;
         relayoutText(nodes, s);
+        textLayoutDirty(this);
       },
     },
 
@@ -282,6 +287,7 @@ export function installTextAccessors(proto: ElementNode): void {
         }
         t.fontSize = v;
         relayoutText(nodes, s);
+        textLayoutDirty(this);
       },
     },
 
@@ -311,6 +317,7 @@ export function installTextAccessors(proto: ElementNode): void {
         }
         t.fontStyle = v;
         relayoutText(nodes, s);
+        textLayoutDirty(this);
       },
     },
 
@@ -340,6 +347,7 @@ export function installTextAccessors(proto: ElementNode): void {
         }
         t.lineHeight = v;
         relayoutText(nodes, s);
+        textLayoutDirty(this);
       },
     },
 
@@ -369,6 +377,7 @@ export function installTextAccessors(proto: ElementNode): void {
         }
         t.textAlign = v;
         relayoutText(nodes, s);
+        textLayoutDirty(this);
       },
     },
 
@@ -456,6 +465,7 @@ export function installTextAccessors(proto: ElementNode): void {
         }
         t.maxWidth = v;
         relayoutText(nodes, s);
+        textLayoutDirty(this);
       },
     },
 
@@ -485,6 +495,7 @@ export function installTextAccessors(proto: ElementNode): void {
         }
         t.maxHeight = v;
         relayoutText(nodes, s);
+        textLayoutDirty(this);
       },
     },
 
@@ -514,6 +525,7 @@ export function installTextAccessors(proto: ElementNode): void {
         }
         t.maxLines = v;
         relayoutText(nodes, s);
+        textLayoutDirty(this);
       },
     },
 
@@ -543,6 +555,7 @@ export function installTextAccessors(proto: ElementNode): void {
         }
         t.overflowSuffix = v;
         relayoutText(nodes, s);
+        textLayoutDirty(this);
       },
     },
 
@@ -572,6 +585,7 @@ export function installTextAccessors(proto: ElementNode): void {
         }
         t.wordBreak = v;
         relayoutText(nodes, s);
+        textLayoutDirty(this);
       },
     },
 
@@ -601,6 +615,7 @@ export function installTextAccessors(proto: ElementNode): void {
         }
         t.letterSpacing = v;
         relayoutText(nodes, s);
+        textLayoutDirty(this);
       },
     },
 

@@ -7,6 +7,7 @@ import {
   type RendererMainSettings,
 } from '@solidtv/renderer';
 import { isDev } from './env.js';
+import { fontFailed, fontLoaded } from './fontLoaded.js';
 
 /**
  * Settings for `startRenderer`: the core's settings, the GL loop's options of
@@ -62,7 +63,13 @@ interface PendingFontLoad {
 const pendingFontLoads: PendingFontLoad[] = [];
 
 function attachFonts(fonts: FontLoadOptions[]): Promise<unknown> {
-  return Promise.all(fonts.map((font) => core.loadFont(font)));
+  // Loaded: Solid measures the texts that waited for a font, those under a
+  // hidden or out-of-bounds ancestor too (no walk visits them, so they hear
+  // no `loaded`). Failed: the same, so destroyed ones leave the list; the
+  // rejection goes on.
+  return Promise.all(
+    fonts.map((font) => core.loadFont(font).then(fontLoaded, fontFailed)),
+  );
 }
 
 function flushPendingFonts() {

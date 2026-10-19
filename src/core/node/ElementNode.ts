@@ -81,7 +81,12 @@ import {
 } from './styles.js';
 import { installTextAccessors, writeTextNumber } from './textProps.js';
 import { destroy, insertChild, removeChild } from './lifecycle.js';
-import { deferFocus, setFocus, updateLayout } from './postMutation.js';
+import {
+  deferFocus,
+  setFocus,
+  updateLayout,
+  type TextMeasure,
+} from './postMutation.js';
 
 /** The two kinds of ElementNode: a `<view>` and a `<text>`. */
 export type ElementKind = typeof NodeType.Element | typeof NodeType.TextNode;
@@ -188,6 +193,18 @@ export class ElementNode implements SlotOwner {
   declare _flexGrown: number | undefined;
   declare _queueDelete: number | undefined;
   declare _layoutDepth: number | undefined;
+  /** In the post-mutation pass's layout queue (postMutation.ts). */
+  declare _layoutQueued: boolean;
+  /**
+   * What the post-mutation pass's text measurement knows of this `<text>`
+   * (or this autosize node's size); made the first time it is measured.
+   */
+  declare _text: TextMeasure | undefined;
+  /**
+   * Taken out of its parent's children: `parent` stays until it is inserted
+   * again or destroyed, but it has no place there.
+   */
+  declare _detached: boolean;
   // The flex props: plain fields, never renderer state.
   declare display: 'flex' | 'block' | undefined;
   declare direction: 'ltr' | 'rtl' | undefined;
@@ -473,6 +490,9 @@ export class ElementNode implements SlotOwner {
     this._flexGrown = undefined;
     this._queueDelete = undefined;
     this._layoutDepth = undefined;
+    this._layoutQueued = false;
+    this._text = undefined;
+    this._detached = false;
     this.display = undefined;
     this.direction = undefined;
     this.flexDirection = undefined;
