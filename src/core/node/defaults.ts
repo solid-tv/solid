@@ -157,21 +157,16 @@ export const DEFAULT: Readonly<Record<StoreProp, number>> = Object.freeze({
 export const EMPTY_TEXTURE_OPTIONS: TextureOptions = Object.freeze({});
 
 /**
- * A frozen copy of `entries` (and `more`) without a prototype: a lookup by any string
+ * A frozen copy of `entries` without a prototype: a lookup by any string
  * (`toString`, `constructor`) finds only the entries.
  */
 function lookupTable<T>(
   entries: Readonly<Record<string, T>>,
-  more?: Readonly<Record<string, T>>,
 ): Readonly<Record<string, T | undefined>> {
+  // No prototype: Object.create(null) is typed `any`; the table holds T.
   const table = Object.create(null) as Record<string, T | undefined>;
   for (const key in entries) {
     table[key] = entries[key];
-  }
-  if (more !== undefined) {
-    for (const key in more) {
-      table[key] = more[key];
-    }
   }
   return Object.freeze(table);
 }
@@ -245,22 +240,3 @@ export const SET_INDEX: Readonly<Record<string, number | undefined>> =
     holePunch: SET_HOLE_PUNCH,
     shader: SET_SHADER,
   });
-
-/**
- * What style undo writes for a store prop with no theme or style value
- * (spec 5.3): DEFAULT for the numeric ones, and for the others what their
- * setter takes for "none" (`undefined` would turn clipping on). A text prop
- * is not here: its setter takes `undefined` as the TextState default.
- */
-export const UNDO_DEFAULT: Readonly<Record<string, unknown>> =
-  lookupTable<unknown>(
-    {
-      clipping: false,
-      rtl: null,
-      data: null,
-      src: null,
-      texture: null,
-      textureOptions: null,
-    },
-    DEFAULT,
-  );

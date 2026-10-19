@@ -8,6 +8,7 @@ import { F_ALPHA, F_STRIDE, RendererCore } from '@solidtv/renderer';
 import { Config } from '../src/core/config.js';
 import type { DollarString } from '../src/core/intrinsicTypes.js';
 import { ElementNode } from '../src/core/node/ElementNode.js';
+import { SET_BORDER, SET_BORDER_TOP } from '../src/core/node/defaults.js';
 import { convertToShader } from '../src/core/node/shader.js';
 import { setStateBlock } from '../src/core/node/styles.js';
 import { NodeType } from '../src/core/nodeTypes.js';
@@ -260,8 +261,38 @@ v.describe('style, theme and the undo of a $state block', () => {
       v.expect(node._shader!.shaderType).toBe(defaultShaderRoundedWithBorder);
       node.states.remove('$focus');
       v.expect(node._shader).toBeUndefined();
+      // No value is not a value the app set.
+      v.expect(node._set[SET_BORDER]).toBe(0);
     },
   );
+
+  v.test(
+    'undo with no base value of a border side keeps what the border names',
+    () => {
+      const node = view(headless());
+      node.style = {
+        borderRadius: 8,
+        border: { width: 2, color: RED },
+        $focus: { borderTop: { width: 4, color: BLUE } },
+      };
+      attach(node);
+      node.states.add('$focus');
+      v.expect(node._shader!.props['border-color']).toBe(BLUE);
+      node.states.remove('$focus');
+      // The side's keys are cleared; the border's colour is merged back.
+      v.expect(node.borderTop).toBeUndefined();
+      v.expect(node._shader!.props['border-color']).toBe(RED);
+      v.expect(node._shader!.props['border-width']).toEqual([2, 2, 2, 2]);
+      v.expect(node._set[SET_BORDER_TOP]).toBe(0);
+    },
+  );
+
+  v.test('a JSX prop written undefined does not block the style value', () => {
+    const node = view(headless());
+    (node as { color: number | undefined }).color = undefined;
+    node.style = { color: RED };
+    v.expect(node.color).toBe(RED);
+  });
 
   v.test('a $focus border width swaps the shader on focus and blur', () => {
     const node = view(headless());

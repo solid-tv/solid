@@ -2,8 +2,6 @@ import { isDev } from '../env.js';
 import type { DollarString } from '../intrinsicTypes.js';
 import type States from '../states.js';
 import type { ElementNode } from './ElementNode.js';
-import { UNDO_DEFAULT } from './defaults.js';
-import { resetShaderProp, type RoundedKey } from './shader.js';
 import { compileBlock, type BlockPlan } from './stylePlan.js';
 
 // `style`, `theme`, `states` and the `$state` blocks (1.8's port, spec 5.7
@@ -33,21 +31,6 @@ export const BORDER_FAMILY: Readonly<Record<string, boolean | undefined>> = {
   borderLeft: true,
 };
 
-/**
- * The shader-prop bag key of each rounded-family style key: an `undefined`
- * write of one takes the prop off the shader (resetShaderProp).
- */
-const ROUNDED_KEY: Readonly<Record<string, RoundedKey | undefined>> = {
-  border: 'border',
-  borderTop: 'borderTop',
-  borderRight: 'borderRight',
-  borderBottom: 'borderBottom',
-  borderLeft: 'borderLeft',
-  shadow: 'shadow',
-  borderRadius: 'rounded',
-  rounded: 'rounded',
-};
-
 function isObject(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object';
 }
@@ -60,18 +43,10 @@ export function readKey(node: ElementNode, key: string): unknown {
 
 /**
  * Write a style or `$state` key through the node's setter for it. An
- * `undefined` rounded-family prop (border, a side, shadow, borderRadius)
- * is taken off the shader: its setter would leave the facade keys the last
- * object stood for in place.
+ * `undefined` value is "no value": each setter writes the prop's default
+ * and clears its `_set` byte (spec 5.3).
  */
 export function writeKey(node: ElementNode, key: string, value: unknown): void {
-  if (value === undefined) {
-    const bagKey = ROUNDED_KEY[key];
-    if (bagKey !== undefined) {
-      resetShaderProp(node, bagKey);
-      return;
-    }
-  }
   // A style key names a prop of the node: an accessor or a field.
   (node as unknown as Record<string, unknown>)[key] = value;
 }
@@ -87,6 +62,7 @@ export function setStateBlock(
 ): void {
   let blocks = node._stateBlocks;
   if (blocks === undefined) {
+    // No prototype: a block named like an Object method is no block.
     blocks = Object.create(null) as Record<string, unknown>;
     node._stateBlocks = blocks;
   }
@@ -145,25 +121,23 @@ export function trackKeys(
 
 /**
  * The base value undo restores: theme[key], else style[key] (pinned), else
- * the prop's default (spec 5.3): UNDO_DEFAULT for a store prop; for any
- * other key `undefined`, which a text prop's setter takes as the TextState
- * default and writeKey takes as "off the shader" for a rounded-family prop.
+ * `undefined`, which each setter takes as the prop's default (spec 5.3: the
+ * store default, the TextState default, a rounded-family prop taken off the
+ * shader), clearing its `_set` byte.
  */
 export function styleFallback(node: ElementNode, key: string): unknown {
   // Theme and style objects: their keys are strings.
   const theme = node._theme as Record<string, unknown> | undefined;
   let value = theme !== undefined ? theme[key] : undefined;
   if (value === undefined) {
+    // A style object: its keys are strings.
     const style = node._style as Record<string, unknown> | undefined;
     if (style !== undefined) {
       value = style[key];
     }
   }
-  if (value === undefined) {
-    if (isDev) {
-      console.warn('fallback style key not found: ', key);
-    }
-    value = UNDO_DEFAULT[key];
+  if (isDev && value === undefined) {
+    console.warn('fallback style key not found: ', key);
   }
   return value;
 }

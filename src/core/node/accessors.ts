@@ -176,8 +176,9 @@ export function writePlaceholderColor(
 //
 // Every setter returns on a destroyed node (slot NULL), records that the
 // app set the prop (`_set`, spec 5.3), then, for an animatable prop, lets a
-// transition take the write (`_animate`) before storing it. Every getter
-// reads DEFAULT on a destroyed node.
+// transition take the write (`_animate`) before storing it. An `undefined`
+// write is no value: the prop's default, with the `_set` byte cleared.
+// Every getter reads DEFAULT on a destroyed node.
 //
 // `this: ElementNode` on each function: Object.defineProperties types a
 // descriptor's `this` as `any`; annotating it keeps the bodies checked.
@@ -197,12 +198,18 @@ export function installAccessors(proto: ElementNode): void {
           ? DEFAULT.x
           : this.core.nodes.f64[s * F_STRIDE + F_X]!;
       },
-      set(this: ElementNode, v: number) {
+      set(this: ElementNode, v: number | undefined) {
         const s = this.slot;
         if (s === NULL) {
           return;
         }
-        this._set[SET_X] = 1;
+        // No value (undefined) is the default, and not set by the app.
+        if (v === undefined) {
+          this._set[SET_X] = 0;
+          v = DEFAULT.x;
+        } else {
+          this._set[SET_X] = 1;
+        }
         if (this._transition === undefined || !this._animate('x', v)) {
           setField(this.core.nodes, s, F_X, v, DIRTY_LOCAL);
         }
@@ -215,12 +222,18 @@ export function installAccessors(proto: ElementNode): void {
           ? DEFAULT.y
           : this.core.nodes.f64[s * F_STRIDE + F_Y]!;
       },
-      set(this: ElementNode, v: number) {
+      set(this: ElementNode, v: number | undefined) {
         const s = this.slot;
         if (s === NULL) {
           return;
         }
-        this._set[SET_Y] = 1;
+        // No value (undefined) is the default, and not set by the app.
+        if (v === undefined) {
+          this._set[SET_Y] = 0;
+          v = DEFAULT.y;
+        } else {
+          this._set[SET_Y] = 1;
+        }
         if (this._transition === undefined || !this._animate('y', v)) {
           setField(this.core.nodes, s, F_Y, v, DIRTY_LOCAL);
         }
@@ -240,12 +253,18 @@ export function installAccessors(proto: ElementNode): void {
           ? textStateOf(nodes, s).maxWidth || w
           : w;
       },
-      set(this: ElementNode, v: number) {
+      set(this: ElementNode, v: number | undefined) {
         const s = this.slot;
         if (s === NULL) {
           return;
         }
-        this._set[SET_WIDTH] = 1;
+        // No value (undefined) is the default, and not set by the app.
+        if (v === undefined) {
+          this._set[SET_WIDTH] = 0;
+          v = DEFAULT.width;
+        } else {
+          this._set[SET_WIDTH] = 1;
+        }
         if (this._transition === undefined || !this._animate('width', v)) {
           if (this._type === NodeType.TextNode) {
             writeTextWidth(this, v);
@@ -267,12 +286,18 @@ export function installAccessors(proto: ElementNode): void {
           ? textStateOf(nodes, s).maxHeight || h
           : h;
       },
-      set(this: ElementNode, v: number) {
+      set(this: ElementNode, v: number | undefined) {
         const s = this.slot;
         if (s === NULL) {
           return;
         }
-        this._set[SET_HEIGHT] = 1;
+        // No value (undefined) is the default, and not set by the app.
+        if (v === undefined) {
+          this._set[SET_HEIGHT] = 0;
+          v = DEFAULT.height;
+        } else {
+          this._set[SET_HEIGHT] = 1;
+        }
         if (this._transition === undefined || !this._animate('height', v)) {
           if (this._type === NodeType.TextNode) {
             writeTextHeight(this, v);
@@ -290,12 +315,18 @@ export function installAccessors(proto: ElementNode): void {
           ? DEFAULT.alpha
           : this.core.nodes.f64[s * F_STRIDE + F_ALPHA]!;
       },
-      set(this: ElementNode, v: number) {
+      set(this: ElementNode, v: number | undefined) {
         const s = this.slot;
         if (s === NULL) {
           return;
         }
-        this._set[SET_ALPHA] = 1;
+        // No value (undefined) is the default, and not set by the app.
+        if (v === undefined) {
+          this._set[SET_ALPHA] = 0;
+          v = DEFAULT.alpha;
+        } else {
+          this._set[SET_ALPHA] = 1;
+        }
         if (this._transition === undefined || !this._animate('alpha', v)) {
           setField(this.core.nodes, s, F_ALPHA, v, DIRTY_ALPHA);
         }
@@ -312,12 +343,18 @@ export function installAccessors(proto: ElementNode): void {
       },
       set(this: ElementNode, v: number | null | undefined) {
         const s = this.slot;
-        // No scale (null, or undefined from a style undo) is no write, as
-        // the renderer handle has it: never NaN into both axes.
-        if (s === NULL || v === null || v === undefined) {
+        // No scale (null) is no write, as the renderer handle has it: never
+        // NaN into both axes.
+        if (s === NULL || v === null) {
           return;
         }
-        this._set[SET_SCALE] = 1;
+        // No value (undefined) is the default, and not set by the app.
+        if (v === undefined) {
+          this._set[SET_SCALE] = 0;
+          v = DEFAULT.scale;
+        } else {
+          this._set[SET_SCALE] = 1;
+        }
         if (this._transition === undefined || !this._animate('scale', v)) {
           const nodes = this.core.nodes;
           setField(nodes, s, F_SCALE_X, v, DIRTY_LOCAL);
@@ -332,12 +369,18 @@ export function installAccessors(proto: ElementNode): void {
           ? DEFAULT.scaleX
           : this.core.nodes.f64[s * F_STRIDE + F_SCALE_X]!;
       },
-      set(this: ElementNode, v: number) {
+      set(this: ElementNode, v: number | undefined) {
         const s = this.slot;
         if (s === NULL) {
           return;
         }
-        this._set[SET_SCALE_X] = 1;
+        // No value (undefined) is the default, and not set by the app.
+        if (v === undefined) {
+          this._set[SET_SCALE_X] = 0;
+          v = DEFAULT.scaleX;
+        } else {
+          this._set[SET_SCALE_X] = 1;
+        }
         if (this._transition === undefined || !this._animate('scaleX', v)) {
           setField(this.core.nodes, s, F_SCALE_X, v, DIRTY_LOCAL);
         }
@@ -350,12 +393,18 @@ export function installAccessors(proto: ElementNode): void {
           ? DEFAULT.scaleY
           : this.core.nodes.f64[s * F_STRIDE + F_SCALE_Y]!;
       },
-      set(this: ElementNode, v: number) {
+      set(this: ElementNode, v: number | undefined) {
         const s = this.slot;
         if (s === NULL) {
           return;
         }
-        this._set[SET_SCALE_Y] = 1;
+        // No value (undefined) is the default, and not set by the app.
+        if (v === undefined) {
+          this._set[SET_SCALE_Y] = 0;
+          v = DEFAULT.scaleY;
+        } else {
+          this._set[SET_SCALE_Y] = 1;
+        }
         if (this._transition === undefined || !this._animate('scaleY', v)) {
           setField(this.core.nodes, s, F_SCALE_Y, v, DIRTY_LOCAL);
         }
@@ -369,12 +418,18 @@ export function installAccessors(proto: ElementNode): void {
           ? DEFAULT.rotation
           : this.core.nodes.f64[s * F_STRIDE + F_ROTATION]!;
       },
-      set(this: ElementNode, v: number) {
+      set(this: ElementNode, v: number | undefined) {
         const s = this.slot;
         if (s === NULL) {
           return;
         }
-        this._set[SET_ROTATION] = 1;
+        // No value (undefined) is the default, and not set by the app.
+        if (v === undefined) {
+          this._set[SET_ROTATION] = 0;
+          v = DEFAULT.rotation;
+        } else {
+          this._set[SET_ROTATION] = 1;
+        }
         if (this._transition === undefined || !this._animate('rotation', v)) {
           setField(this.core.nodes, s, F_ROTATION, v, DIRTY_LOCAL);
         }
@@ -389,12 +444,18 @@ export function installAccessors(proto: ElementNode): void {
           ? DEFAULT.mount
           : this.core.nodes.f64[s * F_STRIDE + F_MOUNT_X]!;
       },
-      set(this: ElementNode, v: number) {
+      set(this: ElementNode, v: number | undefined) {
         const s = this.slot;
         if (s === NULL) {
           return;
         }
-        this._set[SET_MOUNT] = 1;
+        // No value (undefined) is the default, and not set by the app.
+        if (v === undefined) {
+          this._set[SET_MOUNT] = 0;
+          v = DEFAULT.mount;
+        } else {
+          this._set[SET_MOUNT] = 1;
+        }
         if (this._transition === undefined || !this._animate('mount', v)) {
           const nodes = this.core.nodes;
           setField(nodes, s, F_MOUNT_X, v, DIRTY_LOCAL);
@@ -409,12 +470,18 @@ export function installAccessors(proto: ElementNode): void {
           ? DEFAULT.mountX
           : this.core.nodes.f64[s * F_STRIDE + F_MOUNT_X]!;
       },
-      set(this: ElementNode, v: number) {
+      set(this: ElementNode, v: number | undefined) {
         const s = this.slot;
         if (s === NULL) {
           return;
         }
-        this._set[SET_MOUNT_X] = 1;
+        // No value (undefined) is the default, and not set by the app.
+        if (v === undefined) {
+          this._set[SET_MOUNT_X] = 0;
+          v = DEFAULT.mountX;
+        } else {
+          this._set[SET_MOUNT_X] = 1;
+        }
         if (this._transition === undefined || !this._animate('mountX', v)) {
           setField(this.core.nodes, s, F_MOUNT_X, v, DIRTY_LOCAL);
         }
@@ -427,12 +494,18 @@ export function installAccessors(proto: ElementNode): void {
           ? DEFAULT.mountY
           : this.core.nodes.f64[s * F_STRIDE + F_MOUNT_Y]!;
       },
-      set(this: ElementNode, v: number) {
+      set(this: ElementNode, v: number | undefined) {
         const s = this.slot;
         if (s === NULL) {
           return;
         }
-        this._set[SET_MOUNT_Y] = 1;
+        // No value (undefined) is the default, and not set by the app.
+        if (v === undefined) {
+          this._set[SET_MOUNT_Y] = 0;
+          v = DEFAULT.mountY;
+        } else {
+          this._set[SET_MOUNT_Y] = 1;
+        }
         if (this._transition === undefined || !this._animate('mountY', v)) {
           setField(this.core.nodes, s, F_MOUNT_Y, v, DIRTY_LOCAL);
         }
@@ -447,12 +520,18 @@ export function installAccessors(proto: ElementNode): void {
           ? DEFAULT.pivot
           : this.core.nodes.f64[s * F_STRIDE + F_PIVOT_X]!;
       },
-      set(this: ElementNode, v: number) {
+      set(this: ElementNode, v: number | undefined) {
         const s = this.slot;
         if (s === NULL) {
           return;
         }
-        this._set[SET_PIVOT] = 1;
+        // No value (undefined) is the default, and not set by the app.
+        if (v === undefined) {
+          this._set[SET_PIVOT] = 0;
+          v = DEFAULT.pivot;
+        } else {
+          this._set[SET_PIVOT] = 1;
+        }
         if (this._transition === undefined || !this._animate('pivot', v)) {
           const nodes = this.core.nodes;
           setField(nodes, s, F_PIVOT_X, v, DIRTY_LOCAL);
@@ -467,12 +546,18 @@ export function installAccessors(proto: ElementNode): void {
           ? DEFAULT.pivotX
           : this.core.nodes.f64[s * F_STRIDE + F_PIVOT_X]!;
       },
-      set(this: ElementNode, v: number) {
+      set(this: ElementNode, v: number | undefined) {
         const s = this.slot;
         if (s === NULL) {
           return;
         }
-        this._set[SET_PIVOT_X] = 1;
+        // No value (undefined) is the default, and not set by the app.
+        if (v === undefined) {
+          this._set[SET_PIVOT_X] = 0;
+          v = DEFAULT.pivotX;
+        } else {
+          this._set[SET_PIVOT_X] = 1;
+        }
         if (this._transition === undefined || !this._animate('pivotX', v)) {
           setField(this.core.nodes, s, F_PIVOT_X, v, DIRTY_LOCAL);
         }
@@ -485,12 +570,18 @@ export function installAccessors(proto: ElementNode): void {
           ? DEFAULT.pivotY
           : this.core.nodes.f64[s * F_STRIDE + F_PIVOT_Y]!;
       },
-      set(this: ElementNode, v: number) {
+      set(this: ElementNode, v: number | undefined) {
         const s = this.slot;
         if (s === NULL) {
           return;
         }
-        this._set[SET_PIVOT_Y] = 1;
+        // No value (undefined) is the default, and not set by the app.
+        if (v === undefined) {
+          this._set[SET_PIVOT_Y] = 0;
+          v = DEFAULT.pivotY;
+        } else {
+          this._set[SET_PIVOT_Y] = 1;
+        }
         if (this._transition === undefined || !this._animate('pivotY', v)) {
           setField(this.core.nodes, s, F_PIVOT_Y, v, DIRTY_LOCAL);
         }
@@ -504,12 +595,18 @@ export function installAccessors(proto: ElementNode): void {
           ? DEFAULT.zIndex
           : this.core.nodes.f64[s * F_STRIDE + F_Z_INDEX]!;
       },
-      set(this: ElementNode, v: number) {
+      set(this: ElementNode, v: number | undefined) {
         const s = this.slot;
         if (s === NULL) {
           return;
         }
-        this._set[SET_Z_INDEX] = 1;
+        // No value (undefined) is the default, and not set by the app.
+        if (v === undefined) {
+          this._set[SET_Z_INDEX] = 0;
+          v = DEFAULT.zIndex;
+        } else {
+          this._set[SET_Z_INDEX] = 1;
+        }
         if (this._transition === undefined || !this._animate('zIndex', v)) {
           setZIndex(this.core.nodes, s, v);
         }
@@ -525,12 +622,18 @@ export function installAccessors(proto: ElementNode): void {
           ? DEFAULT.color
           : this.core.nodes.u32[s * I_STRIDE + I_COLOR_TL]!;
       },
-      set(this: ElementNode, v: number) {
+      set(this: ElementNode, v: number | undefined) {
         const s = this.slot;
         if (s === NULL) {
           return;
         }
-        this._set[SET_COLOR] = 1;
+        // No value (undefined) is the default, and not set by the app.
+        if (v === undefined) {
+          this._set[SET_COLOR] = 0;
+          v = DEFAULT.color;
+        } else {
+          this._set[SET_COLOR] = 1;
+        }
         if (this._transition === undefined || !this._animate('color', v)) {
           const nodes = this.core.nodes;
           setColor(nodes, s, I_COLOR_TL, v);
@@ -547,12 +650,18 @@ export function installAccessors(proto: ElementNode): void {
           ? DEFAULT.colorTop
           : this.core.nodes.u32[s * I_STRIDE + I_COLOR_TL]!;
       },
-      set(this: ElementNode, v: number) {
+      set(this: ElementNode, v: number | undefined) {
         const s = this.slot;
         if (s === NULL) {
           return;
         }
-        this._set[SET_COLOR_TOP] = 1;
+        // No value (undefined) is the default, and not set by the app.
+        if (v === undefined) {
+          this._set[SET_COLOR_TOP] = 0;
+          v = DEFAULT.colorTop;
+        } else {
+          this._set[SET_COLOR_TOP] = 1;
+        }
         if (this._transition === undefined || !this._animate('colorTop', v)) {
           const nodes = this.core.nodes;
           setColor(nodes, s, I_COLOR_TL, v);
@@ -567,12 +676,18 @@ export function installAccessors(proto: ElementNode): void {
           ? DEFAULT.colorBottom
           : this.core.nodes.u32[s * I_STRIDE + I_COLOR_BL]!;
       },
-      set(this: ElementNode, v: number) {
+      set(this: ElementNode, v: number | undefined) {
         const s = this.slot;
         if (s === NULL) {
           return;
         }
-        this._set[SET_COLOR_BOTTOM] = 1;
+        // No value (undefined) is the default, and not set by the app.
+        if (v === undefined) {
+          this._set[SET_COLOR_BOTTOM] = 0;
+          v = DEFAULT.colorBottom;
+        } else {
+          this._set[SET_COLOR_BOTTOM] = 1;
+        }
         if (
           this._transition === undefined ||
           !this._animate('colorBottom', v)
@@ -590,12 +705,18 @@ export function installAccessors(proto: ElementNode): void {
           ? DEFAULT.colorLeft
           : this.core.nodes.u32[s * I_STRIDE + I_COLOR_TL]!;
       },
-      set(this: ElementNode, v: number) {
+      set(this: ElementNode, v: number | undefined) {
         const s = this.slot;
         if (s === NULL) {
           return;
         }
-        this._set[SET_COLOR_LEFT] = 1;
+        // No value (undefined) is the default, and not set by the app.
+        if (v === undefined) {
+          this._set[SET_COLOR_LEFT] = 0;
+          v = DEFAULT.colorLeft;
+        } else {
+          this._set[SET_COLOR_LEFT] = 1;
+        }
         if (this._transition === undefined || !this._animate('colorLeft', v)) {
           const nodes = this.core.nodes;
           setColor(nodes, s, I_COLOR_TL, v);
@@ -610,12 +731,18 @@ export function installAccessors(proto: ElementNode): void {
           ? DEFAULT.colorRight
           : this.core.nodes.u32[s * I_STRIDE + I_COLOR_TR]!;
       },
-      set(this: ElementNode, v: number) {
+      set(this: ElementNode, v: number | undefined) {
         const s = this.slot;
         if (s === NULL) {
           return;
         }
-        this._set[SET_COLOR_RIGHT] = 1;
+        // No value (undefined) is the default, and not set by the app.
+        if (v === undefined) {
+          this._set[SET_COLOR_RIGHT] = 0;
+          v = DEFAULT.colorRight;
+        } else {
+          this._set[SET_COLOR_RIGHT] = 1;
+        }
         if (this._transition === undefined || !this._animate('colorRight', v)) {
           const nodes = this.core.nodes;
           setColor(nodes, s, I_COLOR_TR, v);
@@ -630,12 +757,18 @@ export function installAccessors(proto: ElementNode): void {
           ? DEFAULT.colorTl
           : this.core.nodes.u32[s * I_STRIDE + I_COLOR_TL]!;
       },
-      set(this: ElementNode, v: number) {
+      set(this: ElementNode, v: number | undefined) {
         const s = this.slot;
         if (s === NULL) {
           return;
         }
-        this._set[SET_COLOR_TL] = 1;
+        // No value (undefined) is the default, and not set by the app.
+        if (v === undefined) {
+          this._set[SET_COLOR_TL] = 0;
+          v = DEFAULT.colorTl;
+        } else {
+          this._set[SET_COLOR_TL] = 1;
+        }
         if (this._transition === undefined || !this._animate('colorTl', v)) {
           setColor(this.core.nodes, s, I_COLOR_TL, v);
         }
@@ -648,12 +781,18 @@ export function installAccessors(proto: ElementNode): void {
           ? DEFAULT.colorTr
           : this.core.nodes.u32[s * I_STRIDE + I_COLOR_TR]!;
       },
-      set(this: ElementNode, v: number) {
+      set(this: ElementNode, v: number | undefined) {
         const s = this.slot;
         if (s === NULL) {
           return;
         }
-        this._set[SET_COLOR_TR] = 1;
+        // No value (undefined) is the default, and not set by the app.
+        if (v === undefined) {
+          this._set[SET_COLOR_TR] = 0;
+          v = DEFAULT.colorTr;
+        } else {
+          this._set[SET_COLOR_TR] = 1;
+        }
         if (this._transition === undefined || !this._animate('colorTr', v)) {
           setColor(this.core.nodes, s, I_COLOR_TR, v);
         }
@@ -666,12 +805,18 @@ export function installAccessors(proto: ElementNode): void {
           ? DEFAULT.colorBl
           : this.core.nodes.u32[s * I_STRIDE + I_COLOR_BL]!;
       },
-      set(this: ElementNode, v: number) {
+      set(this: ElementNode, v: number | undefined) {
         const s = this.slot;
         if (s === NULL) {
           return;
         }
-        this._set[SET_COLOR_BL] = 1;
+        // No value (undefined) is the default, and not set by the app.
+        if (v === undefined) {
+          this._set[SET_COLOR_BL] = 0;
+          v = DEFAULT.colorBl;
+        } else {
+          this._set[SET_COLOR_BL] = 1;
+        }
         if (this._transition === undefined || !this._animate('colorBl', v)) {
           setColor(this.core.nodes, s, I_COLOR_BL, v);
         }
@@ -684,12 +829,18 @@ export function installAccessors(proto: ElementNode): void {
           ? DEFAULT.colorBr
           : this.core.nodes.u32[s * I_STRIDE + I_COLOR_BR]!;
       },
-      set(this: ElementNode, v: number) {
+      set(this: ElementNode, v: number | undefined) {
         const s = this.slot;
         if (s === NULL) {
           return;
         }
-        this._set[SET_COLOR_BR] = 1;
+        // No value (undefined) is the default, and not set by the app.
+        if (v === undefined) {
+          this._set[SET_COLOR_BR] = 0;
+          v = DEFAULT.colorBr;
+        } else {
+          this._set[SET_COLOR_BR] = 1;
+        }
         if (this._transition === undefined || !this._animate('colorBr', v)) {
           setColor(this.core.nodes, s, I_COLOR_BR, v);
         }
@@ -704,12 +855,18 @@ export function installAccessors(proto: ElementNode): void {
           ? DEFAULT.placeholderColor
           : this.core.nodes.u32[s * I_STRIDE + I_PLACEHOLDER_COLOR]!;
       },
-      set(this: ElementNode, v: number) {
+      set(this: ElementNode, v: number | undefined) {
         const s = this.slot;
         if (s === NULL) {
           return;
         }
-        this._set[SET_PLACEHOLDER_COLOR] = 1;
+        // No value (undefined) is the default, and not set by the app.
+        if (v === undefined) {
+          this._set[SET_PLACEHOLDER_COLOR] = 0;
+          v = DEFAULT.placeholderColor;
+        } else {
+          this._set[SET_PLACEHOLDER_COLOR] = 1;
+        }
         writePlaceholderColor(this.core.nodes, s, v);
       },
     },
@@ -729,12 +886,18 @@ export function installAccessors(proto: ElementNode): void {
         }
         return (nodes.u32[s * I_STRIDE + I_STATE]! & ST_CLIPS) !== 0;
       },
-      set(this: ElementNode, v: ClippingValue) {
+      set(this: ElementNode, v: ClippingValue | undefined) {
         const s = this.slot;
         if (s === NULL) {
           return;
         }
-        this._set[SET_CLIPPING] = 1;
+        // No value is no clipping (setClipping takes undefined as on).
+        if (v === undefined) {
+          this._set[SET_CLIPPING] = 0;
+          v = false;
+        } else {
+          this._set[SET_CLIPPING] = 1;
+        }
         setClipping(this.core.nodes, s, v);
       },
     },
@@ -754,7 +917,7 @@ export function installAccessors(proto: ElementNode): void {
         if (s === NULL) {
           return;
         }
-        this._set[SET_RTL] = 1;
+        this._set[SET_RTL] = v === undefined ? 0 : 1;
         setRtl(this.core.nodes, s, v === undefined ? null : v);
       },
     },
@@ -781,7 +944,7 @@ export function installAccessors(proto: ElementNode): void {
         if (s === NULL) {
           return;
         }
-        this._set[SET_DATA] = 1;
+        this._set[SET_DATA] = v === undefined ? 0 : 1;
         setData(this.core.nodes, s, v === undefined ? null : v);
       },
     },
@@ -803,7 +966,7 @@ export function installAccessors(proto: ElementNode): void {
         if (s === NULL) {
           return;
         }
-        this._set[SET_SRC] = 1;
+        this._set[SET_SRC] = v === undefined ? 0 : 1;
         if (typeof v === 'string') {
           setSrc(this.core, s, v);
           // "No colour" is a top-left corner of 0, what `!this.color` read
@@ -836,7 +999,7 @@ export function installAccessors(proto: ElementNode): void {
         if (s === NULL) {
           return;
         }
-        this._set[SET_TEXTURE] = 1;
+        this._set[SET_TEXTURE] = v === undefined ? 0 : 1;
         setTexture(this.core, s, v === undefined ? null : v);
       },
     },
@@ -858,7 +1021,7 @@ export function installAccessors(proto: ElementNode): void {
         if (s === NULL) {
           return;
         }
-        this._set[SET_TEXTURE_OPTIONS] = 1;
+        this._set[SET_TEXTURE_OPTIONS] = v === undefined ? 0 : 1;
         setTextureOptions(this.core, s, v === undefined ? null : v);
       },
     },
@@ -880,13 +1043,20 @@ export function installAccessors(proto: ElementNode): void {
       get(this: ElementNode): boolean {
         return this.alpha === 0;
       },
-      set(this: ElementNode, v: boolean) {
+      set(this: ElementNode, v: boolean | undefined) {
+        if (v === undefined) {
+          // No value: alpha's default, and alpha not set by the app.
+          this.alpha = DEFAULT.alpha;
+          this._set[SET_ALPHA] = 0;
+          return;
+        }
         this.alpha = v ? 0 : 1;
       },
     },
     // Placement requests, resolved once against the parent's size by
-    // attach (into x/y and mountX/mountY), not reactive afterwards. They
-    // mark the props they resolve to as set.
+    // attach (into x/y and mountX/mountY), not reactive afterwards. A value
+    // marks the props they resolve to as set; undefined clears the request
+    // and marks nothing.
     right: {
       get(this: ElementNode): number | undefined {
         return this._right;
@@ -896,8 +1066,10 @@ export function installAccessors(proto: ElementNode): void {
           return;
         }
         this._right = v;
-        this._set[SET_X] = 1;
-        this._set[SET_MOUNT_X] = 1;
+        if (v !== undefined) {
+          this._set[SET_X] = 1;
+          this._set[SET_MOUNT_X] = 1;
+        }
       },
     },
     bottom: {
@@ -909,8 +1081,10 @@ export function installAccessors(proto: ElementNode): void {
           return;
         }
         this._bottom = v;
-        this._set[SET_Y] = 1;
-        this._set[SET_MOUNT_Y] = 1;
+        if (v !== undefined) {
+          this._set[SET_Y] = 1;
+          this._set[SET_MOUNT_Y] = 1;
+        }
       },
     },
     center: {
@@ -922,11 +1096,13 @@ export function installAccessors(proto: ElementNode): void {
           return;
         }
         this._center = v;
-        const set = this._set;
-        set[SET_X] = 1;
-        set[SET_MOUNT_X] = 1;
-        set[SET_Y] = 1;
-        set[SET_MOUNT_Y] = 1;
+        if (v !== undefined) {
+          const set = this._set;
+          set[SET_X] = 1;
+          set[SET_MOUNT_X] = 1;
+          set[SET_Y] = 1;
+          set[SET_MOUNT_Y] = 1;
+        }
       },
     },
     centerX: {
@@ -938,8 +1114,10 @@ export function installAccessors(proto: ElementNode): void {
           return;
         }
         this._centerX = v;
-        this._set[SET_X] = 1;
-        this._set[SET_MOUNT_X] = 1;
+        if (v !== undefined) {
+          this._set[SET_X] = 1;
+          this._set[SET_MOUNT_X] = 1;
+        }
       },
     },
     centerY: {
@@ -951,8 +1129,10 @@ export function installAccessors(proto: ElementNode): void {
           return;
         }
         this._centerY = v;
-        this._set[SET_Y] = 1;
-        this._set[SET_MOUNT_Y] = 1;
+        if (v !== undefined) {
+          this._set[SET_Y] = 1;
+          this._set[SET_MOUNT_Y] = 1;
+        }
       },
     },
   });

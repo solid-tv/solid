@@ -17,7 +17,13 @@ import {
   RendererCore,
 } from '@solidtv/renderer';
 import { ElementNode } from '../../src/core/node/ElementNode.js';
-import { SET_X } from '../../src/core/node/defaults.js';
+import {
+  SET_ALPHA,
+  SET_CLIPPING,
+  SET_COLOR,
+  SET_SCALE,
+  SET_X,
+} from '../../src/core/node/defaults.js';
 import { NodeType } from '../../src/core/nodeTypes.js';
 
 const headless = () => new RendererCore({ appWidth: 640, appHeight: 360 });
@@ -98,15 +104,46 @@ describe('ElementNode accessors', () => {
     expect(node._set[SET_X]).toBe(0);
   });
 
-  it('scale ignores a null or undefined write', () => {
+  it('scale ignores a null write; undefined is the default', () => {
     const core = headless();
     const node = new ElementNode(core, NodeType.Element);
     node.scale = 2;
-    // A style undo writes undefined; the handle ignores null.
-    (node as { scale: number | null | undefined }).scale = undefined;
+    // The handle ignores null.
     (node as { scale: number | null | undefined }).scale = null;
     expect(node.scaleX).toBe(2);
     expect(node.scaleY).toBe(2);
+    // No value (a JSX prop undefined, a style undo) is the default.
+    (node as { scale: number | null | undefined }).scale = undefined;
+    expect(node.scaleX).toBe(1);
+    expect(node.scaleY).toBe(1);
+    expect(node._set[SET_SCALE]).toBe(0);
+  });
+
+  it('an undefined write clears the app-set byte and reads the default', () => {
+    const core = headless();
+    const node = new ElementNode(core, NodeType.Element);
+    node.alpha = 0.5;
+    expect(node._set[SET_ALPHA]).toBe(1);
+    (node as { alpha: number | undefined }).alpha = undefined;
+    expect(node._set[SET_ALPHA]).toBe(0);
+    expect(node.alpha).toBe(1);
+    expect(core.nodes.f64[node.slot * F_STRIDE + F_ALPHA]).toBe(1);
+    node.color = 0xff0000ff;
+    (node as { color: number | undefined }).color = undefined;
+    expect(node._set[SET_COLOR]).toBe(0);
+    expect(node.color).toBe(0x00000000);
+    node.clipping = true;
+    (node as { clipping: boolean | undefined }).clipping = undefined;
+    expect(node._set[SET_CLIPPING]).toBe(0);
+    expect(node.clipping).toBe(false);
+    node.hidden = true;
+    (node as { hidden: boolean | undefined }).hidden = undefined;
+    expect(node._set[SET_ALPHA]).toBe(0);
+    expect(node.alpha).toBe(1);
+    // A shortcut's undefined clears its request and marks nothing.
+    node.right = undefined;
+    expect(node._right).toBeUndefined();
+    expect(node._set[SET_X]).toBe(0);
   });
 
   it('the forwarded names the renderer never had are absent', () => {

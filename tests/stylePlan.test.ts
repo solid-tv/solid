@@ -300,19 +300,19 @@ v.describe('shader-prop writes', () => {
     },
   );
 
-  // 1.8 updated the shader a gradient made in place; Task 5 (src/core/node/
-  // shader.ts, tests/node/shader.test.tsx "writing the same gradient object
-  // again keeps its shader") makes a new shader for a new object. Not a
-  // styles-and-states behaviour: left to the controller.
-  v.it.skip(
+  v.it(
     'a gradient set again updates the shader it made instead of a new one',
     () => {
       const { node } = mount({ width: 100, height: 100 });
       node.linearGradient = { colors: [RED, BLUE], angle: 1 };
       const shader = node._shader;
+      v.expect(shaderProps(node).angle).toBe(1);
       node.linearGradient = { colors: [GREEN, BLUE] };
       v.expect(node._shader).toBe(shader);
-      v.expect(shaderProps(node)).toEqual({ colors: [GREEN, BLUE] });
+      // The props a shader made from the new object holds: `angle`, which
+      // it does not name, is back to the type's default.
+      v.expect(shaderProps(node).colors).toEqual([GREEN, BLUE]);
+      v.expect(shaderProps(node).angle).toBe(0);
     },
   );
 });

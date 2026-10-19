@@ -543,7 +543,8 @@ export class ElementNode implements SlotOwner {
     const source = styles as Record<string, unknown>;
     for (const key in source) {
       if (key.charCodeAt(0) === 36 /* $ */) {
-        // A `$` key is a block of the node's own, as 1.x wrote it.
+        // A `$` key is a block of the node's own, as 1.x wrote it; the
+        // check above makes the key a DollarString.
         setStateBlock(this, key as DollarString, source[key]);
       } else {
         writeKey(this, key, source[key]);
@@ -586,6 +587,7 @@ export class ElementNode implements SlotOwner {
       changed = len !== 1 || current[0] !== states;
     } else {
       for (const key in states) {
+        // A NodeStates object's keys are DollarStrings.
         const state = key as DollarString;
         if (states[state]) {
           changed = !current.has(state);
@@ -650,6 +652,8 @@ export class ElementNode implements SlotOwner {
       this._undoStyles = [];
     }
     if (this._applied === undefined) {
+      // No prototype (a key named like an Object method is a key); the
+      // record holds the values written.
       this._applied = Object.create(null) as Record<string, unknown>;
     }
     this._writeStates(n);

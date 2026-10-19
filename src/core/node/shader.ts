@@ -2,6 +2,7 @@ import {
   createAnimation,
   NULL,
   setShader,
+  type AdvancedProp,
   type ShaderNode,
 } from '@solidtv/renderer';
 import { Config } from '../config.js';
@@ -300,15 +301,24 @@ export function convertToShader(node: ElementNode): void {
 /** The bag keys of the rounded family's raw objects (`rounded` is `borderRadius`). */
 export type RoundedKey = (typeof ROUNDED_KEYS)[number];
 
+/** The border family's raw keys, `border` first: the order they re-merge in. */
+const BORDER_KEYS = [
+  'border',
+  'borderTop',
+  'borderRight',
+  'borderBottom',
+  'borderLeft',
+] as const;
+
 /**
- * Take a rounded-family prop off the node: what style undo does for a key
- * with no theme, style or default value to write back (styles.ts). Writing
- * `undefined` would leave the facade keys the last object stood for in the
- * bag; here they are cleared with the raw object, and the node's rounded
- * shader is made again from what the bag still holds, so a cleared key
- * takes its shader type's default (none is left: no shader). A facade key
- * another object of the family also named is cleared too (the 1.6 merge,
- * B18, is not undone more finely than that).
+ * Take a rounded-family prop off the node: its setter's `undefined` write
+ * (a style undo with no base value writes that). Merging `undefined` would
+ * leave the facade keys the last object stood for in the bag; here they are
+ * cleared with the raw object, the border family's other objects are merged
+ * in again (`border` first, then the sides) so a key one of them names
+ * keeps its value, and the node's rounded shader is made again from the
+ * bag, so a cleared key takes its shader type's default (none is left: no
+ * shader). B18 stays: this is the only path that clears a key.
  */
 export function resetShaderProp(node: ElementNode, key: RoundedKey): void {
   const bag = node._shaderProps;
@@ -323,6 +333,15 @@ export function resetShaderProp(node: ElementNode, key: RoundedKey): void {
     const keys = shaderParse(key, previous).keys;
     for (let i = 0; i < keys.length; i++) {
       bag[keys[i]!] = undefined;
+    }
+    if (key !== 'shadow') {
+      for (let i = 0; i < BORDER_KEYS.length; i++) {
+        const sibling = BORDER_KEYS[i]!;
+        const obj = bag[sibling];
+        if (isObject(obj)) {
+          mergeIntoBag(bag, sibling, obj, shaderParse(sibling, obj));
+        }
+      }
     }
   }
   if (!SHADERS_ENABLED || node._shaderFeatures === SHADER_UNMANAGED) {
@@ -562,12 +581,21 @@ function writeReplacing(
     }
     return;
   }
-  if (
-    previous === value &&
-    node._shaderKey === key &&
-    node._shader !== undefined
-  ) {
-    return;
+  const current = node._shader;
+  if (node._shaderKey === key && current !== undefined) {
+    if (previous === value) {
+      return;
+    }
+    if (isObject(previous) && isObject(value)) {
+      // The shader this key made is of this key's type: update it (1.8).
+      // The gradient and hole punch props are an object of string keys.
+      updateInPlace(
+        current,
+        previous as Record<string, unknown>,
+        value as Record<string, unknown>,
+      );
+      return;
+    }
   }
   // The gradient and hole punch props are an object, as written.
   const shader = node.core.createShader(type, value as Record<string, unknown>);
@@ -576,12 +604,93 @@ function writeReplacing(
   useShader(node, shader);
 }
 
-/** `shader`: a ShaderNode, or `[type, props]` for one to make. */
+/**
+ * Write `value` to a shader made from `previous` of the same type, to the
+ * props createShader would make from `value` (1.8): a prop the type
+ * declares takes the value given, else its default; one both objects give
+ * the same value is not written. Props first, then aliases (only when
+ * given), each in declaration order, as createShader applies them.
+ */
+function updateInPlace(
+  shader: ShaderNode,
+  previous: Record<string, unknown>,
+  value: Record<string, unknown>,
+): void {
+  const props = shader.props;
+  const defs = shader.shaderType.props;
+  if (defs === undefined) {
+    for (const name in value) {
+      if (previous[name] !== value[name]) {
+        props[name] = value[name];
+      }
+    }
+    return;
+  }
+  for (let pass = 0; pass < 2; pass++) {
+    for (const name in defs) {
+      const def = defs[name];
+      // An AdvancedProp has a default (the renderer registry's test).
+      const advanced =
+        isObject(def) && (def as AdvancedProp).default !== undefined;
+      // `advanced` narrowed `def` to an AdvancedProp.
+      const config = def as AdvancedProp;
+      const alias = advanced && config.set !== undefined;
+      if (alias !== (pass === 1)) {
+        continue;
+      }
+      const given = value[name];
+      if (previous[name] === given) {
+        continue;
+      }
+      const resolves = advanced && config.resolve !== undefined;
+      if (given !== undefined) {
+        // createShader copies an array, unless the prop resolves it.
+        props[name] = resolves ? given : copyOf(given);
+      } else if (!alias) {
+        // What a shader made without it holds: a resolving prop resolves
+        // its default from undefined, a plain one takes a copy of it.
+        props[name] = resolves
+          ? undefined
+          : copyOf(advanced ? config.default : def);
+      }
+    }
+  }
+}
+
+/** An array is copied: a shader never holds the app's array. */
+function copyOf(value: unknown): unknown {
+  return Array.isArray(value) ? value.slice() : value;
+}
+
+/**
+ * `shader`: a ShaderNode, or `[type, props]` for one to make. A `[type,
+ * props]` of the type of the one this prop made last updates that shader
+ * (1.8), as a gradient does; the array is kept in the bag for that.
+ */
 function writeShader(
   node: ElementNode,
   value: ShaderNode | [type: string, props: Record<string, unknown>] | null,
 ): void {
   if (!SHADERS_ENABLED) {
+    return;
+  }
+  const bag = bagOf(node);
+  const previous = bag.shader;
+  const current = node._shader;
+  bag.shader = Array.isArray(value) ? value : undefined;
+  if (
+    Array.isArray(value) &&
+    Array.isArray(previous) &&
+    node._shaderKey === 'shader' &&
+    current !== undefined &&
+    previous[0] === value[0]
+  ) {
+    // The bag's `shader` holds a `[type, props]` this function stored.
+    updateInPlace(
+      current,
+      (previous as [string, Record<string, unknown>])[1],
+      value[1],
+    );
     return;
   }
   node._shaderFeatures = SHADER_UNMANAGED;
@@ -596,8 +705,10 @@ function writeShader(
 /**
  * The shader prop accessors (spec 5.4), written out for the same reason as
  * accessors.ts. Every setter returns on a destroyed node and records the
- * write in `_set`; every getter returns what was written. `rounded` is the
- * alias of `borderRadius`: one prop, one `_set` byte.
+ * write in `_set` (an `undefined` write clears the byte: a rounded-family
+ * prop is then taken off the shader, resetShaderProp); every getter returns
+ * what was written. `rounded` is the alias of `borderRadius`: one prop, one
+ * `_set` byte.
  */
 export function installShaderAccessors(proto: ElementNode): void {
   Object.defineProperties(proto, {
@@ -611,6 +722,11 @@ export function installShaderAccessors(proto: ElementNode): void {
       },
       set(this: ElementNode, v: BorderStyle | undefined) {
         if (this.slot === NULL) {
+          return;
+        }
+        if (v === undefined) {
+          this._set[SET_BORDER] = 0;
+          resetShaderProp(this, 'border');
           return;
         }
         this._set[SET_BORDER] = 1;
@@ -629,6 +745,11 @@ export function installShaderAccessors(proto: ElementNode): void {
         if (this.slot === NULL) {
           return;
         }
+        if (v === undefined) {
+          this._set[SET_BORDER_TOP] = 0;
+          resetShaderProp(this, 'borderTop');
+          return;
+        }
         this._set[SET_BORDER_TOP] = 1;
         writeRounded(this, 'borderTop', v);
       },
@@ -643,6 +764,11 @@ export function installShaderAccessors(proto: ElementNode): void {
       },
       set(this: ElementNode, v: SingleBorderStyle | undefined) {
         if (this.slot === NULL) {
+          return;
+        }
+        if (v === undefined) {
+          this._set[SET_BORDER_RIGHT] = 0;
+          resetShaderProp(this, 'borderRight');
           return;
         }
         this._set[SET_BORDER_RIGHT] = 1;
@@ -661,6 +787,11 @@ export function installShaderAccessors(proto: ElementNode): void {
         if (this.slot === NULL) {
           return;
         }
+        if (v === undefined) {
+          this._set[SET_BORDER_BOTTOM] = 0;
+          resetShaderProp(this, 'borderBottom');
+          return;
+        }
         this._set[SET_BORDER_BOTTOM] = 1;
         writeRounded(this, 'borderBottom', v);
       },
@@ -675,6 +806,11 @@ export function installShaderAccessors(proto: ElementNode): void {
       },
       set(this: ElementNode, v: SingleBorderStyle | undefined) {
         if (this.slot === NULL) {
+          return;
+        }
+        if (v === undefined) {
+          this._set[SET_BORDER_LEFT] = 0;
+          resetShaderProp(this, 'borderLeft');
           return;
         }
         this._set[SET_BORDER_LEFT] = 1;
@@ -693,6 +829,11 @@ export function installShaderAccessors(proto: ElementNode): void {
         if (this.slot === NULL) {
           return;
         }
+        if (v === undefined) {
+          this._set[SET_SHADOW] = 0;
+          resetShaderProp(this, 'shadow');
+          return;
+        }
         this._set[SET_SHADOW] = 1;
         writeRounded(this, 'shadow', v);
       },
@@ -707,6 +848,11 @@ export function installShaderAccessors(proto: ElementNode): void {
       },
       set(this: ElementNode, v: number | number[] | undefined) {
         if (this.slot === NULL) {
+          return;
+        }
+        if (v === undefined) {
+          this._set[SET_BORDER_RADIUS] = 0;
+          resetShaderProp(this, 'rounded');
           return;
         }
         this._set[SET_BORDER_RADIUS] = 1;
@@ -726,6 +872,11 @@ export function installShaderAccessors(proto: ElementNode): void {
         if (this.slot === NULL) {
           return;
         }
+        if (v === undefined) {
+          this._set[SET_BORDER_RADIUS] = 0;
+          resetShaderProp(this, 'rounded');
+          return;
+        }
         this._set[SET_BORDER_RADIUS] = 1;
         writeRounded(this, 'rounded', v);
       },
@@ -743,7 +894,7 @@ export function installShaderAccessors(proto: ElementNode): void {
         if (this.slot === NULL) {
           return;
         }
-        this._set[SET_LINEAR_GRADIENT] = 1;
+        this._set[SET_LINEAR_GRADIENT] = v === undefined ? 0 : 1;
         writeReplacing(this, 'linearGradient', 'linearGradient', v);
       },
     },
@@ -759,7 +910,7 @@ export function installShaderAccessors(proto: ElementNode): void {
         if (this.slot === NULL) {
           return;
         }
-        this._set[SET_RADIAL_GRADIENT] = 1;
+        this._set[SET_RADIAL_GRADIENT] = v === undefined ? 0 : 1;
         writeReplacing(this, 'radialGradient', 'radialGradient', v);
       },
     },
@@ -775,7 +926,7 @@ export function installShaderAccessors(proto: ElementNode): void {
         if (this.slot === NULL) {
           return;
         }
-        this._set[SET_HOLE_PUNCH] = 1;
+        this._set[SET_HOLE_PUNCH] = v === undefined ? 0 : 1;
         writeReplacing(this, 'holePunch', 'holePunch', v);
       },
     },
@@ -796,7 +947,7 @@ export function installShaderAccessors(proto: ElementNode): void {
         if (this.slot === NULL) {
           return;
         }
-        this._set[SET_SHADER] = 1;
+        this._set[SET_SHADER] = v === undefined ? 0 : 1;
         writeShader(this, v === undefined ? null : v);
       },
     },

@@ -439,9 +439,25 @@ describe('ElementNode shader props', () => {
     node.linearGradient = gradient;
     expect(node._shader).toBe(shader);
     expect(core.nodes.shaderRefs[node.slot]).toBe(shader);
-    // Another object makes another shader.
+    // Another object of the same key updates that shader in place (1.8).
     node.linearGradient = { colors: [RED, RED] };
-    expect(node._shader).not.toBe(shader);
+    expect(node._shader).toBe(shader);
+    expect(node._shader!.props.colors).toEqual([RED, RED]);
+  });
+
+  it('a [type, props] shader of the same type updates the shader it made; another type makes a new one', () => {
+    const { node } = rendered();
+    node.shader = ['linearGradient', { colors: [RED, 0x0000ffff], angle: 1 }];
+    const made = node._shader;
+    expect(typeName(node)).toBe('linearGradient');
+    node.shader = ['linearGradient', { colors: [RED, RED] }];
+    expect(node._shader).toBe(made);
+    expect(node._shader!.props.colors).toEqual([RED, RED]);
+    // `angle`, not named, is the type's default again.
+    expect(node._shader!.props.angle).toBe(0);
+    node.shader = ['radialGradient', { colors: [RED, RED] }];
+    expect(node._shader).not.toBe(made);
+    expect(typeName(node)).toBe('radialGradient');
   });
 
   it('clearing one replacing key leaves the shader another made', () => {

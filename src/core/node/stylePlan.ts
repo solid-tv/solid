@@ -58,6 +58,7 @@ export function compileBlock(block: Record<string, unknown>): BlockPlan {
   const keys = Object.keys(block);
   const values: unknown[] = [];
   const getters: boolean[] = [];
+  // No prototype: a key named like an Object method is a key of the block.
   const index = Object.create(null) as Record<string, number | undefined>;
   for (let i = 0; i < keys.length; i++) {
     const key = keys[i]!;
@@ -87,6 +88,7 @@ export function compileStyle(style: object): StylePlan {
   if (plan !== undefined) {
     return plan;
   }
+  // No prototype: only the style's `$` keys are plans.
   plan = Object.create(null) as StylePlan;
   let cacheable = true;
   // A style object: its keys are strings.

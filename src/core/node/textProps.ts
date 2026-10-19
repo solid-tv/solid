@@ -47,7 +47,8 @@ import {
 // On a `<view>` they land in `_textProps` and draw nothing (B20). Every
 // setter returns on a destroyed node and records the write in `_set`, on
 // both kinds. An `undefined` write is the renderer's default for the prop,
-// as the renderer's TextNode setters have it (a style undo writes it).
+// as the renderer's TextNode setters have it (a style undo writes it), and
+// clears the `_set` byte: no value is not a value the app set.
 //
 // Written out, one accessor per prop, for the same reason as accessors.ts:
 // each keeps its own inline cache and no keyed store goes through one site.
@@ -237,7 +238,7 @@ export function installTextAccessors(proto: ElementNode): void {
         if (s === NULL) {
           return;
         }
-        this._set[SET_TEXT] = 1;
+        this._set[SET_TEXT] = v === undefined ? 0 : 1;
         if (this._type !== NodeType.TextNode) {
           viewSet(this, 'text', v);
           return;
@@ -266,7 +267,7 @@ export function installTextAccessors(proto: ElementNode): void {
         if (s === NULL) {
           return;
         }
-        this._set[SET_FONT_SIZE] = 1;
+        this._set[SET_FONT_SIZE] = v === undefined ? 0 : 1;
         if (this._type !== NodeType.TextNode) {
           viewSet(this, 'fontSize', v);
           return;
@@ -295,7 +296,7 @@ export function installTextAccessors(proto: ElementNode): void {
         if (s === NULL) {
           return;
         }
-        this._set[SET_FONT_STYLE] = 1;
+        this._set[SET_FONT_STYLE] = v === undefined ? 0 : 1;
         if (this._type !== NodeType.TextNode) {
           viewSet(this, 'fontStyle', v);
           return;
@@ -324,7 +325,7 @@ export function installTextAccessors(proto: ElementNode): void {
         if (s === NULL) {
           return;
         }
-        this._set[SET_LINE_HEIGHT] = 1;
+        this._set[SET_LINE_HEIGHT] = v === undefined ? 0 : 1;
         if (this._type !== NodeType.TextNode) {
           viewSet(this, 'lineHeight', v);
           return;
@@ -353,7 +354,7 @@ export function installTextAccessors(proto: ElementNode): void {
         if (s === NULL) {
           return;
         }
-        this._set[SET_TEXT_ALIGN] = 1;
+        this._set[SET_TEXT_ALIGN] = v === undefined ? 0 : 1;
         if (this._type !== NodeType.TextNode) {
           viewSet(this, 'textAlign', v);
           return;
@@ -382,7 +383,7 @@ export function installTextAccessors(proto: ElementNode): void {
         if (s === NULL) {
           return;
         }
-        this._set[SET_VERTICAL_ALIGN] = 1;
+        this._set[SET_VERTICAL_ALIGN] = v === undefined ? 0 : 1;
         if (this._type !== NodeType.TextNode) {
           viewSet(this, 'verticalAlign', v);
           return;
@@ -411,7 +412,7 @@ export function installTextAccessors(proto: ElementNode): void {
         if (s === NULL) {
           return;
         }
-        this._set[SET_CONTAIN] = 1;
+        this._set[SET_CONTAIN] = v === undefined ? 0 : 1;
         if (this._type !== NodeType.TextNode) {
           viewSet(this, 'contain', v);
           return;
@@ -440,7 +441,7 @@ export function installTextAccessors(proto: ElementNode): void {
         if (s === NULL) {
           return;
         }
-        this._set[SET_MAX_WIDTH] = 1;
+        this._set[SET_MAX_WIDTH] = v === undefined ? 0 : 1;
         if (this._type !== NodeType.TextNode) {
           viewSet(this, 'maxWidth', v);
           return;
@@ -469,7 +470,7 @@ export function installTextAccessors(proto: ElementNode): void {
         if (s === NULL) {
           return;
         }
-        this._set[SET_MAX_HEIGHT] = 1;
+        this._set[SET_MAX_HEIGHT] = v === undefined ? 0 : 1;
         if (this._type !== NodeType.TextNode) {
           viewSet(this, 'maxHeight', v);
           return;
@@ -498,7 +499,7 @@ export function installTextAccessors(proto: ElementNode): void {
         if (s === NULL) {
           return;
         }
-        this._set[SET_MAX_LINES] = 1;
+        this._set[SET_MAX_LINES] = v === undefined ? 0 : 1;
         if (this._type !== NodeType.TextNode) {
           viewSet(this, 'maxLines', v);
           return;
@@ -527,7 +528,7 @@ export function installTextAccessors(proto: ElementNode): void {
         if (s === NULL) {
           return;
         }
-        this._set[SET_OVERFLOW_SUFFIX] = 1;
+        this._set[SET_OVERFLOW_SUFFIX] = v === undefined ? 0 : 1;
         if (this._type !== NodeType.TextNode) {
           viewSet(this, 'overflowSuffix', v);
           return;
@@ -556,7 +557,7 @@ export function installTextAccessors(proto: ElementNode): void {
         if (s === NULL) {
           return;
         }
-        this._set[SET_WORD_BREAK] = 1;
+        this._set[SET_WORD_BREAK] = v === undefined ? 0 : 1;
         if (this._type !== NodeType.TextNode) {
           viewSet(this, 'wordBreak', v);
           return;
@@ -585,7 +586,7 @@ export function installTextAccessors(proto: ElementNode): void {
         if (s === NULL) {
           return;
         }
-        this._set[SET_LETTER_SPACING] = 1;
+        this._set[SET_LETTER_SPACING] = v === undefined ? 0 : 1;
         if (this._type !== NodeType.TextNode) {
           viewSet(this, 'letterSpacing', v);
           return;
@@ -614,7 +615,7 @@ export function installTextAccessors(proto: ElementNode): void {
         if (s === NULL) {
           return;
         }
-        this._set[SET_OFFSET_Y] = 1;
+        this._set[SET_OFFSET_Y] = v === undefined ? 0 : 1;
         if (this._type !== NodeType.TextNode) {
           viewSet(this, 'offsetY', v);
           return;
@@ -643,7 +644,7 @@ export function installTextAccessors(proto: ElementNode): void {
         if (this.slot === NULL) {
           return;
         }
-        this._set[SET_FONT_FAMILY] = 1;
+        this._set[SET_FONT_FAMILY] = v === undefined ? 0 : 1;
         this._fontFamily = v;
         if (this._type === NodeType.TextNode) {
           writeFontFamily(this);
@@ -660,7 +661,7 @@ export function installTextAccessors(proto: ElementNode): void {
         if (this.slot === NULL) {
           return;
         }
-        this._set[SET_FONT_WEIGHT] = 1;
+        this._set[SET_FONT_WEIGHT] = v === undefined ? 0 : 1;
         if (this._fontWeight === v) {
           return;
         }
@@ -683,7 +684,7 @@ export function installTextAccessors(proto: ElementNode): void {
         if (s === NULL) {
           return;
         }
-        this._set[SET_FORCE_LOAD] = 1;
+        this._set[SET_FORCE_LOAD] = v === undefined ? 0 : 1;
         if (this._type !== NodeType.TextNode) {
           viewSet(this, 'forceLoad', v);
           return;
