@@ -1,27 +1,40 @@
-import {
-  assertTruthy,
-  isElementText,
-  ElementNode,
-  TextNode,
-  log,
-  type ElementText,
-  enqueueDelete,
-} from './core/index.js';
+import { ElementNode, TextNode, log, NodeType } from './core/index.js';
+import { core } from './core/renderer.js';
+import { insertChild, removeChild } from './core/node/lifecycle.js';
+import { setStateBlock } from './core/node/styles.js';
+import type { DollarString } from './core/intrinsicTypes.js';
 import type { SolidNode, SolidRendererOptions } from './types.js';
+
+/**
+ * A prop write from JSX: a `$name` prop is a state block (styles.ts); any
+ * other name is the node's prop of that name, written through its setter.
+ */
+function writeProp(node: ElementNode, name: string, value: unknown): void {
+  if (name.charCodeAt(0) === 36 /* $ */) {
+    // The check above makes the name a DollarString.
+    setStateBlock(node, name as DollarString, value);
+  } else {
+    // A JSX prop names a prop of the node: an accessor or a field. The
+    // class has no index signature, so the write goes through a record view.
+    (node as unknown as Record<string, unknown>)[name] = value;
+  }
+}
 
 export default {
   createElement(
     name: string,
     staticProps?: Record<string, unknown>,
   ): ElementNode {
-    const node = new ElementNode(name);
+    const node = new ElementNode(
+      core,
+      name === 'text' ? NodeType.TextNode : NodeType.Element,
+    );
     if (staticProps !== undefined) {
       // Solid 2.0 hands every compile-time-constant prop here as one object
-      // instead of a setProp call each. Assign through the same path
-      // setProperty uses so ElementNode's setters still run, in declaration
-      // order — matching how 1.x applied them one at a time.
+      // instead of a setProp call each. Written through the same path
+      // setProperty uses, in declaration order, as 1.x applied them.
       for (const key in staticProps) {
-        node[key] = staticProps[key];
+        writeProp(node, key, staticProps[key]);
       }
     }
     return node;
@@ -34,57 +47,43 @@ export default {
     log('Replace Text: ', node, value);
     node.text = value;
     const parent = node.parent;
-    assertTruthy(parent);
-    parent.text = parent.getText();
+    // A text node never inserted has no parent.
+    if (parent !== undefined) {
+      parent.text = parent.getText();
+    }
   },
-  setProperty(node: ElementNode, name: string, value: any): void {
-    node[name] = value;
+  setProperty(node: ElementNode, name: string, value: unknown): void {
+    writeProp(node, name, value);
   },
   insertNode(parent: ElementNode, node: SolidNode, anchor?: SolidNode): void {
     log('INSERT: ', parent, node, anchor);
-
-    const prevParent = node.parent;
-    parent.insertChild(node, anchor);
-
-    if (node instanceof ElementNode) {
-      if (node.parent!.rendered) {
-        node.render(true);
-      }
-      if (prevParent !== undefined) {
-        enqueueDelete(node, 1);
-      }
-    } else if (isElementText(parent)) {
-      // TextNodes can be placed outside of <text> nodes when <Show> is used as placeholder
-      parent.text = parent.getText();
-    }
+    insertChild(parent, node, anchor);
   },
   isTextNode(node: SolidNode): boolean {
-    return isElementText(node);
+    return node._type === NodeType.TextNode;
   },
   removeNode(parent: ElementNode, node: SolidNode): void {
     log('REMOVE: ', parent, node);
-
-    parent.removeChild(node);
-
-    if (node instanceof ElementNode) {
-      enqueueDelete(node, -1);
-    } else if (isElementText(parent)) {
-      // TextNodes can be placed outside of <text> nodes when <Show> is used as placeholder
-      parent.text = parent.getText();
-    }
+    removeChild(parent, node);
   },
-  getParentNode(node: SolidNode): ElementNode | ElementText | undefined {
+  getParentNode(node: SolidNode): ElementNode | undefined {
     return node.parent;
   },
   getFirstChild(node: ElementNode): SolidNode | undefined {
     return node.children[0];
   },
   getNextSibling(node: SolidNode): SolidNode | undefined {
-    const children = (node.parent!.children || []) as SolidNode[];
-    const index = children.indexOf(node) + 1;
-    if (index < children.length) {
-      return children[index];
+    const parent = node.parent;
+    if (parent === undefined) {
+      return undefined;
     }
-    return undefined;
+    // From the end: Solid asks for the sibling after a list's last item. A
+    // removed node keeps its parent link, but is not in the list.
+    const children = parent.children;
+    let i = children.length - 1;
+    while (i >= 0 && children[i] !== node) {
+      i--;
+    }
+    return i >= 0 ? children[i + 1] : undefined;
   },
 } satisfies SolidRendererOptions;

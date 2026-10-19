@@ -52,7 +52,8 @@ function debounceWithFlush<T>(
 }
 
 function getElmName(elm: ElementNode): string {
-  return (elm.id || elm.name) as string;
+  // `name`: an app prop, read through a record view of the node.
+  return (elm.id || (elm as unknown as Record<string, unknown>).name) as string;
 }
 
 function onFocusChangeCore(focusPath: ElementNode[] = []) {

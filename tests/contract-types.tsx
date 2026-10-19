@@ -127,7 +127,9 @@ export function keyMapAugmentation() {
 // Every type-only export of each entry point today. Importing a name that is
 // gone is a type error. (Runtime names are pinned in publicApi.test.ts.)
 
-// @solidtv/solid: Solid's own types (78). Six of them, the Shader*Props
+// @solidtv/solid: Solid's own types (62; 2.0 dropped the DOM renderer's
+// IEventEmitter, ExtractProps and IRenderer* names and SdfFontType). Six of
+// them, the Shader*Props
 // names and WebGlShader, are re-exported by src/core/shaders.ts as aliases
 // of @solidtv/renderer types (the renderer does not export these names, so
 // they are not in the next list).
@@ -145,24 +147,9 @@ export type {
   Effects,
   ElementText,
   EventHandlers,
-  ExtractProps,
   FocusNode,
   FontLoadOptions,
   ForwardFocusHandler,
-  IEventEmitter,
-  IRendererCoreRenderer,
-  IRendererFontManager,
-  IRendererMain,
-  IRendererNode,
-  IRendererNodeProps,
-  IRendererNodeShaded,
-  IRendererShader,
-  IRendererShaderManager,
-  IRendererShaderProps,
-  IRendererShaderType,
-  IRendererStage,
-  IRendererTextNode,
-  IRendererTextNodeProps,
   JSX,
   KeyEventLike,
   KeyEventTarget,
@@ -179,7 +166,6 @@ export type {
   RemoveUnderscoreProps,
   RenderedNode,
   RendererNode,
-  SdfFontType,
   ShaderBorderPrefixedProps,
   ShaderBorderProps,
   ShaderHolePunch,
@@ -214,8 +200,10 @@ export type {
 
 // @solidtv/solid: the renderer's names, via `export type * from
 // '@solidtv/renderer'` in src/core/index.ts: 103 on the installed
-// @solidtv/renderer 2.0 (AnimationSettings, FontLoadOptions, IEventEmitter,
-// TextNode and TextProps are Solid's own). Some are values in the renderer
+// @solidtv/renderer 2.0 (AnimationSettings, FontLoadOptions, TextNode and
+// TextProps are Solid's own). The node handle types (INode, INodeProps,
+// ITextNode, ITextNodeProps, Node) moved to '@solidtv/renderer/node' in
+// 2.1 and are re-exported from there. Some are values in the renderer
 // but type-only here. A renderer-side rename or removal is a break inherited
 // from the renderer.
 export type {

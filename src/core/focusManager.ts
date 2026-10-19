@@ -5,10 +5,10 @@ import {
   onCleanup,
   runWithOwner,
 } from 'solid-js';
+import { I_STRIDE, I_UID, NULL } from '@solidtv/renderer';
 import { Config, isDev } from './config.js';
-import { IRendererNode } from './dom-renderer/domRendererTypes.js';
 export type * from './focusKeyTypes.js';
-import { ElementNode } from './elementNode.js';
+import type { ElementNode } from './node/ElementNode.js';
 import type { KeyNameOrKeyCode, KeyMap } from './focusKeyTypes.js';
 import { isFunction } from './utils.js';
 import {
@@ -151,9 +151,8 @@ const _pendingHistoryKey: {
 
 const getElementLabel = (elm: ElementNode | undefined): string => {
   if (!elm) return 'None';
-  // ElementNode exposes _id internally; componentName comes from the Babel devtools plugin
-  const id = elm.id ?? elm._id;
-  return id ?? elm.componentName ?? 'Unknown';
+  // componentName comes from the Babel devtools plugin
+  return elm.id ?? elm.componentName ?? 'Unknown';
 };
 
 const recordFocusHistory = (
@@ -187,6 +186,20 @@ const recordFocusHistory = (
   }
 };
 
+/**
+ * The renderer inspector's element of a node (its id is the node's uid),
+ * or null: no inspector, or a destroyed node. Dev only.
+ */
+const inspectorDiv = (elm: ElementNode): HTMLElement | null => {
+  const slot = elm.slot;
+  if (!isDev || slot === NULL || typeof document === 'undefined') {
+    return null;
+  }
+  return document.getElementById(
+    String(elm.core.nodes.i32[slot * I_STRIDE + I_UID]),
+  );
+};
+
 /** Returns a snapshot of the focus history ring buffer (up to 50 entries). */
 export const getFocusHistory = (): Readonly<FocusHistoryEntry[]> =>
   focusHistory;
@@ -208,14 +221,14 @@ export const printFocusHistory = (count: number): void => {
       key: e.mappedKey ?? e.keyPressed ?? '—',
       next: getElementLabel(e.next),
       nextElm: e.next,
-      nextDiv: (e.next.lng as IRendererNode).div,
+      nextDiv: inspectorDiv(e.next),
     })),
   );
 
   // 2. Expose the most recent element for easy inspection
   const lastEntry = entries[entries.length - 1];
   if (lastEntry) {
-    const lastElm = (lastEntry.next.lng as IRendererNode)?.div;
+    const lastElm = inspectorDiv(lastEntry.next);
     if (lastElm) {
       (window as any).$f = lastElm;
     }
@@ -398,7 +411,9 @@ const propagateKeyPress = (
     const elm = fp[i]!;
     if (!isUp && isElementThrottled(elm, sameKey, currentTime)) return true;
 
-    const captureHandler = elm[captureEvent] || elm[captureKey];
+    // Handler props by name (onCaptureUp, ...): a record view of the node.
+    const handlers = elm as unknown as Record<string, unknown>;
+    const captureHandler = handlers[captureEvent] || handlers[captureKey];
     if (
       isFunction(captureHandler) &&
       captureHandler.call(elm, e, elm, finalFocusElm, mappedEvent) === true
@@ -421,7 +436,10 @@ const propagateKeyPress = (
 
     let handled = false;
     if (eventHandlerKey) {
-      const eventHandler = elm[eventHandlerKey];
+      // A handler prop by name (onUp, ...): a record view of the node.
+      const eventHandler = (elm as unknown as Record<string, unknown>)[
+        eventHandlerKey
+      ];
       if (isFunction(eventHandler)) {
         lastHandlerSeen = elm;
         handled = eventHandler.call(elm, e, elm, finalFocusElm) === true;

@@ -3,16 +3,10 @@ import type {
   TextProps,
   AnimationSettings,
   DollarString,
-  StyleEffects,
 } from './intrinsicTypes.js';
-import {
-  type ElementNode,
-  convertToShader as convertToShaderOfOldNode,
-} from './elementNode.js';
-import type { ElementNode as StoreElementNode } from './node/ElementNode.js';
-import { convertToShader as convertToShaderOfStoreNode } from './node/shader.js';
+import type { ElementNode } from './node/ElementNode.js';
+import { convertToShader } from './node/shader.js';
 import { setActiveElement as setActiveElementSignal } from './activeElement.js';
-import { IRendererShader } from './dom-renderer/domRendererTypes.js';
 
 /**
   STATIC LIGHTNING CONFIGURATION \
@@ -21,23 +15,7 @@ import { IRendererShader } from './dom-renderer/domRendererTypes.js';
   See `vite-env.d.ts` for environment variable type definitions.
 */
 
-export { isDev, DOM_RENDERING, SHADERS_ENABLED } from './env.js';
-import { DOM_RENDERING } from './env.js';
-
-/**
- * True when the DOM renderer is both built in (`DOM_RENDERING`) and turned on
- * at runtime (`Config.domRendererEnabled`). `Config.domRendererEnabled` is
- * mutable up until the renderer starts, so this is a function rather than a
- * constant.
- *
- * NOTE: do not use this to gate code paths whose dead-code elimination matters
- * (e.g. branches that reference DOM-renderer-only modules). Bundlers don't
- * inline this call, so the gated branch — and its imports — stay live. In
- * those spots inline `DOM_RENDERING && Config.domRendererEnabled` so the
- * `DOM_RENDERING` build constant can collapse the branch.
- */
-export const isDomRendererActive = () =>
-  DOM_RENDERING && Config.domRendererEnabled;
+export { isDev, SHADERS_ENABLED } from './env.js';
 
 /**
   RUNTIME LIGHTNING CONFIGURATION \
@@ -47,7 +25,6 @@ export const isDomRendererActive = () =>
 export interface Config {
   debug: boolean;
   focusDebug: boolean;
-  domRendererEnabled: boolean;
   keyDebug: boolean;
   focusHistoryDebug: number;
   animationSettings?: AnimationSettings;
@@ -81,36 +58,12 @@ export interface Config {
    * Make the shader a node's shader props call for, and give it to the node
    * (attach, and the first shader prop written after it).
    */
-  convertToShader: ConvertToShader;
+  convertToShader: (node: ElementNode) => void;
   stateOrder?: DollarString[];
 }
 
-/**
- * Both nodes' hooks: the store node's takes the node alone; the old node's
- * (removed with elementNode.ts) takes the style object too.
- */
-interface ConvertToShader {
-  (node: StoreElementNode): void;
-  (node: ElementNode, v: StyleEffects): IRendererShader;
-}
-
-// The casts follow the call's arity: one argument is the store node, two the
-// old node. Both go with elementNode.ts.
-const defaultConvertToShader = ((
-  node: ElementNode | StoreElementNode,
-  v?: StyleEffects,
-) =>
-  v === undefined
-    ? // No style object: the store node's call.
-      convertToShaderOfStoreNode(node as StoreElementNode)
-    : convertToShaderOfOldNode(
-        node as ElementNode,
-        v,
-      )) as unknown as ConvertToShader;
-
 export const Config: Config = {
   debug: false,
-  domRendererEnabled: false,
   focusDebug: false,
   keyDebug: false,
   focusHistoryDebug: 0,
@@ -119,7 +72,7 @@ export const Config: Config = {
     duration: 250,
     easing: 'ease-in-out',
   },
-  convertToShader: defaultConvertToShader,
+  convertToShader,
   setActiveElement: (elm) => setActiveElementSignal(elm),
   fontSettings: {
     fontFamily: 'Ubuntu',

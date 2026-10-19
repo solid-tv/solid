@@ -1,6 +1,6 @@
 import * as lngr from '@solidtv/renderer';
-import { ElementNode, type RendererNode } from './elementNode.js';
-import type { TextNode } from './nodeTypes.js';
+import type { INodeProps, ITextNodeProps } from '@solidtv/renderer/node';
+import type { ElementNode } from './node/ElementNode.js';
 import { NodeStates } from './states.js';
 import {
   ShaderBorderProps,
@@ -81,12 +81,18 @@ export type RemoveUnderscoreProps<T> = {
   [K in keyof T as K extends `_${string}` ? never : K]: T[K];
 };
 
+/** The renderer node's props, as JSX takes them (colours as strings too). */
+export type RendererNode = AddColorString<
+  Partial<NewOmit<INodeProps, 'parent' | 'shader' | 'src'>>
+>;
+
 type RendererText = AddColorString<
-  Partial<Omit<lngr.ITextNodeProps, 'debug' | 'shader' | 'parent'>>
+  Partial<Omit<ITextNodeProps, 'debug' | 'shader' | 'parent'>>
 >;
 
 type CleanElementNode = NewOmit<
   RemoveUnderscoreProps<ElementNode>,
+  | keyof RendererNode
   | 'parent'
   | 'insertChild'
   | 'removeChild'
@@ -95,31 +101,32 @@ type CleanElementNode = NewOmit<
   | 'animate'
   | 'chain'
   | 'start'
-  | 'isTextNode'
   | 'getText'
   | 'destroy'
+  | 'destroyed'
   | 'hasChildren'
   | 'getChildById'
   | 'searchChildrenById'
   | 'states'
   | 'requiresLayout'
   | 'updateLayout'
-  | 'render'
   | 'style'
+  | 'slot'
+  | 'core'
+  | 'setNow'
+  | 'writeProp'
+  | 'emit'
+  | 'hasListener'
+  | 'removeAllListeners'
+  | 'on'
+  | 'off'
+  | 'bubble'
+  | 'measureText'
+  | 'setFocus'
 >;
-/** Node text, children of a ElementNode of type TextNode */
-export interface ElementText
-  extends
-    NewOmit<
-      ElementNode,
-      '_type' | 'parent' | 'children' | 'src' | 'scale' | 'fontFamily'
-    >,
-    NewOmit<RendererText, 'x' | 'y' | 'w' | 'h'> {
-  _type: 'textNode';
-  parent?: ElementNode;
-  children: TextNode[];
-  text: string;
-  style: TextStyles;
+/** A `<text>`: an ElementNode of type TextNode; its children are strings. */
+export interface ElementText extends ElementNode {
+  readonly _type: 'textNode';
 }
 
 export interface NodeProps
@@ -144,6 +151,10 @@ export interface NodeProps
         | 'componentLocation'
       >
     > {
+  // Any other prop: an app's own field on the node (1.x typed the node with
+  // an index signature; the class has none now, its props do).
+  [key: string]: unknown;
+  ref?: ElementNode | ((node: ElementNode) => void);
   states?: NodeStates;
   style?: NodeStyles;
   children?: JSXElement | undefined;
@@ -180,6 +191,9 @@ export interface TextProps
         | 'textureOptions'
       >
     > {
+  // Any other prop, as for NodeProps.
+  [key: string]: unknown;
+  ref?: ElementNode | ((node: ElementNode) => void);
   states?: NodeStates;
   fontWeight?: number | string;
   style?: TextStyles;

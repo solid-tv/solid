@@ -1,4 +1,4 @@
-import type { ElementText } from './intrinsicTypes.js';
+import type { ElementNode } from './node/ElementNode.js';
 
 export const NodeType = {
   Element: 'element',
@@ -10,7 +10,7 @@ export type NodeTypes = (typeof NodeType)[keyof typeof NodeType];
 export class TextNode {
   // Assigned in the constructor, not class fields (design 3.6.5).
   declare readonly _type: 'text';
-  declare parent: ElementText | undefined;
+  declare parent: ElementNode | undefined;
   declare text: string;
 
   constructor(text: string) {

@@ -76,11 +76,11 @@ export function MarqueeText(props: MarqueeTextProps) {
         easing: props.easing,
       }
 
-      text1.lng.x = 0
-      text2.lng.x = textWidth() + scrollGap()
+      text1.setNow('x', 0)
+      text2.setNow('x', textWidth() + scrollGap())
 
-      const a1 = text1.lng.animate!({x: -textWidth() -scrollGap()}, options).start()
-      const a2 = text2.lng.animate!({x: 0}, options).start()
+      const a1 = text1.animate({x: -textWidth() -scrollGap()}, options).start()
+      const a2 = text2.animate({x: 0}, options).start()
 
       s.onCleanup(() => {
         a1.stop()

@@ -70,10 +70,12 @@ export const elementInterface: debug.ElementInterface<
       : null;
   },
   getLocation(node) {
-    if (typeof node[debug.LOCATION_ATTRIBUTE_NAME] === 'string') {
-      return (
-        debug.parseLocationString(node[debug.LOCATION_ATTRIBUTE_NAME]) ?? null
-      );
+    // The locator's attribute, a prop the jsx-locator plugin writes.
+    const location = (node as unknown as Record<string, unknown>)[
+      debug.LOCATION_ATTRIBUTE_NAME
+    ];
+    if (typeof location === 'string') {
+      return debug.parseLocationString(location) ?? null;
     }
     return null;
   },

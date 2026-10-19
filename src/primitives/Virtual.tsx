@@ -426,7 +426,7 @@ function createVirtual<T>(
 
       lastNavTime = performance.now();
       if (originalPosition !== undefined) {
-        viewRef.lng[axis] = originalPosition;
+        viewRef.setNow(axis, originalPosition);
         targetPosition = originalPosition;
       }
 
@@ -453,7 +453,7 @@ function createVirtual<T>(
   // DOM renderer copy both when they create the animation. The settings are
   // copied again from the row's animationSettings on every shift, into a
   // new object only when the row's settings object changes.
-  const shiftProps: Partial<lng.AnimateProps> = isRow ? { x: 0 } : { y: 0 };
+  const shiftProps: lng.AnimateProps = isRow ? { x: 0 } : { y: 0 };
   let shiftSettings: lng.AnimationSettings = {};
   let shiftSettingsFrom: lng.AnimationSettings | undefined;
   function applyShift() {
@@ -472,8 +472,8 @@ function createVirtual<T>(
     }
 
     if (lng.Config.animationsEnabled) {
-      view.lng[axis] = shiftPrevChildPos - active[axis];
-      targetPosition = view.lng[axis] + childSize * slice.shiftBy;
+      view.setNow(axis, shiftPrevChildPos - active[axis]);
+      targetPosition = view[axis] + childSize * slice.shiftBy;
       const settings = view.animationSettings;
       if (settings !== shiftSettingsFrom) {
         shiftSettings = {};
@@ -498,8 +498,10 @@ function createVirtual<T>(
         .animate(shiftProps, shiftSettings)
         .start();
     } else {
-      view.lng[axis] =
-        shiftPrevChildPos - active[axis] + childSize * slice.shiftBy;
+      view.setNow(
+        axis,
+        shiftPrevChildPos - active[axis] + childSize * slice.shiftBy,
+      );
     }
   }
 
@@ -574,7 +576,11 @@ function createVirtual<T>(
 
     queueMicrotask(() => {
       if (layoutPending) viewRef.updateLayout();
-      const activeIndex = viewRef.children.findIndex((x) => x.item === item);
+      // `item`: the prop each child is rendered with, read through a record
+      // view of the node.
+      const activeIndex = viewRef.children.findIndex(
+        (x) => (x as unknown as Record<string, unknown>).item === item,
+      );
       if (activeIndex === -1) return;
       viewRef.selected = activeIndex;
       if (lng.hasFocus(viewRef)) {
@@ -585,10 +591,10 @@ function createVirtual<T>(
 
       const childSize = computeSize(slice.selected);
       // Original Position is offset to support scrollToIndex
-      originalPosition = originalPosition ?? viewRef.lng[axis];
-      targetPosition = targetPosition ?? viewRef.lng[axis];
+      originalPosition = originalPosition ?? viewRef[axis];
+      targetPosition = targetPosition ?? viewRef[axis];
 
-      viewRef.lng[axis] = (viewRef.lng[axis] || 0) + childSize * -1;
+      viewRef.setNow(axis, viewRef[axis] + childSize * -1);
     });
   };
 
@@ -598,18 +604,18 @@ function createVirtual<T>(
       doOnce = true;
       if (itemCount() <= props.displaySize) {
         queueMicrotask(() => {
-          originalPosition = viewRef.lng[axis];
-          targetPosition = viewRef.lng[axis];
+          originalPosition = viewRef[axis];
+          targetPosition = viewRef[axis];
         });
         return;
       }
       // offset just for wrap so we keep one item before
       queueMicrotask(() => {
         const childSize = computeSize(slice.selected);
-        viewRef.lng[axis] = (viewRef.lng[axis] || 0) + childSize * -1;
+        viewRef.setNow(axis, viewRef[axis] + childSize * -1);
         // Original Position is offset to support scrollToIndex
-        originalPosition = viewRef.lng[axis];
-        targetPosition = viewRef.lng[axis];
+        originalPosition = viewRef[axis];
+        targetPosition = viewRef[axis];
       });
     });
 

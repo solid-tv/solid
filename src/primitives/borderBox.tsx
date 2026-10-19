@@ -61,8 +61,8 @@ export function borderBox(
         border = borderComponent(
           props === true || props === undefined ? {} : props,
         ) as unknown as ElementNode;
+        // Attached by the insert: `el` is attached.
         insertNode(el, border);
-        border.render();
       });
     } else if (border) {
       border.destroy();

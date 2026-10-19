@@ -1,10 +1,7 @@
 import { createRenderer as solidCreateRenderer } from '@solidjs/universal';
-import {
-  Config,
-  startLightningRenderer,
-  type RendererMainSettings,
-  DomRendererMainSettings,
-} from './core/index.js';
+import { Config, ElementNode } from './core/index.js';
+import { startRenderer, type RendererOptions } from './core/renderer.js';
+import { initClickInspector } from './core/clickInspector.js';
 import nodeOpts from './solidOpts.js';
 import {
   omit,
@@ -20,8 +17,12 @@ import { activeElement } from './core/activeElement.js';
 
 const solidRenderer = solidCreateRenderer<SolidNode>(nodeOpts);
 
-let renderer;
-export const rootNode = nodeOpts.createElement('App');
+/**
+ * The root ElementNode: it owns the core's root slot. Assigned by
+ * `createRenderer`; `Portal` and `useMouse` read it at call time, which is
+ * after `createRenderer` (a live binding, not a value copied at import).
+ */
+export let rootNode: ElementNode;
 
 const render = function (code: () => JSXElement) {
   // @ts-expect-error - code returns a JSX Element, not a SolidNode yet
@@ -29,21 +30,41 @@ const render = function (code: () => JSXElement) {
 };
 
 export function createRenderer(
-  rendererOptions?: RendererMainSettings | DomRendererMainSettings,
+  rendererOptions?: RendererOptions,
   node?: HTMLElement | string,
 ) {
-  const options = rendererOptions || Config.rendererOptions;
-
-  renderer = startLightningRenderer(options!, node || 'app');
-  rootNode.lng = renderer.root!;
-  rootNode.rendered = true;
-  renderer.on('idle', () => {
+  let options = rendererOptions || Config.rendererOptions || {};
+  if (node !== undefined) {
+    // The mount target, on a copy: the app's options are left alone. Key
+    // by key, not spread (Chrome 38).
+    const source = options as Record<string, unknown>;
+    const copy: Record<string, unknown> = {};
+    for (const key in source) {
+      copy[key] = source[key];
+    }
+    copy.canvas = node;
+    options = copy as RendererOptions;
+  }
+  const started = startRenderer(options);
+  const core = started.core;
+  if (rootNode === undefined || rootNode.core !== core) {
+    rootNode = ElementNode.fromSlot(core, core.root.slot);
+    rootNode.rendered = true;
+    initClickInspector(rootNode);
+  }
+  const renderer = started.renderer;
+  if (renderer === null) {
+    // Headless: no frame loop, so never idle: the tasks run at once.
     tasksEnabled = true;
-    processTasks();
-  });
+  } else {
+    renderer.on('idle', () => {
+      tasksEnabled = true;
+      processTasks();
+    });
+  }
 
   return {
-    renderer,
+    renderer: core,
     rootNode,
     render,
   };

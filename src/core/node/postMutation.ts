@@ -3,7 +3,8 @@ import { isDev } from '../env.js';
 import calculateFlex from '../flex.js';
 import { setActiveElementCore } from '../focusManager.js';
 import { log } from '../utils.js';
-import type { ElementNode } from './ElementNode.js';
+import { NodeType } from '../nodeTypes.js';
+import type { ElementNode, SolidNode } from './ElementNode.js';
 
 // The post-mutation pass (elementNode.ts:60-138 before 2.0; the 1.8 queues
 // come with Task 10). Three phases run in one microtask, or in the core's
@@ -133,7 +134,8 @@ export function setFocus(node: ElementNode): void {
       const nodes = node.children;
       if (forwardFocus < nodes.length) {
         const child = nodes[forwardFocus]!;
-        if (child._type !== 'text') {
+        // A TextNode may be a child (`children` types it out).
+        if ((child as SolidNode)._type !== NodeType.Text) {
           child.setFocus();
         }
         return;
@@ -164,7 +166,8 @@ export function updateLayout(node: ElementNode): void {
   const flexChanged = node.display === 'flex' && calculateFlex(node);
   layoutQueue.delete(node);
   const onLayout = node.onLayout;
-  const onLayoutChanged =
+  // Truthy when it changed something: the parent is laid out too.
+  const onLayoutChanged: unknown =
     typeof onLayout === 'function' && onLayout.call(node, node);
 
   if ((flexChanged || onLayoutChanged) && node.parent !== undefined) {
@@ -175,7 +178,8 @@ export function updateLayout(node: ElementNode): void {
     // Need to reprocess children
     for (let i = 0; i < children.length; i++) {
       const c = children[i]!;
-      if (c._type !== 'text' && c.display === 'flex') {
+      // A TextNode may be a child (`children` types it out).
+      if ((c as SolidNode)._type !== NodeType.Text && c.display === 'flex') {
         // calculating directly to prevent infinite loops recalculating parents
         calculateFlex(c);
         const childLayout = c.onLayout;

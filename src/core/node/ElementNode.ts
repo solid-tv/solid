@@ -153,7 +153,13 @@ export class ElementNode implements SlotOwner {
   declare readonly core: RendererCore;
   declare readonly _type: ElementKind;
   declare parent: ElementNode | undefined;
-  declare children: SolidNode[];
+  /**
+   * The children in order. The strings Solid puts in a `<text>` (TextNode)
+   * are children too, but typed out as in 1.x, so that code walking the
+   * elements needs no cast: code that may meet one reads the child as a
+   * SolidNode and checks `_type`.
+   */
+  declare children: ElementNode[];
   /** Attached to the rendered tree (spec 5.2). */
   declare rendered: boolean;
   /** One byte per SET_* index (defaults.ts): 1 once the app wrote the prop. */
@@ -246,9 +252,9 @@ export class ElementNode implements SlotOwner {
   declare onDestroy:
     | ((this: ElementNode, el: ElementNode) => Promise<void> | void)
     | undefined;
-  /** After the flex layout; a true return lays the parent out too. */
+  /** After the flex layout; a truthy return lays the parent out too. */
   declare onLayout:
-    | ((this: ElementNode, target: ElementNode) => boolean | void)
+    | ((this: ElementNode, target: ElementNode) => void)
     | undefined;
   declare onUp: KeyHandler | undefined;
   declare onDown: KeyHandler | undefined;
@@ -326,6 +332,10 @@ export class ElementNode implements SlotOwner {
   declare autosize: boolean | undefined;
   /** Called when the node is taken out of its parent's children. */
   declare onRemove: ((this: ElementNode, el: ElementNode) => void) | undefined;
+  /** Called when the node is clicked with a mouse (useMouse). */
+  declare onMouseClick:
+    | ((this: ElementNode, event: MouseEvent, node: ElementNode) => void)
+    | undefined;
   // Focus (focusManager.ts, Row and Column).
   /** The index of the selected child (Row, Column). */
   declare selected: number | undefined;
@@ -527,6 +537,7 @@ export class ElementNode implements SlotOwner {
     this.preFlexheight = undefined;
     this.autosize = undefined;
     this.onRemove = undefined;
+    this.onMouseClick = undefined;
     this.selected = undefined;
     this.throttleInput = undefined;
     this._lastAnyKeyPressTime = undefined;
@@ -618,7 +629,8 @@ export class ElementNode implements SlotOwner {
     const children = this.children;
     for (let i = this.selected || 0; i < children.length; i++) {
       const element = children[i]!;
-      if (element._type !== NodeType.Text) {
+      // A TextNode may be a child (`children` types it out).
+      if ((element as SolidNode)._type !== NodeType.Text) {
         this.selected = i;
         return element;
       }
@@ -631,7 +643,8 @@ export class ElementNode implements SlotOwner {
     const children = this.children;
     for (let i = 0; i < children.length; i++) {
       const c = children[i]!;
-      if (c._type !== NodeType.Text && c.id === id) {
+      // A TextNode may be a child (`children` types it out).
+      if ((c as SolidNode)._type !== NodeType.Text && c.id === id) {
         return c;
       }
     }
@@ -643,7 +656,8 @@ export class ElementNode implements SlotOwner {
     const children = this.children;
     for (let i = 0; i < children.length; i++) {
       const child = children[i]!;
-      if (child._type !== NodeType.Text) {
+      // A TextNode may be a child (`children` types it out).
+      if ((child as SolidNode)._type !== NodeType.Text) {
         if (child.id === id) {
           return child;
         }
@@ -822,7 +836,8 @@ export class ElementNode implements SlotOwner {
       const children = this.children;
       for (let i = 0; i < children.length; i++) {
         const child = children[i]!;
-        if (child._type !== NodeType.Text) {
+        // A TextNode may be a child (`children` types it out).
+        if ((child as SolidNode)._type !== NodeType.Text) {
           child.states = states;
         }
       }

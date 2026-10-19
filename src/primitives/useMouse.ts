@@ -7,6 +7,7 @@ import {
   isFunction,
   rootNode,
 } from '../index.js';
+import { stateBlock } from '../core/node/styles.js';
 import { makeEventListener } from '@solid-primitives/event-listener';
 import { useMousePosition } from '@solid-primitives/mouse';
 import { createScheduled, throttle } from '@solid-primitives/scheduled';
@@ -163,8 +164,8 @@ function findElementByActiveElement(e: MouseEvent): ElementNode | null {
     testCollision(
       px,
       py,
-      (active.lng.absX as number) || 0,
-      (active.lng.absY as number) || 0,
+      active.absX,
+      active.absY,
       active.width || 0,
       active.height || 0,
     )
@@ -179,8 +180,8 @@ function findElementByActiveElement(e: MouseEvent): ElementNode | null {
       testCollision(
         px,
         py,
-        (parent.lng.absX as number) || 0,
-        (parent.lng.absY as number) || 0,
+        parent.absX,
+        parent.absY,
         parent.width || 0,
         parent.height || 0,
       )
@@ -307,14 +308,7 @@ function isNodeAtPosition(
   return (
     node.alpha !== 0 &&
     !node.skipFocus &&
-    testCollision(
-      x,
-      y,
-      (node.lng.absX as number) || 0,
-      (node.lng.absY as number) || 0,
-      node.width || 0,
-      node.height || 0,
-    )
+    testCollision(x, y, node.absX, node.absY, node.width || 0, node.height || 0)
   );
 }
 
@@ -402,8 +396,8 @@ export function useMouse<TApp extends ElementNode = ElementNode>(
           el.onEnter ||
           el.onMouseClick ||
           el.onFocus ||
-          el[focusKey] ||
-          (hoverState && el[hoverState])
+          stateBlock(el, focusKey) ||
+          (hoverState && stateBlock(el, hoverState))
         ) {
           activeElm = el;
           break;

@@ -1,10 +1,11 @@
 import { Config } from './config.js';
 import { isElementNode } from './utils.js';
 import { isDev } from './env.js';
-import type { ElementNode } from './elementNode.js';
-import { IRendererNode } from './dom-renderer/domRendererTypes.js';
+import type { ElementNode } from './node/ElementNode.js';
 
 let installed = false;
+/** The attached tree's root, the walk's start. */
+let inspectorRoot: ElementNode | undefined;
 
 function findDeepestAtPosition(
   root: ElementNode,
@@ -21,12 +22,12 @@ function findDeepestAtPosition(
     let bestZ = -Infinity;
     for (const child of current.children) {
       if (!isElementNode(child) || child.alpha === 0) continue;
-      const cx = (child.lng.absX as number) || 0;
-      const cy = (child.lng.absY as number) || 0;
+      const cx = child.absX;
+      const cy = child.absY;
       const cw = child.width || 0;
       const ch = child.height || 0;
       if (px < cx || px > cx + cw || py < cy || py > cy + ch) continue;
-      const z = child.zIndex ?? -1;
+      const z = child.zIndex;
       if (z >= bestZ) {
         bestZ = z;
         best = child;
@@ -38,19 +39,10 @@ function findDeepestAtPosition(
 }
 
 function handleClick(event: MouseEvent) {
-  if (!event.altKey) return;
-  let target = event.target as HTMLElement | null;
-  while (target && !target.element) {
-    target = target.parentElement;
-  }
-  const hit = target?.element;
-  if (!hit) return;
-  let root = hit;
-  while (root.parent) root = root.parent;
-  const el = findDeepestAtPosition(root, event.clientX, event.clientY);
+  if (!event.altKey || inspectorRoot === undefined) return;
+  const el = findDeepestAtPosition(inspectorRoot, event.clientX, event.clientY);
   event.preventDefault();
   event.stopPropagation();
-  const lng = el.lng as IRendererNode;
   const label = el.componentName || el._type;
   const loc = el.componentLocation ? ` @ ${el.componentLocation}` : '';
   console.log(
@@ -59,19 +51,19 @@ function handleClick(event: MouseEvent) {
     'color: inherit; font-weight: normal;',
     {
       element: el,
-      div: lng.div,
-      lng,
       states: el._states ? Array.from(el._states) : [],
-      position: { x: lng?.x, y: lng?.y, w: lng?.w, h: lng?.h },
+      position: { x: el.x, y: el.y, width: el.width, height: el.height },
       parent: el.parent,
       children: el.children,
     },
   );
-  (globalThis as any).$el = el;
+  (globalThis as { $el?: ElementNode }).$el = el;
   console.log('Pinned to $el — try $el.parent, $el.setFocus()');
 }
 
-export function initClickInspector(): void {
+/** Alt+click logs the deepest element under the pointer (dev only). */
+export function initClickInspector(root: ElementNode): void {
+  inspectorRoot = root;
   if (installed || !isDev || typeof document === 'undefined') return;
   installed = true;
   document.addEventListener('click', handleClick, true);

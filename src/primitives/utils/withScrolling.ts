@@ -1,9 +1,6 @@
-import type {
-  ElementNode,
-  ElementText,
-  INode,
-  Styles,
-} from '../../core/index.js';
+import { inViewport } from '@solidtv/renderer';
+import { stateBlock } from '../../core/node/styles.js';
+import type { ElementNode, ElementText, Styles } from '../../core/index.js';
 
 export type Scroller = (
   selected: number | ElementNode,
@@ -31,10 +28,8 @@ export interface ScrollableElement extends ElementNode {
   scrollStopLast?: boolean;
 }
 
-// From the renderer, not exported
-const InViewPort = 8 as const;
 const isNotShown = (node: ElementNode | ElementText): boolean => {
-  return (node.lng.renderState as number) !== InViewPort;
+  return !inViewport(node.core.nodes, node.slot);
 };
 /*
   Auto Scrolling starts scrolling right away until the last item is shown. Keeping a full view of the list.
@@ -82,9 +77,8 @@ export function withScrolling(isRow: boolean): Scroller {
       componentRef._initialPosition = position;
     }
 
-    const lng = componentRef.lng as unknown as INode;
-    const root = lng.stage.root;
-    const screenSize = isRow ? root.w : root.h;
+    const root = componentRef.core.root;
+    const screenSize = isRow ? root.width : root.height;
     // Determine if movement is incremental or decremental
     const isIncrementing =
       lastSelected === undefined || lastSelected - 1 !== selected;
@@ -101,7 +95,8 @@ export function withScrolling(isRow: boolean): Scroller {
         componentRef.endOffset = endOffset;
       }
 
-      screenOffset = offset ?? (isRow ? lng.absX : lng.absY) - position;
+      screenOffset =
+        offset ?? (isRow ? componentRef.absX : componentRef.absY) - position;
       componentRef._screenOffset = screenOffset;
     }
 
@@ -133,7 +128,9 @@ export function withScrolling(isRow: boolean): Scroller {
     // `$focus`, not `style.focus`: the focus state's styles live on the node
     // under the state key, and the `style` getter allocates when unset.
     const selectedScale =
-      selectedEl.scale ?? (selectedEl.$focus as Styles | undefined)?.scale ?? 1;
+      selectedEl.scale ??
+      (stateBlock(selectedEl, '$focus') as Styles | undefined)?.scale ??
+      1;
     const selectedSizeScaled = selectedSize * selectedScale;
     const containerSize = componentRef[dimension] ?? 0;
     const maxOffset = Math.min(
@@ -150,7 +147,8 @@ export function withScrolling(isRow: boolean): Scroller {
     let nextPosition = rootPosition;
 
     // Update nextPosition based on scroll type and specific conditions
-    if (selectedEl.centerScroll) {
+    // `centerScroll`: an app prop, read through a record view of the node.
+    if ((selectedEl as unknown as Record<string, unknown>).centerScroll) {
       nextPosition = -selectedPosition + (screenSize - selectedSizeScaled) / 2;
     } else if (scroll === 'always') {
       nextPosition = -selectedPosition + offset;

@@ -4,7 +4,6 @@ import solidPlugin from 'vite-plugin-solid';
 export default defineConfig(() => ({
   define: {
     __DEV__: false,
-    SOLIDTV_DOM_RENDERING: true,
   },
   plugins: [
     solidPlugin({

@@ -1,5 +1,5 @@
 import { createSignal } from 'solid-js';
-import type { ElementNode } from './elementNode.js';
+import type { ElementNode } from './node/ElementNode.js';
 
 /**
  * Generic active-element signal — intentionally decoupled from the focus

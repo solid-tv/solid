@@ -38,7 +38,16 @@ function warnDropped(name: string) {
 }
 
 /** The Renderer the first `startRenderer` made, null when it adopted a core. */
-let renderer: Renderer | null = null;
+let glRenderer: Renderer | null = null;
+
+/**
+ * The app's renderer (1.x's export): the core `startRenderer` made or
+ * adopted, a `Renderer` unless headless.
+ */
+export let renderer: RendererCore;
+
+/** `renderer`, read at call time. */
+export const getRenderer = (): RendererCore => renderer;
 
 /**
  * A `loadFonts()` call made before the renderer existed. The download is
@@ -79,7 +88,7 @@ export function startRenderer(options: RendererOptions): {
         '[solid] startRenderer was called more than once: the new options and core are ignored, the first core is kept',
       );
     }
-    return { core, renderer };
+    return { core, renderer: glRenderer };
   }
 
   if (isDev) {
@@ -105,17 +114,18 @@ export function startRenderer(options: RendererOptions): {
         settings[key] = source[key];
       }
     }
-    renderer = new Renderer(
+    glRenderer = new Renderer(
       settings as Partial<RendererMainSettings>,
       options.canvas === undefined ? 'app' : options.canvas,
     );
-    core = renderer;
+    core = glRenderer;
   }
+  renderer = core;
 
   // A core exists, so any fonts requested before this point can finish.
   flushPendingFonts();
 
-  return { core, renderer };
+  return { core, renderer: glRenderer };
 }
 
 /**

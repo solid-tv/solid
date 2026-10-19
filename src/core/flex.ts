@@ -1,4 +1,4 @@
-import { type ElementNode } from './elementNode.js';
+import { type ElementNode } from './node/ElementNode.js';
 import { isTextNode, isElementText } from './utils.js';
 import { isDev } from './env.js';
 

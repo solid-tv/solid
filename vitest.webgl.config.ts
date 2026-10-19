@@ -11,8 +11,6 @@ import solid from 'vite-plugin-solid';
 
 export default defineConfig({
   define: {
-    // Solid: build without the DOM renderer, as a WebGL app does.
-    SOLIDTV_DOM_RENDERING: false,
     // Renderer build flags (src/common/flags.ts): production build, no
     // inspector, no bounds events, as the bench and the demo app build it.
     __DEV__: false,

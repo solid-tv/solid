@@ -1,4 +1,4 @@
-import { ElementNode } from './elementNode.js';
+import type { ElementNode } from './node/ElementNode.js';
 
 // Focus + KeyHandling Types
 export interface FocusNode {

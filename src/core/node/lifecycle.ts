@@ -62,7 +62,7 @@ export function insertChild(
   node: SolidNode,
   before?: SolidNode | null,
 ): void {
-  const children = parent.children;
+  const children: SolidNode[] = parent.children;
   const prevParent = node.parent;
   // Before itself: it stays where it is. Solid's swap of adjacent items asks
   // for this (insertNode(parent, y, nextSibling(x))).
@@ -145,7 +145,7 @@ export function insertChild(
  * is inserted again first (it then keeps its slot).
  */
 export function removeChild(parent: ElementNode, node: SolidNode): void {
-  const children = parent.children;
+  const children: SolidNode[] = parent.children;
   const index = lastIndexOf(children, node);
   if (index === -1) {
     return;
@@ -192,7 +192,7 @@ export function removeChild(parent: ElementNode, node: SolidNode): void {
  * shifting.
  */
 export function cleanChildren(node: ElementNode): void {
-  const children = node.children;
+  const children: SolidNode[] = node.children;
   const len = children.length;
   if (len === 0) {
     return;
@@ -418,7 +418,8 @@ export function attach(node: ElementNode): void {
     const children = node.children;
     for (let i = 0; i < children.length; i++) {
       const c = children[i]!;
-      if (c._type !== NodeType.Text) {
+      // A TextNode may be a child (`children` types it out).
+      if ((c as SolidNode)._type !== NodeType.Text) {
         attach(c);
       }
     }

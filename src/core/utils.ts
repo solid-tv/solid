@@ -1,10 +1,9 @@
-import { type INode } from '@solidtv/renderer';
 import { Config, isDev } from './config.js';
 import type { Styles, ElementText } from './intrinsicTypes.js';
-import { ElementNode } from './elementNode.js';
-import { NodeType, TextNode } from './nodeTypes.js';
+import { ElementNode } from './node/ElementNode.js';
+import { NodeType, type TextNode } from './nodeTypes.js';
 
-function hasDebug(node: any) {
+function hasDebug(node: unknown) {
   return isObject(node) && node.debug;
 }
 
@@ -44,10 +43,6 @@ export function isNumber(item: unknown): item is number {
 
 export function isInteger(item: unknown): item is number {
   return Number.isInteger(item);
-}
-
-export function isINode(node: object): node is INode {
-  return 'destroy' in node && typeof node.destroy === 'function';
 }
 
 export function isElementNode(node: unknown): node is ElementNode {
@@ -110,49 +105,6 @@ export function flattenStyles(
   }
 
   return result;
-}
-
-export function logRenderTree(node: ElementNode) {
-  const tree = [node];
-  let parent = node.parent;
-  while (parent) {
-    tree.push(parent);
-    parent = parent.parent;
-  }
-  tree.reverse();
-
-  let output = `
-function convertEffectsToShader(styleEffects) {
-  const effects = [];
-  let index = 0;
-
-  for (const [type, props] of Object.entries(styleEffects)) {
-    effects.push({ type, props });
-    index++;
-  }
-  return createShader('DynamicShader', { effects });
-}
-`;
-  tree.forEach((node, i) => {
-    if (!node._rendererProps) {
-      return;
-    }
-    node._rendererProps.parent = undefined;
-    node._rendererProps.shader = undefined;
-    const props = JSON.stringify(node._rendererProps, null, 2);
-    const effects = node._effects
-      ? `props${i}.shader = convertEffectsToShader(${JSON.stringify(node._effects, null, 2)});`
-      : '';
-    const parent = i === 0 ? 'rootNode' : `node${i - 1}`;
-    output += `
-const props${i} = ${props};
-props${i}.parent = ${parent};
-${effects}
-const node${i} = renderer.createNode(props${i});
-`;
-  });
-
-  return output;
 }
 
 export interface Rect {

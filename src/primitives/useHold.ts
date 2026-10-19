@@ -1,6 +1,6 @@
 import { createMemo } from 'solid-js';
 import { suppressKeyUntilRelease } from '../core/focusManager.js';
-import type { ElementNode } from '../core/elementNode.js';
+import type { ElementNode } from '../core/node/ElementNode.js';
 
 /**
  * A hold callback. Receives the `KeyboardEvent` that began the press, the

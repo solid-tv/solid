@@ -175,7 +175,7 @@ export function VirtualGrid<T>(props: VirtualGridProps<T>): s.Element {
     // One flex pass per window shift: lay out here only if the post-mutation
     // layout has not already run since the window changed.
     if (layoutPending) view.updateLayout();
-    view.lng.y = prevRowY - active.y;
+    view.setNow('y', prevRowY - active.y);
     columnScroll(shiftIdx, view, active, shiftLastIdx);
   }
 
@@ -214,7 +214,7 @@ export function VirtualGrid<T>(props: VirtualGridProps<T>): s.Element {
     }
 
     const item = items()[selected];
-    let active = viewRef.children.find(x => x.item === item);
+    let active = viewRef.children.find(x => (x as unknown as Record<string, unknown>).item === item /* `item`: the child's prop */);
     const lastSelected = viewRef.selected;
 
     if (active instanceof lng.ElementNode) {
@@ -230,7 +230,7 @@ export function VirtualGrid<T>(props: VirtualGridProps<T>): s.Element {
 
       queueMicrotask(() => {
         if (layoutPending) viewRef.updateLayout();
-        active = viewRef.children.find(x => x.item === item);
+        active = viewRef.children.find(x => (x as unknown as Record<string, unknown>).item === item /* `item`: the child's prop */);
         if (active instanceof lng.ElementNode) {
           viewRef.selected = viewRef.children.indexOf(active);
           if (lng.hasFocus(viewRef)) {
