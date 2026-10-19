@@ -13,7 +13,7 @@ import { Config } from '../../src/core/config.js';
 import { ElementNode } from '../../src/core/node/ElementNode.js';
 import { SET_FONT_SIZE, SET_WIDTH } from '../../src/core/node/defaults.js';
 import { applyTextSizeAtAttach } from '../../src/core/node/textProps.js';
-import { NodeType } from '../../src/core/nodeTypes.js';
+import { NodeType, TextNode } from '../../src/core/nodeTypes.js';
 import { loadBoxFont } from '../fonts.js';
 
 const headless = () => new RendererCore({ appWidth: 640, appHeight: 360 });
@@ -124,6 +124,7 @@ describe('ElementNode text props', () => {
   it('width before attach becomes maxWidth', async () => {
     const { core, text } = await boxText();
     const state = textStateOf(core.nodes, text.slot);
+    text.contain = 'both';
     text.width = 100;
     text.height = 50;
     // Not attached: stored as the node's own size, no maxWidth yet.
@@ -144,6 +145,31 @@ describe('ElementNode text props', () => {
     text.height = 40;
     expect(state.maxHeight).toBe(40);
     expect(text.height).toBe(40);
+  });
+
+  it('attach maps the pre-attach size to maxWidth and maxHeight by contain', async () => {
+    const { core, text } = await boxText();
+    const state = textStateOf(core.nodes, text.slot);
+    // No contain: the size stays the node's own.
+    text.width = 100;
+    text.height = 50;
+    applyTextSizeAtAttach(text);
+    expect(state.maxWidth).toBe(0);
+    expect(state.maxHeight).toBe(0);
+    expect(text.width).toBe(100);
+    expect(core.nodes.f64[text.slot * F_STRIDE + F_WIDTH]).toBe(100);
+    // contain 'width': the width only.
+    text.contain = 'width';
+    applyTextSizeAtAttach(text);
+    expect(state.maxWidth).toBe(100);
+    expect(state.maxHeight).toBe(0);
+    // A maxWidth set already is kept.
+    const other = new ElementNode(core, NodeType.TextNode);
+    other.contain = 'both';
+    other.maxWidth = 70;
+    other.width = 100;
+    applyTextSizeAtAttach(other);
+    expect(textStateOf(core.nodes, other.slot).maxWidth).toBe(70);
   });
 
   it("contain 'width' reads width as maxWidth", async () => {
@@ -173,5 +199,35 @@ describe('ElementNode text props', () => {
     expect(text.width).toBeGreaterThan(0);
     expect(text.height).toBeGreaterThan(0);
     expect(textStateOf(core.nodes, text.slot).stale).toBe(false);
+  });
+
+  it('getText joins the string children', () => {
+    const core = headless();
+    const text = new ElementNode(core, NodeType.TextNode);
+    expect(text.getText()).toBe('');
+    text.children.push(new TextNode('ab'));
+    expect(text.getText()).toBe('ab');
+    text.children.push(new TextNode('cd'), new TextNode('ef'));
+    expect(text.getText()).toBe('abcdef');
+  });
+
+  it('the template family is read once: a later Config.fontSettings change is ignored', () => {
+    const fs = Config.fontSettings;
+    const saved = fs.fontFamily;
+    const core = headless();
+    const first = new ElementNode(core, NodeType.TextNode);
+    first.rendered = true;
+    first.fontFamily = undefined;
+    const family = textStateOf(core.nodes, first.slot).fontFamily;
+    expect(family).not.toBe('sans-serif');
+    fs.fontFamily = 'Changed';
+    try {
+      const later = new ElementNode(core, NodeType.TextNode);
+      later.rendered = true;
+      later.fontFamily = undefined;
+      expect(textStateOf(core.nodes, later.slot).fontFamily).toBe(family);
+    } finally {
+      fs.fontFamily = saved;
+    }
   });
 });

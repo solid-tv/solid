@@ -1,4 +1,7 @@
 import {
+  F_HEIGHT,
+  F_STRIDE,
+  F_WIDTH,
   NULL,
   reboxText,
   relayoutText,
@@ -78,15 +81,26 @@ function viewSet(node: ElementNode, key: string, v: unknown): void {
   bag[key] = v;
 }
 
+// The template family is read once, at the first text that needs it, and
+// not again: Config.fontSettings is set at app startup and later changes
+// are ignored (as the old template, tests/contract-text.test.tsx).
+let templateFamily: string | undefined;
+let templateRead = false;
+
 /**
  * The family text with the template's weight, for a text that sets no
- * family of its own: `Config.fontSettings`' family and weight.
+ * family of its own: `Config.fontSettings`' family and weight, read once.
  */
 export function templateFontFamily(): string | undefined {
-  const fs = Config.fontSettings;
-  return fs.fontFamily === undefined
-    ? undefined
-    : `${fs.fontFamily}${fs.fontWeight || ''}`;
+  if (!templateRead) {
+    templateRead = true;
+    const fs = Config.fontSettings;
+    templateFamily =
+      fs.fontFamily === undefined
+        ? undefined
+        : `${fs.fontFamily}${fs.fontWeight || ''}`;
+  }
+  return templateFamily;
 }
 
 /**
@@ -172,9 +186,10 @@ export function writeTextNumber(
 /**
  * Attach's step for the size a `<text>` was given before it was attached:
  * `width` and `height` written then were stored as the node's own size
- * (writeTextWidth); this makes them `maxWidth` and `maxHeight`, which is what
- * they mean on an attached text. Call it once, before the node's `rendered`
- * is set.
+ * (writeTextWidth). As in today's attach, `contain` 'width' or 'both' makes
+ * the width the `maxWidth` and 'both' makes the height the `maxHeight`, each
+ * only when the max is not set already; with no `contain` the size stays
+ * the node's own. Call it once, before the node's `rendered` is set.
  */
 export function applyTextSizeAtAttach(node: ElementNode): void {
   const s = node.slot;
@@ -184,17 +199,18 @@ export function applyTextSizeAtAttach(node: ElementNode): void {
   const nodes = node.core.nodes;
   const t = textStateOf(nodes, s);
   const set = node._set;
+  const contain = t.contain;
   let changed = false;
-  if (set[SET_WIDTH] === 1) {
-    const w = node.width;
-    if (w !== 0 && t.maxWidth !== w) {
+  if (set[SET_WIDTH] === 1 && (contain === 'width' || contain === 'both')) {
+    const w = nodes.f64[s * F_STRIDE + F_WIDTH]!;
+    if (t.maxWidth === 0 && w !== 0) {
       t.maxWidth = w;
       changed = true;
     }
   }
-  if (set[SET_HEIGHT] === 1) {
-    const h = node.height;
-    if (h !== 0 && t.maxHeight !== h) {
+  if (set[SET_HEIGHT] === 1 && contain === 'both') {
+    const h = nodes.f64[s * F_STRIDE + F_HEIGHT]!;
+    if (t.maxHeight === 0 && h !== 0) {
       t.maxHeight = h;
       changed = true;
     }
