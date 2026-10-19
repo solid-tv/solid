@@ -8,10 +8,15 @@
  */
 import * as v from 'vitest';
 import * as s from 'solid-js';
-import { I_FIRST_CHILD, I_STRIDE, NULL } from '@solidtv/renderer';
+import {
+  F_STRIDE,
+  F_WIDTH,
+  I_FIRST_CHILD,
+  I_STRIDE,
+  NULL,
+} from '@solidtv/renderer';
 import { ElementNode, TextNode, NodeType } from '@solidtv/solid';
 import { scrollRow } from '@solidtv/solid/primitives';
-import { F_STRIDE, F_WIDTH } from '@solidtv/renderer';
 import nodeOpts from '../src/solidOpts.js';
 import { core, renderer, tick, waitForUpdate } from './setup.js';
 
@@ -367,7 +372,7 @@ v.describe('child list', () => {
   // N3: a removed node keeps its parent link, but must not lay out its old
   // parent: not on a load, not when its own layout changes its size. (1.8's
   // removed node kept its renderer node; a removed node here is destroyed at
-  // the next delete flush, so these two are `preserve`d to stay alive and
+  // the next delete flush, so these three are `preserve`d to stay alive and
   // keep their store record, the loads and resizes they test.)
   v.test("a removed node's load does not lay out its old parent", async () => {
     let count = 0;
@@ -435,7 +440,9 @@ v.describe('child list', () => {
       let label!: ElementNode;
       const dispose = renderer.render(() => (
         <view ref={row} display="flex" onLayout={() => void count++}>
-          <text ref={label}>Short</text>
+          <text ref={label} preserve>
+            Short
+          </text>
           <view width={20} height={20} />
         </view>
       ));
@@ -446,7 +453,8 @@ v.describe('child list', () => {
 
       // N3 keeps `parent` on a removed node: the text's measure path must
       // still treat it as out of the tree. (The size change comes from
-      // maxWidth, which flex reads first.)
+      // maxWidth, which flex reads first; `preserve` keeps the removed text
+      // alive, else the delete flush destroys it and the writes do nothing.)
       v.expect(label.parent).toBe(row);
       label.text = 'A much longer label than before';
       label.maxWidth = 200;
