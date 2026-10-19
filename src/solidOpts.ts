@@ -1,4 +1,4 @@
-import { ElementNode, TextNode, log, NodeType } from './core/index.js';
+import { ElementNode, TextNode, log, NodeType, isDev } from './core/index.js';
 import { core } from './core/renderer.js';
 import { insertChild, removeChild } from './core/node/lifecycle.js';
 import { setStateBlock } from './core/node/styles.js';
@@ -44,7 +44,9 @@ export default {
     return new TextNode(text);
   },
   replaceText(node: TextNode, value: string): void {
-    log('Replace Text: ', node, value);
+    if (isDev) {
+      log('Replace Text: ', node, value);
+    }
     node.text = value;
     const parent = node.parent;
     // A text node never inserted has no parent.
@@ -56,14 +58,18 @@ export default {
     writeProp(node, name, value);
   },
   insertNode(parent: ElementNode, node: SolidNode, anchor?: SolidNode): void {
-    log('INSERT: ', parent, node, anchor);
+    if (isDev) {
+      log('INSERT: ', parent, node, anchor);
+    }
     insertChild(parent, node, anchor);
   },
   isTextNode(node: SolidNode): boolean {
     return node._type === NodeType.TextNode;
   },
   removeNode(parent: ElementNode, node: SolidNode): void {
-    log('REMOVE: ', parent, node);
+    if (isDev) {
+      log('REMOVE: ', parent, node);
+    }
     removeChild(parent, node);
   },
   getParentNode(node: SolidNode): ElementNode | undefined {
