@@ -73,6 +73,13 @@ if (args.summarize !== undefined) {
   process.exit(0);
 }
 
+const warmupScale = Number(args['warmup-scale']);
+if (!Number.isInteger(warmupScale) || warmupScale < 1) {
+  throw new Error(
+    `--warmup-scale: a positive integer, not ${args['warmup-scale']}`,
+  );
+}
+
 const arms = args.arms.split(',').map((a) => a.trim().toUpperCase());
 for (const a of arms) {
   if (!(a in ARMS)) {
@@ -256,7 +263,7 @@ const opCounts = (info) => {
     // --warmup-scale n: n times the scenario's warmup, so that code run once
     // per op is optimized before the measured ops (see the README).
     return {
-      warmup: info.warmup * Number(args['warmup-scale']),
+      warmup: info.warmup * warmupScale,
       measured: info.measured,
     };
   }
