@@ -246,9 +246,11 @@ export function installAccessors(proto: ElementNode): void {
           ? DEFAULT.scale
           : this.core.nodes.f64[s * F_STRIDE + F_SCALE_X]!;
       },
-      set(this: ElementNode, v: number) {
+      set(this: ElementNode, v: number | null | undefined) {
         const s = this.slot;
-        if (s === NULL) {
+        // No scale (null, or undefined from a style undo) is no write, as
+        // the renderer handle has it: never NaN into both axes.
+        if (s === NULL || v === null || v === undefined) {
           return;
         }
         this._set[SET_SCALE] = 1;
@@ -826,6 +828,9 @@ export function installAccessors(proto: ElementNode): void {
         return this._right;
       },
       set(this: ElementNode, v: number | undefined) {
+        if (this.slot === NULL) {
+          return;
+        }
         this._right = v;
         this._set[SET_X] = 1;
         this._set[SET_MOUNT_X] = 1;
@@ -836,6 +841,9 @@ export function installAccessors(proto: ElementNode): void {
         return this._bottom;
       },
       set(this: ElementNode, v: number | undefined) {
+        if (this.slot === NULL) {
+          return;
+        }
         this._bottom = v;
         this._set[SET_Y] = 1;
         this._set[SET_MOUNT_Y] = 1;
@@ -846,6 +854,9 @@ export function installAccessors(proto: ElementNode): void {
         return this._center;
       },
       set(this: ElementNode, v: boolean | undefined) {
+        if (this.slot === NULL) {
+          return;
+        }
         this._center = v;
         const set = this._set;
         set[SET_X] = 1;
@@ -859,6 +870,9 @@ export function installAccessors(proto: ElementNode): void {
         return this._centerX;
       },
       set(this: ElementNode, v: boolean | undefined) {
+        if (this.slot === NULL) {
+          return;
+        }
         this._centerX = v;
         this._set[SET_X] = 1;
         this._set[SET_MOUNT_X] = 1;
@@ -869,6 +883,9 @@ export function installAccessors(proto: ElementNode): void {
         return this._centerY;
       },
       set(this: ElementNode, v: boolean | undefined) {
+        if (this.slot === NULL) {
+          return;
+        }
         this._centerY = v;
         this._set[SET_Y] = 1;
         this._set[SET_MOUNT_Y] = 1;

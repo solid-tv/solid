@@ -93,6 +93,20 @@ describe('ElementNode accessors', () => {
     expect(core.nodes.f64[slot * F_STRIDE + F_ALPHA]).toBe(0.5);
     expect(takeDirty(core, slot)).toBe(0);
     expect(node._set[SET_X]).toBe(0);
+    node.right = 5;
+    expect(node._right).toBeUndefined();
+    expect(node._set[SET_X]).toBe(0);
+  });
+
+  it('scale ignores a null or undefined write', () => {
+    const core = headless();
+    const node = new ElementNode(core, NodeType.Element);
+    node.scale = 2;
+    // A style undo writes undefined; the handle ignores null.
+    (node as { scale: number | null | undefined }).scale = undefined;
+    (node as { scale: number | null | undefined }).scale = null;
+    expect(node.scaleX).toBe(2);
+    expect(node.scaleY).toBe(2);
   });
 
   it('the forwarded names the renderer never had are absent', () => {
@@ -123,6 +137,11 @@ describe('ElementNode accessors', () => {
     const root = ElementNode.fromSlot(core, core.root.slot);
     expect(Object.keys(text)).toEqual(Object.keys(view));
     expect(Object.keys(root)).toEqual(Object.keys(view));
+    // App props written after construction add no field.
+    const written = new ElementNode(core, NodeType.Element);
+    written.id = 'a';
+    written.onUp = () => {};
+    expect(Object.keys(written)).toEqual(Object.keys(view));
     expect(core.nodes.handles[view.slot]).toBe(view);
     expect(core.nodes.handles[text.slot]).toBe(text);
     expect(core.nodes.handles[root.slot]).toBe(root);

@@ -149,8 +149,8 @@ export class ElementNode implements SlotOwner {
   declare _centerX: boolean | undefined;
   declare _centerY: boolean | undefined;
 
-  // App props with no accessor and no constructor slot: plain fields the
-  // app writes.
+  // App props with no accessor: plain fields the app writes, assigned in
+  // the constructor too so a write adds no field.
   /** The app's string id (KeepAlive, focus, getChildById), not the slot. */
   declare id: string | undefined;
   declare autofocus: unknown;
@@ -314,6 +314,25 @@ export class ElementNode implements SlotOwner {
     this._center = undefined;
     this._centerX = undefined;
     this._centerY = undefined;
+    this.id = undefined;
+    this.autofocus = undefined;
+    this.forwardFocus = undefined;
+    this.skipFocus = undefined;
+    this.onCreate = undefined;
+    this.onRender = undefined;
+    this.onDestroy = undefined;
+    this.onLayout = undefined;
+    this.updateLayoutOn = undefined;
+    this.onUp = undefined;
+    this.onDown = undefined;
+    this.onLeft = undefined;
+    this.onRight = undefined;
+    this.onEnter = undefined;
+    this.onLast = undefined;
+    this.onFocus = undefined;
+    this.onFocusChanged = undefined;
+    this.onBlur = undefined;
+    this.onKeyPress = undefined;
     core.nodes.handles[slot] = this;
   }
 
