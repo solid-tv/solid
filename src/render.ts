@@ -145,7 +145,7 @@ function processTasks(): void {
  * ```
  * @description https://www.solidjs.com/docs/latest/api#dynamic
  */
-export function Dynamic<T extends Record<string, any>>(
+export function Dynamic<T extends object>(
   props: T & { component?: Component<T> | undefined | null },
 ): JSXElement {
   const others = omit(props, 'component');
@@ -171,7 +171,7 @@ export function Dynamic<T extends Record<string, any>>(
   }) as unknown as JSXElement;
 }
 
-export function registerDefaultShader(_name: string, _shader: any) {
+export function registerDefaultShader(_name: string, _shader: unknown) {
   // noop for v2
   // renderer.stage.shManager.registerShaderType('rounded', Rounded);
 }

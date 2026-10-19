@@ -81,8 +81,8 @@ function updateMemoryInfo(renderer: RendererMain) {
 }
 
 let frameCount = 0;
-export function setupFPS(root: any) {
-  root.renderer.on('fpsUpdate', (target: RendererMain, fpsData: any) => {
+export function setupFPS(root: { renderer: RendererMain }) {
+  root.renderer.on('fpsUpdate', (target: RendererMain, fpsData: number | { fps: number }) => {
     const fps = typeof fpsData === 'number' ? fpsData : fpsData.fps;
     // ignore really low fps which occur on page loads
     if (fps > 5) {

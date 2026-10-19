@@ -250,8 +250,6 @@ them.
 - **`Date.now()`, not `performance.now()`.** On TV targets the high resolution
   clock is clamped to 1ms and costs several times more per read. A settle time
   is hundreds of milliseconds, so nothing is lost.
-- **The DOM renderer emits neither event.** `Config.domRendererEnabled` builds
-  produce no reports. Guard the setup call if you ship both.
 - **Numbers from before renderer 1.8 are not comparable.** Production builds
   used to sample the idle poll cadence and report a meaningless constant around
   60 to 70.

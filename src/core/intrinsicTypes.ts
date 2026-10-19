@@ -2,14 +2,6 @@ import * as lngr from '@solidtv/renderer';
 import type { INodeProps, ITextNodeProps } from '@solidtv/renderer/node';
 import type { ElementNode } from './node/ElementNode.js';
 import { NodeStates } from './states.js';
-import {
-  ShaderBorderProps,
-  ShaderHolePunchProps,
-  ShaderLinearGradientProps,
-  ShaderRadialGradientProps,
-  ShaderRoundedProps,
-  ShaderShadowProps,
-} from './shaders.js';
 import { EventHandlers, DefaultKeyMap, FocusNode } from './focusKeyTypes.js';
 import type { Element as JSXElement } from 'solid-js';
 
@@ -42,22 +34,6 @@ export type DollarString = `$${string}`;
 export type BorderStyle = BorderStyleObject;
 export type SingleBorderStyle = SingleBorderStyleObject;
 export type BorderRadius = number | number[];
-
-export interface Effects {
-  linearGradient?: Partial<ShaderLinearGradientProps>;
-  radialGradient?: Partial<ShaderRadialGradientProps>;
-  holePunch?: Partial<ShaderHolePunchProps>;
-  shadow?: Partial<ShaderShadowProps>;
-  rounded?: Partial<ShaderRoundedProps>;
-  borderRadius?: Partial<BorderRadius>;
-  border?: Partial<ShaderBorderProps>;
-  borderTop?: Partial<ShaderBorderProps>;
-  borderBottom?: Partial<ShaderBorderProps>;
-  borderLeft?: Partial<ShaderBorderProps>;
-  borderRight?: Partial<ShaderBorderProps>;
-}
-
-export type StyleEffects = Effects;
 
 export type FontLoadOptions = Omit<
   lngr.FontLoadOptions,
@@ -206,17 +182,8 @@ export interface TextStyles extends NewOmit<TextProps, 'style'> {
 
 export type Styles = NodeStyles | TextStyles;
 
-// TODO: deprecated
-export interface IntrinsicNodeProps extends NodeProps {}
-export interface IntrinsicNodeStyleProps extends NodeStyles {}
-export interface IntrinsicTextNodeStyleProps extends TextStyles {}
-
 export type AnimationEvents = 'animating' | 'stopped';
-export type AnimationEventHandler = (
-  this: ElementNode,
-  name: string,
-  endValue: number,
-) => void;
+export type { AnimationEventHandler } from './node/ElementNode.js';
 
 type EventPayloadMap = {
   loaded: lngr.NodeLoadedPayload;

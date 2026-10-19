@@ -1,6 +1,10 @@
 import * as s from 'solid-js';
 
-export type AnyFunction = (this: any, ...args: any[]) => any;
+/** Any function: `never` parameters accept every signature as a constraint. */
+export type AnyFunction = (this: never, ...args: never[]) => unknown;
+
+/** The shape the chain calls through: arguments and `this` pass along as is. */
+type ChainedFunction = (this: unknown, ...args: unknown[]) => unknown;
 
 /**
  * take an array of functions and if you return `true` from a function, it will stop the chain
@@ -21,12 +25,12 @@ export function chainFunctions<T extends AnyFunction>(
   ...fns: (T | undefined | null | false)[]
 ): T | undefined;
 export function chainFunctions(
-  ...fns: (AnyFunction | undefined | null | false)[]
-): AnyFunction | undefined {
+  ...fns: (ChainedFunction | undefined | null | false)[]
+): ChainedFunction | undefined {
   // Inline filter to avoid the intermediate array allocation when most
   // callers pass 2 args and one or both happen to be falsy.
-  let first: AnyFunction | undefined;
-  let onlyFunctions: AnyFunction[] | undefined;
+  let first: ChainedFunction | undefined;
+  let onlyFunctions: ChainedFunction[] | undefined;
   for (let i = 0; i < fns.length; i++) {
     const fn = fns[i];
     if (typeof fn !== 'function') continue;

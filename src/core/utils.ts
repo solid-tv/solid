@@ -10,7 +10,7 @@ function hasDebug(node: unknown) {
 export function log(
   msg: string,
   node: ElementNode | ElementText | TextNode,
-  ...args: any[]
+  ...args: unknown[]
 ) {
   if (isDev) {
     if (Config.debug || hasDebug(node) || hasDebug(args[0])) {
@@ -29,7 +29,7 @@ export function isObject(
   return item !== null && typeof item === 'object';
 }
 
-export function isArray(item: unknown): item is any[] {
+export function isArray(item: unknown): item is unknown[] {
   return Array.isArray(item);
 }
 

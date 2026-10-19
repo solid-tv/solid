@@ -73,10 +73,9 @@ A few less common settings were renamed too:
 | -------------------------------------- | --------------------------- | ------------------------- |
 | `tsconfig.json` `jsxImportSource`      | `@lightningtv/solid`        | `@solidtv/solid`          |
 | Custom import condition (`conditions`) | `@lightningtv/source`       | `@solidtv/source`         |
-| Vite `define` for the DOM renderer     | `LIGHTNING_DOM_RENDERING`   | `SOLIDTV_DOM_RENDERING`   |
 | Vite `define` to turn off shaders      | `LIGHTNING_DISABLE_SHADERS` | `SOLIDTV_DISABLE_SHADERS` |
 
-?> The old `LIGHTNING_*` defines are ignored without a warning. If you used the [DOM Renderer](/articles/domrenderer.md), rename the define or the app falls back to WebGL.
+?> The old `LIGHTNING_*` defines are ignored without a warning. The DOM renderer and its define were removed in 2.0: see [DOM Renderer](/articles/domrenderer.md).
 
 ## 4. Renderer changes since the fork
 

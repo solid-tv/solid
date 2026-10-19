@@ -40,15 +40,13 @@ export const Image: Component<ImageProps> = (props) => {
   // show the texture and call the app's own, as Solid calls them.
   const onEvent: OnEvent = {};
   if (userEvents !== undefined) {
-    for (const key in userEvents) {
-      onEvent[key] = userEvents[key];
-    }
+    Object.assign(onEvent, userEvents);
   }
-  onEvent.loaded = (target: ElementNode, event?: unknown) => {
+  onEvent.loaded = (target, event) => {
     show();
     userEvents?.loaded?.call(target, target, event);
   };
-  onEvent.failed = (target: ElementNode, event?: unknown) => {
+  onEvent.failed = (target, event) => {
     show();
     userEvents?.failed?.call(target, target, event);
   };

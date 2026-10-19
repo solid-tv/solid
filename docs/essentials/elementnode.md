@@ -1,6 +1,6 @@
 # Element Node
 
-All JSX code is compiled into `ElementNode` class objects, which extend the SolidTV Renderer nodes.
+All JSX code is compiled into `ElementNode` class objects. An `ElementNode` is the handle of one node in the SolidTV Renderer: it owns a slot in the renderer's node store, and its props read and write that store directly.
 
 <img src="images/SolidElementNode.jpg" alt="SolidTV To Renderer Node Creation">
 
@@ -13,17 +13,33 @@ let container;
 </view>;
 ```
 
-The above code creates an `ElementNode` with 3 children `ElementNode`s. By using Solid's `ref`, we gain direct access to the underlying node instance, allowing us to control the renderer directly.
+The above code creates an `ElementNode` with 3 children `ElementNode`s. By using Solid's `ref`, we gain direct access to the node, allowing us to control the renderer directly: there is no second renderer object behind it (1.x's `node.lng` is gone, the node is the handle).
 
 ```js
 // You can set any properties directly via the ref
 container.width = 500;
 container.color = '#000000';
 container.x = 100;
-// ElementNode extends Object, so you can add arbitrary properties.
-// Only renderer-specific properties will be forwarded
+```
+
+`ElementNode` is a class with declared members only and no index signature, so a member it does not declare is a type error. To keep your own data on a node, use the `data` prop, or declare the member by augmenting the class:
+
+```ts
+declare module '@solidtv/solid' {
+  interface ElementNode {
+    customProp?: string;
+  }
+}
+
 container.customProp = 'SolidTV Rocks';
 ```
+
+## The node is the renderer handle
+
+- **A slot from construction.** The node takes its slot in the renderer's store when it is created, so every prop write, including the first, lands in the renderer. There is no pre-render bag of props to flush later.
+- **Accessors, not copies.** `x`, `y`, `width`, `height`, `alpha`, `color`, `scale`, `rotation`, `mount*`, `pivot*`, `zIndex` and the rest are accessors that read and write the store. A read always returns the current value, and a store-backed prop never reads `undefined`: a prop the app never set reads the renderer default (`alpha` 1, `scale` 1), and so does one whose style was undone with no base value to fall back to.
+- **`rendered` and attach.** Linking a node into its parent is immediate, so draw order follows child order from the start. `rendered` is the lifecycle flag: it is `false` on a new node and becomes `true` when the node is attached to the rendered tree, which is when its parent is rendered at insert, or the subtree it belongs to is attached. Attach runs parent before children, resolves the defaults that depend on the parent (a default `width` and `height` from the parent's size, `right`, `bottom`, `center*`), creates the shader if one is needed and calls `onCreate`.
+- **Only world position is read from the last frame.** `absX` and `absY` read the world transform the renderer computed in its last frame, so a write is visible in them after the next frame.
 
 Often, you'll want to manipulate the children of the node.
 

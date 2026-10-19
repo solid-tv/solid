@@ -53,7 +53,7 @@
   - [Real World Performance](/articles/realworldperformance.md)
   - [Boosting SolidTV Performance by 50%](/articles/boostingperf.md)
   - [SolidTV / Blits Framework Comparison](/articles/solidvsblits.md)
-  - [DOM Renderer](/articles/domrenderer.md)
+  - [DOM Renderer (removed in 2.0)](/articles/domrenderer.md)
   - [SolidTV Renderer](/articles/solidtv_renderer.md)
 - Build & Deploy
   - [RDK Firebolt Integration](/deploy/firebolt.md)

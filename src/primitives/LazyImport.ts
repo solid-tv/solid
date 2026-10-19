@@ -101,7 +101,7 @@ const getNativeImport = (): ((url: string) => Promise<unknown>) | null => {
  *    `.count` / `.done`, but SolidTV renders to WebGL/Canvas and never hydrates,
  *    so that path was dead code carried over from the original.
  */
-export function lazy<T extends Component<any>>(
+export function lazy<T extends Component<never>>(
   fn: () => Promise<{ default: T }>,
 ): T & { preload: () => Promise<{ default: T }> } {
   let comp: (() => T | undefined) | undefined;
@@ -179,7 +179,7 @@ export function lazy<T extends Component<any>>(
     return attemptLoad(0);
   };
 
-  const wrap: T & { preload?: () => void } = ((props: any) => {
+  const wrap: T & { preload?: () => void } = ((props: Parameters<T>[0]) => {
     if (!comp) {
       // Returning the promise directly (rather than an `async` compute) keeps
       // this file free of async syntax, which matters for the Chrome 38 target.

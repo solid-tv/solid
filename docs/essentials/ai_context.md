@@ -47,7 +47,7 @@
 
 ### Positioning & Transformation
 
-`x`, `y`, `right`, `bottom`, `width` (w), `height` (h), `minWidth`, `minHeight`, `maxWidth`, `maxHeight`, `mount`, `mountX`, `mountY`, `pivot`, `pivotX`, `pivotY`, `rotation`, `scale`, `scaleX`, `scaleY`, `alpha`, `zIndex`, `zIndexLocked`
+`x`, `y`, `right`, `bottom`, `width`, `height`, `minWidth`, `minHeight`, `maxWidth`, `maxHeight`, `mount`, `mountX`, `mountY`, `pivot`, `pivotX`, `pivotY`, `rotation`, `scale`, `scaleX`, `scaleY`, `alpha`, `zIndex`
 
 ### Container Flexbox
 
@@ -59,7 +59,7 @@
 
 ### Visual & Text
 
-`color`, `colorTop`, `colorBottom`, `linearGradient`, `radialGradient`, `borderRadius`, `border`, `shadow`, `text`, `fontSize`, `fontFamily`, `fontWeight`, `lineHeight`, `textAlign`, `wordWrap`, `maxLines`, `textOverflow`
+`color`, `colorTop`, `colorBottom`, `linearGradient`, `radialGradient`, `borderRadius`, `border`, `shadow`, `text`, `fontSize`, `fontFamily`, `fontWeight`, `lineHeight`, `textAlign`, `maxLines`
 
 ## 7. DO NOT USE 🚫
 

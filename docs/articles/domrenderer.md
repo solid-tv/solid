@@ -1,38 +1,25 @@
 # DOM Renderer
 
-SolidTV JS relies on WebGL or Canvas to deliver high-performance rendering across a wide range of devices. However, for certain devices where HTML rendering might be better suited or more performant, such as the PlayStation 5, or environments with specific WebGL constraints, we offer a standalone **DOM Renderer**.
+The DOM Renderer is gone in SolidTV 2.0. `@solidtv/renderer` 2.x has one engine (WebGL) and one text engine (SDF), and `ElementNode` reads and writes the renderer's node store directly, so there is no second renderer to switch to. The `SOLIDTV_DOM_RENDERING` define, `Config.domRendererEnabled`, `DOMRendererMain`, `DOMNode`, `isDomRenderer` and `isDomRendererActive` were removed. See the [migration guide](/articles/migration-1x-to-2.0.md) for the full list.
 
-When enabled, the DOM Renderer outputs standard HTML DOM elements instead of drawing to a canvas. This can offer advantages for particular target platforms that are highly optimized for HTML/CSS rendering.
+## Testing without a canvas
 
-## Enabling the DOM Renderer
-
-Switching to the DOM Renderer is a two-step process:
-
-### 1. Vite Configuration (Bundling)
-
-First, you need to use a Vite flag to bundle the DOM Renderer code into your application. You do this by defining the global variable in your `vite.config.ts` so that it gets compiled correctly.
+Tests that used the DOM Renderer to run in jsdom use a headless `RendererCore` from `@solidtv/renderer` instead. It is the real node store, scene pass, text layout, shader packing and animation step, with no canvas and no WebGL. Pass it to `createRenderer`:
 
 ```ts
-import { defineConfig } from 'vite';
+import { RendererCore } from '@solidtv/renderer';
+import { createRenderer, registerDefaultShaders } from '@solidtv/solid';
 
-export default defineConfig({
-  define: {
-    SOLIDTV_DOM_RENDERING: true,
-  },
-  // ... other config options
-});
+const core = new RendererCore({ appWidth: 1920, appHeight: 1080 });
+registerDefaultShaders(core);
+export const renderer = createRenderer({ core });
+
+// Drive one frame: advance animations 16 ms, update the scene, deliver events.
+export const tick = () => {
+  core.step(16);
+  core.update();
+  core.events.flush();
+};
 ```
 
-### 2. Runtime Configuration (Activation)
-
-Once the bundle is configured, you must turn on the DOM Renderer in your application's `Config` settings. This allows you to toggle it on and off dynamically within the application code.
-
-```ts
-import { Config } from '@solidtv/solid';
-
-Config.domRendererEnabled = true;
-
-// Initialize your app...
-```
-
-By completing both setup steps, your application will output an HTML DOM structure instead of utilizing the WebGL canvas.
+Text needs a font loaded into the core before it lays out; this repository's own setup (`tests/setup.ts` and `tests/fonts.ts`) loads a small fixed-width font and is a working example.

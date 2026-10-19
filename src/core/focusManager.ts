@@ -230,7 +230,7 @@ export const printFocusHistory = (count: number): void => {
   if (lastEntry) {
     const lastElm = inspectorDiv(lastEntry.next);
     if (lastElm) {
-      (window as any).$f = lastElm;
+      (window as unknown as { $f?: unknown }).$f = lastElm; // debug global
     }
   }
 };

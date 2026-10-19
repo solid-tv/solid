@@ -64,10 +64,9 @@ export const elementInterface: debug.ElementInterface<
     return { x, y, width, height };
   },
   getElementAt(e) {
-    const target = e.target as any;
-    return target != null && target.element instanceof lng.ElementNode
-      ? target.element
-      : null;
+    // The scene's DOM target carries the node as `element` (devtools only).
+    const element = (e.target as { element?: unknown } | null)?.element;
+    return element instanceof lng.ElementNode ? element : null;
   },
   getLocation(node) {
     // The locator's attribute, a prop the jsx-locator plugin writes.

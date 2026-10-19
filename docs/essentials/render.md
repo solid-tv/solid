@@ -29,13 +29,10 @@ Before calling the Render function, you can set rendererOptions.
 
 ```jsx
 import { render, Config } from '@solidtv/solid';
-import { WebGlCoreRenderer, SdfTextRenderer } from '@solidtv/renderer/webgl';
 import { Inspector } from '@solidtv/renderer/inspector';
 
 Config.rendererOptions = {
   fpsUpdateInterval: logFps ? 1000 : 0,
-  fontEngines: [SdfTextRenderer],
-  renderEngine: WebGlCoreRenderer,
   inspector: Inspector,
   // textureMemory: {
   //   criticalThreshold: 80e6,
@@ -51,6 +48,8 @@ render(() => <text>Hello World</text>);
 For the latest renderer options read the official [renderer documentation](https://www.solid-tv.github.io/solid//api/renderer/interfaces/Renderer.RendererMainSettings.html)
 
 ### Config.rendererOptions
+
+`Config.rendererOptions` is `RendererOptions`: the renderer's `CoreSettings` plus the options of the GL loop (`RendererMainSettings`), passed through to `@solidtv/renderer`. Pass `core` to adopt a headless `RendererCore` instead (tests).
 
 - **appWidth**: Authored logical pixel width of the application.
   - _Default_: `1920`
@@ -98,20 +97,13 @@ For the latest renderer options read the official [renderer documentation](https
   Optional. Allows inspection of the state of Nodes in the renderer, replicating the node state.
   Type: `typeof Inspector | false`.
 
-- **renderEngine**
-  Defines the rendering engine (WebGL or Canvas). WebGL is more performant, while Canvas is more broadly supported.
-  Type: `typeof CanvasCoreRenderer | typeof WebGlCoreRenderer`.
-
 - **quadBufferSize**
   Specifies the quad buffer size in bytes.
   Default: `1048576` (16384 quads x 64 bytes — the most a Uint16 index buffer can address). Was `1310720` before renderer 1.8.
 
-- **fontEngines**
-  Defines font engines for text rendering (CanvasTextRenderer for Canvas, SdfTextRenderer for WebGL). Enables tree shaking for unused engines.
-  Default: `[]`. Type: `(typeof SdfTextRenderer | typeof CanvasTextRenderer)[]`.
-
 #### Removed renderer settings
 
+- **renderEngine**, **fontEngines** and **domRendererEnabled**: `@solidtv/renderer` 2.x has one engine (WebGL) and one text engine (SDF), and the DOM renderer is gone. The three are ignored with a console warning.
 - **renderOnlyInViewport**: removed in renderer 1.8. Its `true` behavior is now unconditional — the renderer always draws only what is in view.
 
 ### Additional Solid-Specific Configurations
@@ -140,8 +132,6 @@ Besides `rendererOptions`, the `Config` object exposes several properties specif
 - **focusStateKey**: `string`
   The property key used to identify the focused state styling.
   - _Default_: `'$focus'`
-- **domRendererEnabled**: `boolean` (Default: `false`)
-  Whether the DOM renderer should be used instead of the SolidTV Canvas renderer.
 - **simpleAnimationsEnabled**: `boolean`
   Allows simple CSS-like transition properties without full engine overhead.
 - **throttleInput**: `number`
@@ -151,8 +141,8 @@ Besides `rendererOptions`, the `Config` object exposes several properties specif
   passes unhandled presses to the system. See [useFocusManager](/primitives/useFocusManager.md#consumed-keys-configpreventdefaultonhandledkeys).
 - **lockStyles**: `boolean` (Default: `true`)
   Enables locking on styles to prevent unintended overrides.
-- **convertToShader**: `(node: ElementNode, v: StyleEffects) => IRendererShader`
-  A customizable function that determines how styling effects translate to shaders on an ElementNode.
+- **convertToShader**: `(node: ElementNode) => void`
+  A customizable function that determines how the `border`, `shadow`, `borderRadius` and gradient props translate to a shader on an ElementNode.
 
 ## Handling Renderer Events
 

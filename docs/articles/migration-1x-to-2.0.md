@@ -23,6 +23,7 @@ reach application code. This guide covers what you have to change.
 6. Move lifecycle out of `ref` callbacks
 7. Rebuild your router — routes are data now, not `<Route>` components
 8. Repoint JSX types at `@solidtv/solid`
+9. Rename `w`/`h`, drop `effects`, `node.lng` and the DOM renderer ([the renderer binding](#renderer-binding-20-on-solidtvrenderer-21))
 
 ---
 
@@ -309,6 +310,77 @@ Beyond Solid itself:
 - **`mergeProps`** is still exported under that name — the JSX compiler requires
   it — and still carries SolidTV's Proxy-free fix for
   [solidjs/solid#2282](https://github.com/solidjs/solid/issues/2282).
+
+### Renderer binding (2.0 on @solidtv/renderer 2.1)
+
+SolidTV 2.0 runs on `@solidtv/renderer` 2.1, and an `ElementNode` is now the
+renderer's handle for its node: it owns a slot in the renderer's node store and
+reads and writes the store directly. There is no second object behind it, no
+bag of props held until the node renders, and no DOM renderer. The app-facing
+syntax is unchanged (`<view>`, `<text>`, `style`, `transition`, `states`,
+`border`, `shadow`, the shortcuts, `ref`); these are the removals, each with
+its replacement.
+
+| 1.x                                                                                                                                                            | 2.0                                                                                                                                                                               |
+| -------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `w` and `h`, as JSX props and as style keys                                                                                                                    | `width` and `height`                                                                                                                                                              |
+| `node.lng`, `node._rendererProps`                                                                                                                              | The node itself: `node.alpha`, `node.setNow('alpha', 1)` to write without the transition                                                                                          |
+| A prop reading `undefined` (`node.alpha` before any write, or after a style undo with no base value)                                                           | The renderer default: `alpha` 1, `scale` 1, `color` transparent (white once `src` is set first), `fontSize` 16, and so on                                                         |
+| `effects={{ linearGradient, radialGradient, holePunch, shadow, border, … }}`                                                                                   | The direct keys: `border`, `borderTop/Right/Bottom/Left`, `borderRadius`, `linearGradient`, `radialGradient`, `shadow`, `holePunch`                                               |
+| `worldX`, `worldY`, `zIndexLocked`, `scrollable`, `scrollY`, `strictBounds`, `fontStretch`, `textBaseline`, `textOverflow`, `textRendererOverride`, `wordWrap` | None. They were forwarded to the renderer, which never had them, so they did nothing. Use `absX` and `absY` for world position, `overflowSuffix` and `maxLines` for text overflow |
+| `DOMRendererMain`, `DOMNode`, `isDomRenderer`, `isDomRendererActive`, `Config.domRendererEnabled`, the `SOLIDTV_DOM_RENDERING` define                          | A headless `RendererCore` for tests: `createRenderer({ core })` (see [DOM Renderer](/articles/domrenderer.md)). Delete the define                                                 |
+| `renderer.stage.shManager` and the other 1.x renderer shims                                                                                                    | `renderer.registerShaderType(...)`, and `core` (the `RendererCore`) for the rest                                                                                                  |
+| `Config.rendererOptions` typed as the 1.x renderer's settings                                                                                                  | `RendererOptions`: the renderer's `CoreSettings` plus the options of the GL loop (and `canvas`, or `core` to run headless)                                                        |
+| `renderEngine`, `fontEngines` in `Config.rendererOptions`                                                                                                      | Dropped: there is one engine (WebGL) and one text engine (SDF). They are ignored with a console warning                                                                           |
+
+Types that went with them: `Effects`, `StyleEffects`, `RenderedNode` (every
+node reads numbers now), `IntrinsicNodeProps`, `IntrinsicNodeStyleProps` and
+`IntrinsicTextNodeStyleProps` (use `NodeProps`, `NodeStyles` and `TextStyles`).
+`createRawShaderAccessor` and `shaderAccessor` are no longer exported. The
+`endValue` parameter of an `onAnimation` handler is named `value` (the
+animating handler gets the value written, the stopped handler the value at the
+stop).
+
+`ElementNode` is a class with declared members and no index signature, so
+`node.somethingElse` is a type error. To keep your own data on a node, use the
+`data` prop or augment the class:
+
+```ts
+declare module '@solidtv/solid' {
+  interface ElementNode {
+    contractItem?: { href: string };
+  }
+}
+```
+
+`NodeProps` and `TextProps` do keep `[key: string]: unknown`, so a data prop
+such as `item={x}` on a `<view>` still type-checks (it lands on the node as a
+plain field, as in 1.x). The `holePunch` prop is kept, with its prop types.
+
+Behaviour you may notice:
+
+- **`absX` and `absY` read the last frame's world transform.** A write to `x`
+  shows in `absX` after the next frame, not at once.
+- **`onAnimation.stopped` fires from the renderer, once per stop.** It is the
+  renderer's `onStop` for the animation of that prop, not a timer, and it
+  reports the value at the stop: the target when the animation completes, where
+  it stopped when something interrupted it. The hook is installed once per
+  controller, so repeated writes with the same `transition` settings do not
+  stack handlers.
+- **Border and shadow transitions allocate per write.** The two shaders animate
+  their parsed props, which allocates on each write, so nodes with a border or
+  shadow transition are outside the zero-garbage rule of the plain props.
+- **A removed node stays drawn until its destroy.** `removeChild` unlinks the
+  node and queues the delete, and the node is destroyed at the next
+  post-mutation flush, so an exit animation started in the same tick still
+  plays. A node reinserted before the flush keeps its slot.
+- **`preserve`d nodes are unlinked at remove.** The flush never destroys a node
+  with `preserve`, so `removeChild` unlinks it from its renderer parent at once,
+  right after `onRemove`. Hide it in `onRemove` if it must not stay on screen;
+  no exit is drawn from the old place. Inserting it again links it back.
+- **`createRenderer` returns `rootNode` lazily.** There is no module-level
+  `rootNode` before `createRenderer` has run; read it from the returned object,
+  or after the call.
 
 ## Routing
 

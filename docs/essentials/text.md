@@ -16,7 +16,6 @@ The `<text>` tag accepts the following attributes:
 - `contain` - the strategy for containing text within the bounds, can be `none` (default), `width`, or `both`.
 - `fontFamily` - the font family, defaults to `Ubuntu`
 - `fontSize` - the font size, defaults to `16`
-- `fontStretch` - the font stretch, defaults to `normal`
 - `fontStyle` - the font style, defaults to `normal` - `italic` | `oblique`
 - `fontWeight` - the font weight, defaults to `normal` - specify a number (400 / 700)
 - `letterSpacing` - letterspacing in pixels, defaults to `0`
@@ -25,10 +24,6 @@ The `<text>` tag accepts the following attributes:
 - `overflowSuffix` - the suffix to be added when text is cropped due to bounds limits, defaults to `...`
 - `textAlign` - the alignment of the text, can be `left`, `right`, or `center`, defaults to `left`. Centering text and aligning text to the right requires the `contain` attribute to be set to `width` or `both`.
 - `verticalAlign` - defaults to `middle` - `top` | `middle` | `bottom`
-
-Tags for Canvas Text Rendering (Not Recommended)
-
-- `wordWrap` - the max length of a line of text in pixels, words surpassing this length will be broken and wrapped onto the next line.
 - `maxHeight` - maximum height of a text block, lines that don't fit within this height will not be displayed
 
 ## Default Text Config

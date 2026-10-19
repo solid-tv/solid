@@ -104,7 +104,7 @@
         "typescript/ban-ts-comment": "warn",
         "typescript/no-duplicate-enum-values": "error",
         "typescript/no-empty-object-type": "off",
-        "typescript/no-explicit-any": "warn",
+        "typescript/no-explicit-any": "error",
         "typescript/no-extra-non-null-assertion": "error",
         "typescript/no-misused-new": "error",
         "typescript/no-namespace": "error",

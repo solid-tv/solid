@@ -8,7 +8,6 @@ import { scenarios } from './scenarios/index.js';
 declare const __BENCH_ARM__: string;
 declare const __BENCH_RENDERER_MAJOR__: number;
 declare const __BENCH_INSTRUMENT__: boolean;
-declare const __BENCH_FLEX__: string;
 
 const params = new URLSearchParams(location.search);
 const id = params.get('scenario') ?? 'smoke';
@@ -63,8 +62,6 @@ render(() => {
   rendererMajor: __BENCH_RENDERER_MAJOR__,
   /** The count-mode build (BENCH_INSTRUMENT=1). */
   instrumented: __BENCH_INSTRUMENT__,
-  /** 'new' (src/core/flexLayout.ts, as the demo app) or 'old' (flex.ts). */
-  flex: __BENCH_FLEX__,
   scenario,
   /** Every scenario in this build, for the runner's default list. */
   scenarios: scenarios.map((s) => ({

@@ -24,7 +24,6 @@ node bench/harness/inclusive.mjs docs/perf/results/<date> # inclusive time (need
 | `--skip-build`       | off                        | Use the existing `bench/dist`. Count mode reads `dist/<arm>-count`, which only a count-mode run builds: after a source change, run count without `--skip-build` once |
 | `--out`              | `docs/perf/results/<date>` | Result directory                                                                                                                                                     |
 | `--gpu`              | `metal` on macOS           | `metal`, `swiftshader` or `default` (ANGLE's choice)                                                                                                                 |
-| `--flex`             | `new`                      | `new`: `src/core/flexLayout.ts`, as the demo app; `old`: `src/core/flex.ts` (labelled `-flexold`)                                                                    |
 | `--no-chunks`        | off                        | Single-chunk build (labelled `-nochunks`): to check that chunking does not move timings                                                                              |
 | `--alloc-interval`   | 1                          | Heap sampling interval in bytes (1: every allocation)                                                                                                                |
 | `--profile-interval` | 50                         | CPU profiler sampling interval in µs                                                                                                                                 |
@@ -61,8 +60,8 @@ version is read from its `package.json` and recorded in each result).
 `bench/vite.config.ts` builds one arm (`BENCH_ARM=A|C`): Solid compiled from
 the arm's source, the renderer from its `dist`, terser without mangling,
 `chrome64` target, as the demo app's modern bundle. The renderer bootstrap
-(engines, shader registration) is `bench/src/arm-v1.ts`, picked by the
-renderer's major version. The build uses the arms' real paths: the bundler's
+(engines, shader registration) is `bench/src/arm-v${major}.ts`, picked by
+the renderer's major version. The build uses the arms' real paths: the bundler's
 module ids are real paths, so through a symlinked `bench/.arms` nothing would
 match a chunk or the flex hook. The runner rebuilds every arm it runs unless
 `--skip-build`, and records each arm's source (`source` in each JSON; C is
@@ -74,12 +73,8 @@ differs between the two renderer versions (the summary lists each arm's
 Solid and renderer; today's lockfile installs 1.9.0). After a change to `src/`,
 A/C is the change's effect (above 1: C is faster or allocates less).
 
-**Flex.** solid-demo-app sets `VITE_USE_NEW_FLEX=true`, so apps run
-`src/core/flexLayout.ts`. Every arm is built that way by default (the define
-`import.meta.env.VITE_USE_NEW_FLEX = 'true'` folds the choice at build time;
-the bundle contains only `flexLayout`'s code). `--flex old` builds `flex.ts`
-into `dist/<arm>-flexold`. Each result records `flex`, and the page reports
-the flex it was built with; the runner refuses a mismatch.
+**Flex.** Every arm runs `src/core/flex.ts`, the one flex engine; the count
+build wraps its default export to count passes.
 
 **Chunks.** The bundle is split into four fixed-name chunks, so that a
 profiler sample or an allocation is charged to its owner by script URL:
@@ -268,7 +263,7 @@ Built separately (`BENCH_INSTRUMENT=1` into `dist/<arm>-count`). Per op:
 
 | Count                    | Hook                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
 | ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| flex passes              | Build time: the default export of the arm's `src/core/flex.ts` and `flexLayout.ts` is wrapped (`bench/vite.config.ts`, `countFlexPasses`); one call is one container laid out. `n/a` if the hook did not install (the build warns).                                                                                                                                                                                                                                                                                                                                           |
+| flex passes              | Build time: the default export of the arm's `src/core/flex.ts` is wrapped (`bench/vite.config.ts`, `countFlexPasses`); one call is one container laid out. `n/a` if the hook did not install (the build warns).                                                                                                                                                                                                                                                                                                                                                               |
 | node writes              | Runtime: every configurable setter on the renderer node prototypes (from `renderer.root`, and every node `createNode`/`createTextNode` returns) is wrapped. Only **app writes** count: a setter call made while renderer code is on the stack is skipped (a renderer frame's callback, `createNode`/`createTextNode`/`createShader`/`animate`, another setter, a non-node emitter's dispatch such as a texture's), while the app's listeners the renderer calls (`loaded` and other node events, the renderer's `idle`) run as app code. Per-prop counts in `topWrites.node`. |
 | shader writes            | Runtime: each shader node's `props` (the node's own `definedProps`: one non-enumerable accessor per prop) is swapped for a counting forwarder, at `createShader` and for existing nodes. App writes only, as above.                                                                                                                                                                                                                                                                                                                                                           |
 | in frames                | The app writes (both kinds) made during a renderer frame: Solid's work in listeners the frame calls, such as flex on a text's `loaded`. The renderer steps animations through its setters; that does not count.                                                                                                                                                                                                                                                                                                                                                               |
@@ -283,19 +278,19 @@ Built separately (`BENCH_INSTRUMENT=1` into `dist/<arm>-count`). Per op:
 Hooks. Every one is looked up by name at runtime (the flex wrap at build
 time) and the page reports what it found (`hooks` in the count JSON):
 
-| Hook (`hooks.<key>`)                    | Feeds                                            | Renderer 1.x                                 |
-| --------------------------------------- | ------------------------------------------------ | -------------------------------------------- |
-| `flexHooks` (build time)                | flex passes, frames to final layout              | default export of `flex.ts`, `flexLayout.ts` |
-| `nodeAccessors`                         | node writes, in frames                           | node prototype setters                       |
-| shader `props` swap (`shaderUnwrapped`) | shader writes                                    | `definedProps` accessors                     |
-| `createHook`                            | created, creation props                          | `createNode`, `createTextNode`               |
-| `animateHooks`                          | animations                                       | `animate`, `animateProp`                     |
-| `walkHook`                              | walks, walks/drawn frame                         | `Stage.drawFrame` loop iterations            |
-| `drawHook`                              | drawn frames, walks/drawn frame                  | `gl.clear`                                   |
-| `loadedHook`                            | loaded (emitted / heard), frames to final layout | `emit` on the node prototype chain           |
-| `textHook`                              | text layout calls and ms, frames to final layout | `SdfTextRenderer.renderText`                 |
-| `cacheHook`                             | layout cache hit rate                            | `renderText` layout identity                 |
-| `loopHook`                              | (errors only, below)                             | `stage.options.handleLoopError`              |
+| Hook (`hooks.<key>`)                    | Feeds                                            | Renderer 1.x                       |
+| --------------------------------------- | ------------------------------------------------ | ---------------------------------- |
+| `flexHooks` (build time)                | flex passes, frames to final layout              | default export of `flex.ts`        |
+| `nodeAccessors`                         | node writes, in frames                           | node prototype setters             |
+| shader `props` swap (`shaderUnwrapped`) | shader writes                                    | `definedProps` accessors           |
+| `createHook`                            | created, creation props                          | `createNode`, `createTextNode`     |
+| `animateHooks`                          | animations                                       | `animate`, `animateProp`           |
+| `walkHook`                              | walks, walks/drawn frame                         | `Stage.drawFrame` loop iterations  |
+| `drawHook`                              | drawn frames, walks/drawn frame                  | `gl.clear`                         |
+| `loadedHook`                            | loaded (emitted / heard), frames to final layout | `emit` on the node prototype chain |
+| `textHook`                              | text layout calls and ms, frames to final layout | `SdfTextRenderer.renderText`       |
+| `cacheHook`                             | layout cache hit rate                            | `renderText` layout identity       |
+| `loopHook`                              | (errors only, below)                             | `stage.options.handleLoopError`    |
 
 The probe also carries the hooks for `@solidtv/renderer` 2.x (`ScenePass.run`,
 `TextNodes.lay`, `LayoutCache.get`, `insertBefore`, `settings.handleLoopError`),

@@ -147,7 +147,7 @@ These are found in the Renderer and applicable to all nodes:
 - `x`: The x coordinate of the Node's Mount Point, default is `0`.
 - `y`: The y coordinate of the Node's Mount Point, default is `0`.
 - `width`: The width of the Node, default is `0`.
-- `height`: The height of the Node, default is `0`.
+- `height`: The height of the Node, default is `0`. (`w` and `h` are not props: use `width` and `height`, as props and as style keys.)
 - `alpha`: The alpha opacity of the Node, ranging from `0` (transparent) to `1` (opaque), default is `1`.
 - `autosize`: When enabled, the Node resizes to the intrinsic dimensions of its texture once that texture loads, default is `false`. It only applies to nodes with a texture (`src`) — it does not size a container to its children, and it is a no-op on `<text>` nodes. Use flex to size containers.
 - `clipping`: Prevents drawing outside the Node's bounds, default is `false`.
@@ -165,7 +165,6 @@ These are found in the Renderer and applicable to all nodes:
 - `texture`: The Node's Texture, `null` if not set.
 - `shader`: The Node's Shader, `null` if not set.
 - `src`: Image URL to set the Node's texture.
-- `zIndexLocked`: The Node's locked z-index.
 - `scale`: Scale to render the Node at, default is `1.0`.
 - `scaleX`: Scale to render the Node at (X-Axis), default is `1.0`.
 - `scaleY`: Scale to render the Node at (Y-Axis), default is `1.0`.
@@ -194,19 +193,16 @@ Text node properties available from the Renderer
 - `contain`: `'none' | 'width' | 'both'`
 - `width`: number
 - `height`: number
-- `scrollable`: boolean
-- `scrollY`: number
 - `offsetY`: number
 - `letterSpacing`: number
 - `lineHeight`: number
 - `maxLines`: number
-- `textBaseline`: TextBaseline
 - `verticalAlign`: TextVerticalAlign
 - `overflowSuffix`: string
 
 ### SolidTV Shortcuts
 
-The following props are aliases to help with layout and ShaderEffects:
+The following props are aliases to help with layout and shaders:
 
 - `alignItems`: 'flexStart' | 'flexEnd' | 'center'
 - `alignSelf`: 'flexStart' | 'flexEnd' | 'center'
@@ -222,7 +218,6 @@ The following props are aliases to help with layout and ShaderEffects:
 - `centerY`: boolean
 - `columnGap`: number
 - `display`: 'flex' | 'block'
-- `effects`: any
 - `flexBoundary`: 'contain' | 'fixed'
 - `flexCrossBoundary`: 'contain' | 'fixed'
 - `flexDirection`: 'row' | 'column' | 'row-reverse' | 'column-reverse'
@@ -234,8 +229,9 @@ The following props are aliases to help with layout and ShaderEffects:
 - `flexWrap`: 'nowrap' | 'wrap' | 'wrap-reverse'
 - `gap`: number
 - `justifyContent`: 'flexStart' | 'flexEnd' | 'center' | 'spaceBetween' | 'spaceEvenly'
-- `linearGradient`: LinearGradientEffectProps
-- `radialGradient`: RadialGradientEffectProps
+- `holePunch`: HolePunchProps
+- `linearGradient`: LinearGradientProps
+- `radialGradient`: RadialGradientProps
 - `radialProgress`: RadialProgressEffectProps
 - `margin`: number | [number, number] | [number, number, number] | [number, number, number, number]
 - `marginBottom`: number
@@ -280,22 +276,20 @@ const style = {
 };
 ```
 
-## Linear Gradient & Radial Gradient
+## Linear Gradient, Radial Gradient and Hole Punch
 
-`linearGradient` and `radialGradient` are effects that can be used by setting the effects prop.
+`linearGradient`, `radialGradient` and `holePunch` are props of their own, in the JSX or in a style object, like `border` and `shadow`. There is no `effects` prop (1.x wrapped these in `effects={{ … }}`): write the key directly.
 
 ```jsx
 import { deg2Rad } from '@solidtv/solid';
 
 <view
-  effects={{
-    linearGradient: {
-      angle: deg2Rad(225),
-      width: 300,
-      height: 300,
-      stops: [0.1, 0.5],
-      colors: [0xff0000ff, 0x00000000],
-    },
+  width={300}
+  height={300}
+  linearGradient={{
+    angle: deg2Rad(225),
+    stops: [0.1, 0.5],
+    colors: [0xff0000ff, 0x00000000],
   }}
 />;
 ```
@@ -304,16 +298,25 @@ import { deg2Rad } from '@solidtv/solid';
 <view
   width={300}
   height={300}
-  effects={{
-    radialGradient: {
-      pivot: [225],
-      width: 300,
-      height: 300,
-      stops: [0.1, 0.5],
-      colors: [0xff0000ff, 0x00000000],
-    },
+  radialGradient={{
+    pivot: [0.5, 0.5],
+    w: 150,
+    h: 150,
+    stops: [0.1, 0.5],
+    colors: [0xff0000ff, 0x00000000],
   }}
 />
 ```
 
-You can have as many stops or colors as you like.
+`holePunch` cuts a rounded rectangle out of the node:
+
+```jsx
+<view
+  width={300}
+  height={300}
+  color={'#000000'}
+  holePunch={{ x: 50, y: 50, w: 200, h: 200, radius: 12 }}
+/>
+```
+
+You can have as many stops or colors as you like, up to nine. The `w` and `h` here are the radial gradient's and the hole punch's own keys (their size), not node props: a node's size is `width` and `height`.

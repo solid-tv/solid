@@ -16,8 +16,9 @@ import type { KeyMap as PrimitivesKeyMap } from '@solidtv/solid/primitives';
 //
 // Each augmentation adds a member with a precise type, then uses it both ways:
 // a valid use, and an invalid one under @ts-expect-error. The index
-// signatures on ElementNode, NodeProps and KeyMap would accept the valid use
-// even without the augmentation; the invalid one only fails if it merged.
+// signatures on NodeProps and KeyMap would accept the valid use even without
+// the augmentation; the invalid one only fails if it merged. (ElementNode has
+// no index signature: an unknown member is an error, see below.)
 
 declare module '@solidtv/solid' {
   // demo app LeftNavWrapper.tsx, announcer.ts
@@ -52,6 +53,32 @@ export function elementNodeAugmentation(el: ElementNode) {
   // @ts-expect-error -- contractItem.href is a string
   const bad = <view contractItem={{ href: 1 }} />;
   return [href, wrong, ok, bad];
+}
+
+// --- ElementNode: declared members only ------------------------------------
+//
+// The class has no index signature (its props types do, for an app's own
+// data prop), and the 1.x names the store-direct binding removed are gone.
+
+export function elementNodeSurface(el: ElementNode) {
+  const width: number = el.width;
+  const alpha: number = el.alpha;
+  const shadow = el.shadow?.blur;
+  // @ts-expect-error -- no index signature: an unknown member is an error
+  const unknown = el.notAMember;
+  // @ts-expect-error -- `w` is `width`
+  const w = el.w;
+  // @ts-expect-error -- `h` is `height`
+  const h = el.h;
+  // @ts-expect-error -- `lng` is gone: the node is the renderer handle
+  const lng = el.lng;
+  // @ts-expect-error -- `effects` is gone: write the direct keys
+  const effects = el.effects;
+  // @ts-expect-error -- one of the 11 forwarded names that never reached the renderer
+  const worldX = el.worldX;
+  // @ts-expect-error -- shadow takes the shadow shader's props
+  el.shadow = { blur: 'big' };
+  return [width, alpha, shadow, unknown, w, h, lng, effects, worldX];
 }
 
 export function nodePropsAugmentation() {
@@ -127,8 +154,10 @@ export function keyMapAugmentation() {
 // Every type-only export of each entry point today. Importing a name that is
 // gone is a type error. (Runtime names are pinned in publicApi.test.ts.)
 
-// @solidtv/solid: Solid's own types (62; 2.0 dropped the DOM renderer's
-// IEventEmitter, ExtractProps and IRenderer* names and SdfFontType). Six of
+// @solidtv/solid: Solid's own types (59; 2.0 dropped the DOM renderer's
+// IEventEmitter, ExtractProps and IRenderer* names, SdfFontType, the
+// `effects` types (Effects, StyleEffects) and RenderedNode, which every
+// node is now). The Intrinsic* aliases are gone too. Six of
 // them, the Shader*Props
 // names and WebGlShader, are re-exported by src/core/shaders.ts as aliases
 // of @solidtv/renderer types (the renderer does not export these names, so
@@ -144,7 +173,6 @@ export type {
   CoreShaderManager,
   DefaultKeyMap,
   DollarString,
-  Effects,
   ElementText,
   EventHandlers,
   FocusNode,
@@ -164,7 +192,6 @@ export type {
   OnEvent,
   Rect,
   RemoveUnderscoreProps,
-  RenderedNode,
   RendererNode,
   ShaderBorderPrefixedProps,
   ShaderBorderProps,
@@ -190,7 +217,6 @@ export type {
   SolidNode,
   SolidRendererOptions,
   SolidStyles,
-  StyleEffects,
   Styles,
   TextProps,
   TextStyles,

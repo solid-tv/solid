@@ -992,7 +992,6 @@ export function pageProbe(opts) {
         arm: bench.arm,
         rendererMajor: bench.rendererMajor,
         instrumented: bench.instrumented,
-        flex: bench.flex,
         scenario: s.id,
         title: s.title,
         text: s.text === true,

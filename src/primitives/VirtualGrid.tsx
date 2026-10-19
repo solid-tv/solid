@@ -199,7 +199,7 @@ export function VirtualGrid<T>(props: VirtualGridProps<T>): s.Element {
   }
 
   let cachedSelected: number | undefined;
-  const updateSelected = ([selected, _items]: [number?, any?]) => {
+  const updateSelected = ([selected, _items]: [number?, unknown?]) => {
     if (!viewRef || selected == null) return;
 
     if (cachedSelected !== undefined) {

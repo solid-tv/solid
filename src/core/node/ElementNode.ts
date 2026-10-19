@@ -39,10 +39,17 @@ import { isDev } from '../env.js';
 import type {
   AnimationSettings,
   BorderStyle,
+  OnEvent,
   DollarString,
   SingleBorderStyle,
   Styles,
 } from '../intrinsicTypes.js';
+import type {
+  ShaderHolePunchProps,
+  ShaderLinearGradientProps,
+  ShaderRadialGradientProps,
+  ShaderShadowProps,
+} from '../shaders.js';
 import { NodeType, type TextNode } from '../nodeTypes.js';
 import States, { type NodeStates } from '../states.js';
 import {
@@ -98,9 +105,6 @@ export type SolidNode = ElementNode | TextNode;
 /** A listener of a renderer event (`loaded`, `inViewport`, ...). */
 export type NodeEventHandler = (node: ElementNode, data: unknown) => void;
 
-/** The `onEvent` prop: a listener per event name (`loaded`, `failed`, ...). */
-export type OnEventProp = Record<string, NodeEventHandler | undefined>;
-
 /**
  * An `onAnimation` handler: the prop's name and a value. `animating` gets
  * the value written (the target); `stopped` gets the prop's value at the
@@ -109,7 +113,7 @@ export type OnEventProp = Record<string, NodeEventHandler | undefined>;
 export type AnimationEventHandler = (
   this: ElementNode,
   name: string,
-  endValue: number,
+  value: number,
 ) => void;
 
 /** `onAnimation`: called as a transition starts and when it stops. */
@@ -322,7 +326,7 @@ export class ElementNode implements SlotOwner {
     | undefined;
   declare onAnimation: AnimationEvents | undefined;
   /** The `onEvent` object as written (animation.ts). */
-  declare _onEventProp: OnEventProp | undefined;
+  declare _onEventProp: OnEvent | undefined;
   // `chain` and `start` (animation.ts).
   declare _animationQueue: ChainedAnimation[] | undefined;
   declare _animationQueueSettings: AnimationSettings | undefined;
@@ -377,7 +381,7 @@ export class ElementNode implements SlotOwner {
   // Prototype accessors (animation.ts).
   declare transition: TransitionSetting | undefined;
   declare animationSettings: AnimationSettings | undefined;
-  declare onEvent: OnEventProp | undefined;
+  declare onEvent: OnEvent | undefined;
 
   // Prototype accessors (accessors.ts): the store props.
   declare x: number;
@@ -446,12 +450,12 @@ export class ElementNode implements SlotOwner {
   declare borderRight: SingleBorderStyle | undefined;
   declare borderBottom: SingleBorderStyle | undefined;
   declare borderLeft: SingleBorderStyle | undefined;
-  declare shadow: Record<string, unknown> | undefined;
+  declare shadow: Partial<ShaderShadowProps> | undefined;
   declare borderRadius: number | number[] | undefined;
   declare rounded: number | number[] | undefined;
-  declare linearGradient: Record<string, unknown> | undefined;
-  declare radialGradient: Record<string, unknown> | undefined;
-  declare holePunch: Record<string, unknown> | undefined;
+  declare linearGradient: Partial<ShaderLinearGradientProps> | undefined;
+  declare radialGradient: Partial<ShaderRadialGradientProps> | undefined;
+  declare holePunch: Partial<ShaderHolePunchProps> | undefined;
   declare shader:
     | ShaderNode
     | [type: string, props: Record<string, unknown>]

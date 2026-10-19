@@ -84,8 +84,9 @@ In the event you want to bypass a style transition you can do the following:
 let button;
 
 onMount(() => {
-  // lng is the lightning node and will bypass transition property
-  button.lng.alpha = 0.5;
+  // setNow writes the prop at once, bypassing the transition property
+  // (1.x wrote `button.lng.alpha`; the node is the renderer handle now)
+  button.setNow('alpha', 0.5);
 });
 <Button ref={button}>Movies</Button>;
 ```

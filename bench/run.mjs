@@ -6,7 +6,7 @@
 //   node bench/run.mjs [--arms A,C] [--scenarios id,...] [--runs 3]
 //     [--modes time,alloc,profile,count] [--throttle 6] [--skip-build]
 //     [--quick] [--out dir] [--gpu metal|swiftshader|default] [--no-chunks]
-//     [--flex new|old] [--alloc-interval 1] [--profile-interval 50]
+//     [--alloc-interval 1] [--profile-interval 50]
 //     [--idle-timeout 10000] [--summarize dir]
 import { execFileSync, spawnSync } from 'node:child_process';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
@@ -48,7 +48,6 @@ const { values: args } = parseArgs({
       default: process.platform === 'darwin' ? 'metal' : 'default',
     },
     'no-chunks': { type: 'boolean', default: false },
-    flex: { type: 'string', default: 'new' },
     'alloc-interval': { type: 'string', default: '1' },
     'profile-interval': { type: 'string', default: '50' },
     'save-profiles': { type: 'boolean', default: false },
@@ -88,25 +87,15 @@ for (const m of modes) {
 const runs = Number(args.runs);
 const throttle = Number(args.throttle);
 const chunks = !args['no-chunks'];
-if (args.flex !== 'new' && args.flex !== 'old') {
-  throw new Error(
-    '--flex: new (src/core/flexLayout.ts, the demo app) or old (flex.ts)',
-  );
-}
-const flexOld = args.flex === 'old';
 const today = new Date().toISOString().slice(0, 10);
 const outDir = resolve(args.out ?? join(solidRoot, 'docs/perf/results', today));
 mkdirSync(outDir, { recursive: true });
 
-/** dist/<arm>[-count][-flexold][-nochunks], as bench/vite.config.ts names them. */
+/** dist/<arm>[-count][-nochunks], as bench/vite.config.ts names them. */
 const buildName = (arm, instrument) =>
-  arm +
-  (instrument ? '-count' : '') +
-  (flexOld ? '-flexold' : '') +
-  (chunks ? '' : '-nochunks');
-/** The arm as results label it: C, or C-flexold / C-nochunks for a variant. */
-const label = (arm) =>
-  arm + (flexOld ? '-flexold' : '') + (chunks ? '' : '-nochunks');
+  arm + (instrument ? '-count' : '') + (chunks ? '' : '-nochunks');
+/** The arm as results label it: C, or C-nochunks for a variant. */
+const label = (arm) => arm + (chunks ? '' : '-nochunks');
 
 // ---------------------------------------------------------------------------
 // Build
@@ -135,7 +124,6 @@ function build(arm, instrument) {
         BENCH_ARM: arm,
         BENCH_INSTRUMENT: instrument ? '1' : '0',
         BENCH_CHUNKS: chunks ? '1' : '0',
-        BENCH_FLEX: args.flex,
       },
     },
   );
@@ -290,7 +278,7 @@ async function runOnce({ origin, arm, scenario, mode, run }) {
     quick: args.quick,
     gpuFlag: args.gpu,
     chunks,
-    flex: flexOld ? 'old (src/core/flex.ts)' : 'new (src/core/flexLayout.ts)',
+    flex: 'src/core/flex.ts',
     loadAvg: loadavg()[0],
     cpu: cpus()[0]?.model,
     date: new Date().toISOString(),
@@ -343,13 +331,7 @@ async function runOnce({ origin, arm, scenario, mode, run }) {
       clockResolutionUs: info.clockResolutionUs,
       rendererMajor: info.rendererMajor,
       instrumented: info.instrumented,
-      flex: info.flex,
     };
-    if (info.flex !== args.flex) {
-      throw new Error(
-        `the build runs ${info.flex} flex, not ${args.flex}: rebuild`,
-      );
-    }
     if (mode === 'count') {
       record.hooks = await page.evaluate(() =>
         window.__benchProbe.installCounters(),
@@ -492,7 +474,7 @@ if (args.scenarios !== undefined) {
 }
 
 console.log(
-  `arms ${arms.join(',')}; scenarios ${scenarios.join(',')}; modes ${modes.join(',')}; ${runs} run(s); throttle ${throttle}x; gpu ${args.gpu}; flex ${args.flex}${chunks ? '' : '; no chunks'}${args.quick ? '; quick' : ''}`,
+  `arms ${arms.join(',')}; scenarios ${scenarios.join(',')}; modes ${modes.join(',')}; ${runs} run(s); throttle ${throttle}x; gpu ${args.gpu}${chunks ? '' : '; no chunks'}${args.quick ? '; quick' : ''}`,
 );
 console.log(`results: ${outDir}`);
 

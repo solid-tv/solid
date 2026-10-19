@@ -2,7 +2,7 @@ import * as lng from '@solidtv/solid';
 import * as lngp from '@solidtv/solid/primitives';
 import * as s from 'solid-js';
 
-type LazyProps<T extends readonly any[]> = lng.NewOmit<lng.NodeProps, 'children'> & {
+type LazyProps<T extends readonly unknown[]> = lng.NewOmit<lng.NodeProps, 'children'> & {
   each: T | undefined | null | false;
 
   /** Initial visible item count before user navigation. */
@@ -213,10 +213,10 @@ function createLazy<T>(
   );
 }
 
-export function LazyRow<T extends readonly any[]>(props: LazyProps<T>) {
+export function LazyRow<T extends readonly unknown[]>(props: LazyProps<T>) {
   return createLazy(lngp.Row, props, (updateOffset) => ({ onRight: updateOffset }));
 }
 
-export function LazyColumn<T extends readonly any[]>(props: LazyProps<T>) {
+export function LazyColumn<T extends readonly unknown[]>(props: LazyProps<T>) {
   return createLazy(lngp.Column, props, (updateOffset) => ({ onDown: updateOffset }));
 }

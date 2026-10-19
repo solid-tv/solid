@@ -6,10 +6,10 @@ import {
 } from '@solidtv/renderer';
 import { Config } from '../config.js';
 import { isDev } from '../env.js';
-import type { AnimationSettings } from '../intrinsicTypes.js';
+import type { AnimationSettings, OnEvent } from '../intrinsicTypes.js';
 import type {
   ElementNode,
-  OnEventProp,
+  NodeEventHandler,
   TransitionSetting,
 } from './ElementNode.js';
 import type { StoreProp } from './defaults.js';
@@ -165,12 +165,15 @@ export function startChain(node: ElementNode): Promise<void> {
 }
 
 /** Add (`on`) or remove (`off`) each handler of an `onEvent` object. */
-function listen(node: ElementNode, events: OnEventProp, add: boolean): void {
-  for (const name in events) {
-    if (!Object.prototype.hasOwnProperty.call(events, name)) {
+function listen(node: ElementNode, events: OnEvent, add: boolean): void {
+  // The object by event name: a handler of one event, as the generic
+  // listener the node keeps (it emits each event's own payload).
+  const byName = events as Record<string, NodeEventHandler | undefined>;
+  for (const name in byName) {
+    if (!Object.prototype.hasOwnProperty.call(byName, name)) {
       continue;
     }
-    const handler = events[name];
+    const handler = byName[name];
     if (handler === undefined) {
       continue;
     }
@@ -208,10 +211,10 @@ export function installAnimationAccessors(proto: ElementNode): void {
     // `{ loaded: fn, ... }`: each key a listener (`on`). A new object
     // replaces the previous one's listeners, and only those.
     onEvent: {
-      get(this: ElementNode): OnEventProp | undefined {
+      get(this: ElementNode): OnEvent | undefined {
         return this._onEventProp;
       },
-      set(this: ElementNode, v: OnEventProp | undefined) {
+      set(this: ElementNode, v: OnEvent | undefined) {
         const previous = this._onEventProp;
         if (previous === v) {
           return;

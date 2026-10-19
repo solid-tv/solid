@@ -17,16 +17,10 @@
 // check that the split does not move the timings.
 //
 // BENCH_INSTRUMENT=1 builds the count-mode variant into dist/<arm>-count: the
-// arm's flex layout function (the default export of src/core/flex.ts and
-// flexLayout.ts) is wrapped to count its calls in `window.__benchCount.flex`.
+// arm's flex layout function (the default export of src/core/flex.ts) is
+// wrapped to count its calls in `window.__benchCount.flex`.
 // Every other count is patched in at runtime by bench/harness/probe.mjs.
 // Timing, allocation and profile runs never load this build.
-//
-// Flex: solid-demo-app's .env sets VITE_USE_NEW_FLEX=true, so apps run
-// src/core/flexLayout.ts (elementNode.ts picks it when
-// `import.meta.env.VITE_USE_NEW_FLEX` is non-empty). Every arm is built the
-// same way by default; BENCH_FLEX=old builds src/core/flex.ts instead, into
-// dist/<arm>[-count]-flexold.
 import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import { dirname, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -58,12 +52,8 @@ const renderer = realpathSync(ARMS[arm].renderer);
 const escape = (s: string) => s.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&');
 const instrument = process.env.BENCH_INSTRUMENT === '1';
 const chunks = process.env.BENCH_CHUNKS !== '0';
-const flex = process.env.BENCH_FLEX === 'old' ? 'old' : 'new';
 const outName =
-  arm +
-  (instrument ? '-count' : '') +
-  (flex === 'old' ? '-flexold' : '') +
-  (chunks ? '' : '-nochunks');
+  arm + (instrument ? '-count' : '') + (chunks ? '' : '-nochunks');
 const solidSrc = join(solid, 'src') + sep;
 const rendererRoot = renderer + sep;
 
@@ -94,17 +84,14 @@ const solidAliases: Alias[] = [
 }));
 
 /**
- * Count mode only: wraps the default export of the arm's flex layout modules
+ * Count mode only: wraps the default export of the arm's flex layout module
  * so that each call (one flex pass over one container) counts. It matches
- * `export default function (` in src/core/flex.ts and flexLayout.ts, as in
- * both arms. A module without it is left alone with a warning, as is a
- * build in which neither module was transformed (a path that matches no
- * module id), and the runner reports flex passes as n/a (`flexHooks` stays 0).
+ * `export default function (` in src/core/flex.ts, as in both arms. A module
+ * without it is left alone with a warning, as is a build in which the module
+ * was not transformed (a path that matches no module id), and the runner reports flex passes as n/a (`flexHooks` stays 0).
  */
 function countFlexPasses(): Plugin {
-  const files = new Set(
-    ['flex.ts', 'flexLayout.ts'].map((f) => join(solid, 'src', 'core', f)),
-  );
+  const files = new Set([join(solid, 'src', 'core', 'flex.ts')]);
   const head = /export default function\s*\(/;
   let hooked = 0;
   return {
@@ -159,10 +146,6 @@ export default defineConfig({
     __BENCH_ARM__: JSON.stringify(arm),
     __BENCH_RENDERER_MAJOR__: rendererMajor,
     __BENCH_INSTRUMENT__: instrument,
-    __BENCH_FLEX__: JSON.stringify(flex),
-    'import.meta.env.VITE_USE_NEW_FLEX': JSON.stringify(
-      flex === 'new' ? 'true' : '',
-    ),
   },
   plugins: [
     ...(instrument ? [countFlexPasses()] : []),

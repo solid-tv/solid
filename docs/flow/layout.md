@@ -17,14 +17,7 @@ The `<text>` element does not require any of these properties, as it will use th
 
 A fundamental tool for layout is the Flex container. Currently, there is a minimal implementation of flex (`display: flex`) that supports the following properties: `flexDirection`, `justifyContent`, `alignItems`, `flexOrder`, `flexGrow` and `gap`. This is useful for laying out elements in rows and columns.
 
-### New Flex Engine Toggle
-
-As of SolidTV 2.0 the modern, CSS-aligned flex engine is the only engine — the
-legacy one and the `VITE_USE_NEW_FLEX` opt-in have been removed, so no build
-configuration is needed. It supports `flexShrink`, `flexBasis`, and full
-padding / margin support with array syntax.
-
-Because the engines are conditionally evaluated at build time via `import.meta.env`, your bundler (e.g., Rollup) will automatically perform **Dead-Code Elimination (tree-shaking)**. This means whichever layout engine isn't selected will be completely omitted from your application's final production bundle.
+The engine is CSS-aligned. It also supports `flexShrink`, `flexBasis`, and full padding / margin support with array syntax. There is one implementation and nothing to configure at build time.
 
 ### Example
 

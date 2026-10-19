@@ -567,7 +567,7 @@ function createVirtual<T>(
     queueMicrotask(applyShift);
   };
 
-  const updateSelected = ([sel, _items]: [number?, any?]) => {
+  const updateSelected = ([sel, _items]: [number?, unknown?]) => {
     if (!viewRef || sel === undefined || itemCount() === 0) return;
     const safeSel = utils.clamp(sel, 0, itemCount() - 1);
     const item = items()[safeSel];
