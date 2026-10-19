@@ -56,7 +56,11 @@ export function compileBlock(block: Record<string, unknown>): BlockPlan {
   // Object.keys: the own enumerable keys, the ones Object.assign and spread
   // read when states were applied before 1.7.
   const keys = Object.keys(block);
-  const values: unknown[] = [];
+  // Seeded with a non-number and emptied: the array stays of generic
+  // elements. For a block of numbers only it would be a double array, and
+  // each read of a value (as unknown) would box a new heap number.
+  const values: unknown[] = [undefined];
+  values.length = 0;
   const getters: boolean[] = [];
   // No prototype: a key named like an Object method is a key of the block.
   const index = Object.create(null) as Record<string, number | undefined>;
