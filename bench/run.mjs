@@ -7,7 +7,7 @@
 //     [--modes time,alloc,profile,count] [--throttle 6] [--skip-build]
 //     [--quick] [--out dir] [--gpu metal|swiftshader|default] [--no-chunks]
 //     [--alloc-interval 1] [--profile-interval 50]
-//     [--idle-timeout 10000] [--summarize dir]
+//     [--idle-timeout 10000] [--warmup-scale 1] [--summarize dir]
 import { execFileSync, spawnSync } from 'node:child_process';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import http from 'node:http';
@@ -52,6 +52,7 @@ const { values: args } = parseArgs({
     'profile-interval': { type: 'string', default: '50' },
     'save-profiles': { type: 'boolean', default: false },
     'idle-timeout': { type: 'string', default: '10000' },
+    'warmup-scale': { type: 'string', default: '1' },
     summarize: { type: 'string' },
     help: { type: 'boolean', default: false },
   },
@@ -252,7 +253,12 @@ function armSource(arm) {
  */
 const opCounts = (info) => {
   if (!args.quick) {
-    return { warmup: info.warmup, measured: info.measured };
+    // --warmup-scale n: n times the scenario's warmup, so that code run once
+    // per op is optimized before the measured ops (see the README).
+    return {
+      warmup: info.warmup * Number(args['warmup-scale']),
+      measured: info.measured,
+    };
   }
   const cycle = info.cycle;
   const whole = (n) =>

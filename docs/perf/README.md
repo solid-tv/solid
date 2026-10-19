@@ -29,6 +29,7 @@ node bench/harness/inclusive.mjs docs/perf/results/<date> # inclusive time (need
 | `--profile-interval` | 50                         | CPU profiler sampling interval in µs                                                                                                                                 |
 | `--save-profiles`    | off                        | Also write each profile run's raw CPU profile as `<result>.cpuprofile` (DevTools format)                                                                             |
 | `--idle-timeout`     | 10000                      | ms to wait for an op to settle before marking it `timedOut`                                                                                                          |
+| `--warmup-scale`     | 1                          | Multiplies each scenario's warmup ops (not with `--quick`): with 10, code run once per op is optimized before the measured ops (see `alloc` below)                   |
 
 Each run writes `<out>/<scenario>.<arm>.<mode>.<run>.json` (every op's raw
 record plus the run's statistics and environment), and the runner then
@@ -233,7 +234,17 @@ CDP `HeapProfiler.startSampling` around the measured ops with
 count), sampling interval 1 byte by default (every allocation): a `0` is no
 allocation at all, there is no sampling floor. The sampling stops before
 the scenario's end-state `probe()` runs, so its reads are not charged to
-the ops. Each node's
+the ops.
+
+The default warmup (18 to 32 ops) leaves code that runs once or twice per
+op in V8's baseline tiers, where every double crossing a call or read from
+a typed array is a heap number (12 bytes), and where even a plain array
+that a `pop` empties gives up its backing store (the next `push` allocates
+17 slots, 76 bytes); optimized code does neither. So a scenario's framework
+bytes at the default warmup include tier artifacts that a TV app's
+long-running session does not see. `--warmup-scale 10` measures the same
+ops after ten times the warmup, with that code optimized: compare the two
+to tell steady-state garbage from warmup. Each node's
 bytes are charged to the innermost frame with a script URL on its stack
 (builtins have none), and that frame's chunk names the owner:
 
