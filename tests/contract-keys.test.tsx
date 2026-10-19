@@ -784,6 +784,20 @@ v.describe('contract: per-element throttleInput', () => {
   );
 
   v.it(
+    'a key release does not read the clock: only presses use the time',
+    async () => {
+      const { r, target, dispose } = await mountRow(true);
+      at(1000);
+      target.down('ArrowRight');
+      now.mockClear();
+      target.up('ArrowRight');
+      v.expect(now).not.toHaveBeenCalled();
+      v.expect(count(r, 'row.onRightRelease')).toBe(1);
+      dispose();
+    },
+  );
+
+  v.it(
     'only repeats of the same key are throttled: a different key in between resets it',
     async () => {
       const { r, target, dispose } = await mountRow(true);

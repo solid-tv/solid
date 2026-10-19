@@ -289,6 +289,9 @@ const updateFocusPath = (
 ): ElementNode | undefined => {
   let current: ElementNode | undefined = currentFocusedElm;
   const nested = updatingPath;
+  // A focus callback that throws leaves this true (no try/finally on this
+  // path): every later change then builds into its own array, which is
+  // still correct and only allocates as before this buffer.
   updatingPath = true;
   // The membership test below runs on paths of a handful of elements every
   // single keypress, where a linear scan beats allocating and hashing a Set.
@@ -380,7 +383,10 @@ const propagateKeyPress = (
   mappedEvent?: string,
   isUp: boolean = false,
 ): boolean => {
-  const currentTime = performance.now();
+  // Every use of the time is on a key press (a release is never throttled
+  // and never starts a window), so a release does not read the clock:
+  // performance.now() returns a heap number (12 bytes) per call.
+  const currentTime = isUp ? 0 : performance.now();
   const key: KeyNameOrKeyCode = e.key || e.keyCode;
   const sameKey = lastInputKey === key;
   lastInputKey = key;
