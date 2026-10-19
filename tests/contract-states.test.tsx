@@ -1,6 +1,6 @@
 // Contract tests: States (the `states` prop, `$state` blocks and their undo).
 //
-// These pin today's behaviour (1.6.4) through public node props and the
+// These pin today's behaviour (1.7) through public node props and the
 // public `states` API only. Where today's behaviour is odd it is pinned anyway
 // and the comment says so; where it looks like a genuine bug the
 // correct-behaviour test is an `it.skip` marked `// BUG:`.
@@ -271,6 +271,40 @@ v.describe('contract: state keys with and without $', () => {
     },
   );
 
+  // 2.0: passes from Task 8
+  v.it.skip(
+    'setting states to an unchanged value changes nothing (styles are not re-applied), in every form',
+    () => {
+      // 1.7 (design 3.3.3): `set states` compares before it merges. Before,
+      // an equal list re-applied every state style.
+      let node!: lng.ElementNode;
+      const [states, setStates] = s.createSignal<lng.DollarString[]>([
+        '$focus',
+      ]);
+      const dispose = renderer.render(() => (
+        <view
+          ref={node}
+          states={states()}
+          style={{ color: RED, $focus: { color: BLUE } }}
+        />
+      ));
+      v.expect(node.color).toBe(BLUE);
+      node.color = WHITE;
+      setStates(['$focus']);
+      v.expect(node.color).toBe(WHITE);
+      node.states = '$focus';
+      node.states = { $focus: true, $active: false };
+      // Its own list: an equal list. (Before 1.7 this one emptied the list.)
+      const own = node.states;
+      node.states = own;
+      v.expect(statesOf(node)).toEqual(['$focus']);
+      v.expect(node.color).toBe(WHITE);
+      setStates([]);
+      v.expect(node.color).toBe(RED);
+      dispose();
+    },
+  );
+
   v.it(
     'add("focus") without "$focus" on stores "focus" verbatim and does not turn on the $focus block',
     () => {
@@ -286,17 +320,17 @@ v.describe('contract: state keys with and without $', () => {
     },
   );
 
-  v.it('remove() is strict: remove("focus") leaves "$focus" on', () => {
-    // Pinned as is: `has("focus")` is true here, yet `remove("focus")` does
-    // not remove "$focus".
+  v.it('remove("focus") removes "$focus", as has("focus") matches it', () => {
+    // B2 (fixed in 1.7): before, remove() was strict: `has("focus")` was true
+    // here, yet `remove("focus")` left "$focus" on.
     let node!: lng.ElementNode;
     const dispose = renderer.render(() => (
       <view ref={node} style={{ color: RED, $focus: { color: BLUE } }} />
     ));
     node.states.add('$focus');
     node.states.remove(bare('focus'));
-    v.expect(statesOf(node)).toEqual(['$focus']);
-    v.expect(node.color).toBe(BLUE);
+    v.expect(statesOf(node)).toEqual([]);
+    v.expect(node.color).toBe(RED);
     dispose();
   });
 
@@ -333,12 +367,11 @@ v.describe('contract: state keys with and without $', () => {
     },
   );
 
-  // BUG: toggle("focus") while "$focus" is on does nothing. toggle() asks
-  // has("focus") (true: has() accepts the bare name), then calls
-  // remove("focus"), which is strict and finds nothing to remove
-  // (src/core/states.ts:60-61 in toggle, :94 in remove). A toggle must
-  // change the state.
-  v.it.skip('toggle("focus") while "$focus" is on turns it off', () => {
+  // B2 (fixed in 1.7): toggle("focus") while "$focus" was on did nothing.
+  // toggle() asked has("focus") (true: has() accepts the bare name), then
+  // called remove("focus"), which was strict and found nothing to remove. A
+  // toggle must change the state.
+  v.it('toggle("focus") while "$focus" is on turns it off', () => {
     let node!: lng.ElementNode;
     const dispose = renderer.render(() => (
       <view ref={node} style={{ color: RED, $focus: { color: BLUE } }} />
@@ -347,6 +380,21 @@ v.describe('contract: state keys with and without $', () => {
     node.states.toggle(bare('focus'));
     v.expect(node.states.has('$focus')).toBe(false);
     v.expect(node.color).toBe(RED);
+    dispose();
+  });
+
+  // Changed in 1.7 (MIGRATION 2.5): States no longer builds a States for
+  // Array methods' results (one was built per remove()).
+  v.it('Array methods on states return plain arrays', () => {
+    let node!: lng.ElementNode;
+    const dispose = renderer.render(() => (
+      <view ref={node} states={['$a', '$b']} />
+    ));
+    const copy = node.states.slice();
+    v.expect(copy).toEqual(['$a', '$b']);
+    v.expect(copy.constructor).toBe(Array);
+    v.expect(node.states.filter(() => true).constructor).toBe(Array);
+    v.expect(node.states).toBeInstanceOf(Array);
     dispose();
   });
 });

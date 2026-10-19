@@ -155,3 +155,112 @@ export const DEFAULT: Readonly<Record<StoreProp, number>> = Object.freeze({
  * handle's rule).
  */
 export const EMPTY_TEXTURE_OPTIONS: TextureOptions = Object.freeze({});
+
+/**
+ * A frozen copy of `entries` (and `more`) without a prototype: a lookup by any string
+ * (`toString`, `constructor`) finds only the entries.
+ */
+function lookupTable<T>(
+  entries: Readonly<Record<string, T>>,
+  more?: Readonly<Record<string, T>>,
+): Readonly<Record<string, T | undefined>> {
+  const table = Object.create(null) as Record<string, T | undefined>;
+  for (const key in entries) {
+    table[key] = entries[key];
+  }
+  if (more !== undefined) {
+    for (const key in more) {
+      table[key] = more[key];
+    }
+  }
+  return Object.freeze(table);
+}
+
+/**
+ * The `_set` index of each prop that has one, by the name the app writes
+ * (`rounded` shares `borderRadius`'s): the `style` setter skips a key whose
+ * byte is set, so a prop the app wrote wins over the style (spec 5.3).
+ */
+export const SET_INDEX: Readonly<Record<string, number | undefined>> =
+  lookupTable<number>({
+    x: SET_X,
+    y: SET_Y,
+    width: SET_WIDTH,
+    height: SET_HEIGHT,
+    alpha: SET_ALPHA,
+    scale: SET_SCALE,
+    scaleX: SET_SCALE_X,
+    scaleY: SET_SCALE_Y,
+    rotation: SET_ROTATION,
+    mount: SET_MOUNT,
+    mountX: SET_MOUNT_X,
+    mountY: SET_MOUNT_Y,
+    pivot: SET_PIVOT,
+    pivotX: SET_PIVOT_X,
+    pivotY: SET_PIVOT_Y,
+    zIndex: SET_Z_INDEX,
+    color: SET_COLOR,
+    colorTop: SET_COLOR_TOP,
+    colorBottom: SET_COLOR_BOTTOM,
+    colorLeft: SET_COLOR_LEFT,
+    colorRight: SET_COLOR_RIGHT,
+    colorTl: SET_COLOR_TL,
+    colorTr: SET_COLOR_TR,
+    colorBl: SET_COLOR_BL,
+    colorBr: SET_COLOR_BR,
+    placeholderColor: SET_PLACEHOLDER_COLOR,
+    clipping: SET_CLIPPING,
+    rtl: SET_RTL,
+    data: SET_DATA,
+    src: SET_SRC,
+    texture: SET_TEXTURE,
+    textureOptions: SET_TEXTURE_OPTIONS,
+    text: SET_TEXT,
+    fontFamily: SET_FONT_FAMILY,
+    fontWeight: SET_FONT_WEIGHT,
+    fontSize: SET_FONT_SIZE,
+    fontStyle: SET_FONT_STYLE,
+    lineHeight: SET_LINE_HEIGHT,
+    textAlign: SET_TEXT_ALIGN,
+    verticalAlign: SET_VERTICAL_ALIGN,
+    contain: SET_CONTAIN,
+    maxWidth: SET_MAX_WIDTH,
+    maxHeight: SET_MAX_HEIGHT,
+    maxLines: SET_MAX_LINES,
+    overflowSuffix: SET_OVERFLOW_SUFFIX,
+    wordBreak: SET_WORD_BREAK,
+    letterSpacing: SET_LETTER_SPACING,
+    offsetY: SET_OFFSET_Y,
+    forceLoad: SET_FORCE_LOAD,
+    border: SET_BORDER,
+    borderTop: SET_BORDER_TOP,
+    borderRight: SET_BORDER_RIGHT,
+    borderBottom: SET_BORDER_BOTTOM,
+    borderLeft: SET_BORDER_LEFT,
+    shadow: SET_SHADOW,
+    borderRadius: SET_BORDER_RADIUS,
+    rounded: SET_BORDER_RADIUS,
+    linearGradient: SET_LINEAR_GRADIENT,
+    radialGradient: SET_RADIAL_GRADIENT,
+    holePunch: SET_HOLE_PUNCH,
+    shader: SET_SHADER,
+  });
+
+/**
+ * What style undo writes for a store prop with no theme or style value
+ * (spec 5.3): DEFAULT for the numeric ones, and for the others what their
+ * setter takes for "none" (`undefined` would turn clipping on). A text prop
+ * is not here: its setter takes `undefined` as the TextState default.
+ */
+export const UNDO_DEFAULT: Readonly<Record<string, unknown>> =
+  lookupTable<unknown>(
+    {
+      clipping: false,
+      rtl: null,
+      data: null,
+      src: null,
+      texture: null,
+      textureOptions: null,
+    },
+    DEFAULT,
+  );

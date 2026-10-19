@@ -34,14 +34,17 @@ import {
   type TextVerticalAlign,
   type TextWordBreak,
 } from '@solidtv/renderer';
+import { Config } from '../config.js';
+import { isDev } from '../env.js';
 import type {
   AnimationSettings,
   BorderStyle,
+  DollarString,
   SingleBorderStyle,
   Styles,
 } from '../intrinsicTypes.js';
 import { NodeType, type TextNode } from '../nodeTypes.js';
-import type States from '../states.js';
+import States, { type NodeStates } from '../states.js';
 import {
   installAccessors,
   writeHeight,
@@ -58,8 +61,24 @@ import {
   stoppedHook,
   transitionSettings,
 } from './animation.js';
-import { SET_COUNT, type StoreProp, type TextNumberProp } from './defaults.js';
+import {
+  SET_COUNT,
+  SET_INDEX,
+  type StoreProp,
+  type TextNumberProp,
+} from './defaults.js';
 import { installShaderAccessors, SHADER_UNMANAGED } from './shader.js';
+import {
+  BORDER_FAMILY,
+  readKey,
+  resolveStateValue,
+  rewriteBorderKeys,
+  setStateBlock,
+  stateBlock,
+  styleFallback,
+  trackKeys,
+  writeKey,
+} from './styles.js';
 import { installTextAccessors, writeTextNumber } from './textProps.js';
 
 /** The two kinds of ElementNode: a `<view>` and a `<text>`. */
@@ -275,6 +294,19 @@ export class ElementNode implements SlotOwner {
   declare _animationQueue: ChainedAnimation[] | undefined;
   declare _animationQueueSettings: AnimationSettings | undefined;
   declare _animationRunning: boolean;
+  // States (styles.ts).
+  /** The children take this node's states whenever they change. */
+  declare forwardStates: boolean | undefined;
+  /** The precedence of the states, lowest first; else Config.stateOrder. */
+  declare stateOrder: DollarString[] | undefined;
+  /** The keys state changes wrote, in first-write order: undo walks them. Reused, never shrunk. */
+  declare _undoStyles: string[] | undefined;
+  /** How many entries of `_undoStyles` are live. */
+  declare _undoCount: number;
+  /** Per key in `_undoStyles`, the value the last state change wrote. */
+  declare _applied: Record<string, unknown> | undefined;
+  /** The `$state` blocks written on the node (JSX `$name`, theme keys). */
+  declare _stateBlocks: Record<string, unknown> | undefined;
 
   // Prototype accessors (animation.ts).
   declare transition: TransitionSetting | undefined;
@@ -451,7 +483,303 @@ export class ElementNode implements SlotOwner {
     this._animationQueue = undefined;
     this._animationQueueSettings = undefined;
     this._animationRunning = false;
+    this.forwardStates = undefined;
+    this.stateOrder = undefined;
+    this._undoStyles = undefined;
+    this._undoCount = 0;
+    this._applied = undefined;
+    this._stateBlocks = undefined;
     core.nodes.handles[slot] = this;
+  }
+
+  // Styles and states (1.8's port; the helpers are styles.ts).
+
+  get style(): Styles {
+    return this._style || {};
+  }
+
+  set style(style: Styles | undefined) {
+    if (isDev && this._style) {
+      // Avoid processing style changes again
+      console.warn(
+        'Style already set: https://solid-tv.github.io/solid/#/essentials/styling?id=style-patterns-to-avoid',
+      );
+    }
+    if (Config.lockStyles && this._style) {
+      return;
+    }
+    if (!style) {
+      return;
+    }
+    this._style = style;
+    // A style object: its keys are strings.
+    const source = style as Record<string, unknown>;
+    const set = this._set;
+    for (const key in source) {
+      // `$state` blocks are read from the style (styles.ts stateBlock).
+      if (key.charCodeAt(0) === 36 /* $ */) {
+        continue;
+      }
+      // A prop the app wrote wins over the style (spec 5.3): its `_set`
+      // byte, or, for a prop without one, a value other than undefined.
+      const at = SET_INDEX[key];
+      if (at !== undefined ? set[at] === 0 : readKey(this, key) === undefined) {
+        writeKey(this, key, source[key]);
+      }
+    }
+  }
+
+  get theme(): Styles {
+    this._theme = this._theme || {};
+    return this._theme;
+  }
+
+  set theme(styles: Styles | undefined) {
+    if (!styles) {
+      return;
+    }
+    this._theme = styles;
+    // A theme object: its keys are strings.
+    const source = styles as Record<string, unknown>;
+    for (const key in source) {
+      if (key.charCodeAt(0) === 36 /* $ */) {
+        // A `$` key is a block of the node's own, as 1.x wrote it.
+        setStateBlock(this, key as DollarString, source[key]);
+      } else {
+        writeKey(this, key, source[key]);
+      }
+    }
+  }
+
+  get states(): States {
+    let states = this._states;
+    if (states === undefined) {
+      states = new States(this._stateChanged.bind(this));
+      this._states = states;
+    }
+    return states;
+  }
+
+  set states(states: NodeStates) {
+    const current = this._states;
+    if (current === undefined) {
+      const created = new States(this._stateChanged.bind(this), states);
+      this._states = created;
+      if (this.rendered && created.length > 0) {
+        this._stateChanged();
+      }
+      return;
+    }
+    // An unchanged list is a no-op (design 3.3.3): nothing to re-apply.
+    // "Unchanged" by the rules of States.merge: an array or a string
+    // replaces the list, an object adds its truthy keys (`has`) and removes
+    // its falsy ones. (Inline on purpose: terser's default `reduce_funcs`
+    // turns a single-use helper into a closure per call.)
+    const len = current.length;
+    let changed = false;
+    if (Array.isArray(states)) {
+      changed = states.length !== len;
+      for (let i = 0; !changed && i < len; i++) {
+        changed = states[i] !== current[i];
+      }
+    } else if (typeof states === 'string') {
+      changed = len !== 1 || current[0] !== states;
+    } else {
+      for (const key in states) {
+        const state = key as DollarString;
+        if (states[state]) {
+          changed = !current.has(state);
+        } else {
+          for (let i = 0; !changed && i < len; i++) {
+            changed = current[i] === state;
+          }
+        }
+        if (changed) {
+          break;
+        }
+      }
+    }
+    if (!changed) {
+      return;
+    }
+    current.merge(states);
+    if (this.rendered) {
+      this._stateChanged();
+    }
+  }
+
+  /**
+   * Apply the `$state` blocks of the active states (design 3.3). The keys
+   * any state wrote since the states were last empty are tracked in
+   * `_undoStyles`, in first-write order; each takes its value from the
+   * active block of highest precedence, else the base value (`theme`, then
+   * `style`, then the prop's default: spec 5.3). After attach a key is
+   * written only when that value differs from the one written last
+   * (`_applied`); before, every key is written.
+   */
+  _stateChanged(): void {
+    const states = this.states;
+
+    if (this.forwardStates) {
+      // Children first. They take this list: their setter copies it
+      // (forwardStates overwrites their own states, pinned) and does nothing
+      // when it is unchanged.
+      const children = this.children;
+      for (let i = 0; i < children.length; i++) {
+        const child = children[i]!;
+        if (child._type !== NodeType.Text) {
+          child.states = states;
+        }
+      }
+    }
+
+    const n = states.length;
+    if (this._undoCount === 0) {
+      // Nothing to undo: done unless an active state has a block. This runs
+      // on every path element of every focus change.
+      let i = 0;
+      while (i < n && stateBlock(this, states[i]!) === undefined) {
+        i++;
+      }
+      if (i === n) {
+        return;
+      }
+    }
+
+    if (this._undoStyles === undefined) {
+      this._undoStyles = [];
+    }
+    if (this._applied === undefined) {
+      this._applied = Object.create(null) as Record<string, unknown>;
+    }
+    this._writeStates(n);
+  }
+
+  /**
+   * The state-style loops of `_stateChanged`, for `n` active states: a
+   * method of its own, so that `_stateChanged`, which runs for every path
+   * element of every focus change, stays the short early-return above. Each
+   * key is written through its setter, as before 1.7: a border or shadow
+   * object merges into the shader props, the later write of a sub-prop
+   * winning (B18 is not fixed: spec 5.7).
+   */
+  _writeStates(n: number): void {
+    const states = this._states!;
+    const keys = this._undoStyles!;
+    const applied = this._applied!;
+    const diff = this.rendered;
+    let count = this._undoCount;
+
+    // The border family's keys write one set of shader props. When a change
+    // writes some of the tracked family keys and skips the others as
+    // unchanged, a written one may have overwritten what a skipped one holds
+    // (a `border` sets all four widths): then the family is written again,
+    // every tracked key in tracked order, the order 1.6 wrote the merged
+    // object in, so the later key wins as it did. (The shadow is one key.)
+    let borderKeys = 0;
+    let borderWrites = 0;
+
+    if (n === 0) {
+      // Undo every tracked key, in its order (`transition` too: pinned), to
+      // its base value. A setter that throws leaves the keys after it for
+      // the next change, as before 1.7.
+      for (let i = 0; i < count; i++) {
+        const key = keys[i]!;
+        const value = styleFallback(this, key);
+        const border = BORDER_FAMILY[key] === true;
+        if (border) {
+          borderKeys++;
+        }
+        if (!diff || value !== applied[key]) {
+          applied[key] = value;
+          writeKey(this, key, value);
+          if (border) {
+            borderWrites++;
+          }
+        }
+      }
+      if (borderWrites !== 0 && borderWrites !== borderKeys) {
+        rewriteBorderKeys(this, count);
+      }
+      this._undoCount = 0;
+      return;
+    }
+
+    // Track the active blocks' keys, block by block in precedence order
+    // (lowest first), after the tracked ones: the key order of the merged
+    // object before 1.7, which decides the write order.
+    const stateOrder = this.stateOrder || Config.stateOrder;
+    const order =
+      n > 1 && stateOrder !== undefined && stateOrder.length > 0
+        ? stateOrder
+        : undefined;
+    if (order === undefined) {
+      for (let i = 0; i < n; i++) {
+        count = trackKeys(stateBlock(this, states[i]!), keys, count, applied);
+      }
+    } else {
+      // States not in `order` first, in the order added, then by `order`.
+      let lastRank = -2;
+      let lastPos = -1;
+      for (let done = 0; done < n; done++) {
+        let pick = 0;
+        let pickRank = 0;
+        let found = false;
+        for (let i = 0; i < n; i++) {
+          const rank = order.indexOf(states[i]!);
+          if (
+            (rank > lastRank || (rank === lastRank && i > lastPos)) &&
+            (!found || rank < pickRank)
+          ) {
+            pick = i;
+            pickRank = rank;
+            found = true;
+          }
+        }
+        count = trackKeys(
+          stateBlock(this, states[pick]!),
+          keys,
+          count,
+          applied,
+        );
+        lastRank = pickRank;
+        lastPos = pick;
+      }
+    }
+    this._undoCount = count;
+
+    // `transition` first, so the other keys animate with it (pinned); one
+    // that resolves to undefined is written in its place.
+    for (let i = 0; i < count; i++) {
+      if (keys[i] === 'transition') {
+        const value = resolveStateValue(this, 'transition', states, order);
+        if (value !== undefined && (!diff || value !== applied.transition)) {
+          applied.transition = value;
+          writeKey(this, 'transition', value);
+        }
+        break;
+      }
+    }
+    for (let i = 0; i < count; i++) {
+      const key = keys[i]!;
+      const value = resolveStateValue(this, key, states, order);
+      const border = BORDER_FAMILY[key] === true;
+      if (border) {
+        borderKeys++;
+      }
+      if (!diff || value !== applied[key]) {
+        applied[key] = value;
+        writeKey(this, key, value);
+        if (border) {
+          borderWrites++;
+        }
+      }
+    }
+    if (borderWrites !== 0 && borderWrites !== borderKeys) {
+      // The tracked count as it is now: a setter above may have changed the
+      // states and tracked more keys.
+      rewriteBorderKeys(this, this._undoCount);
+    }
   }
 
   /** An ElementNode owning an existing slot (the root's, at startup). */

@@ -6,12 +6,20 @@ export type NodeStates =
   | Record<DollarString, boolean | undefined>;
 
 export default class States extends Array<DollarString> {
-  private onChange: () => void;
+  // Assigned in the constructor, not a class field (no field emit).
+  declare private onChange: () => void;
+
+  // Array methods (slice, splice, filter, …) build a plain Array, not a
+  // States: building a States ran this constructor with a length as its
+  // callback, once per remove().
+  static override get [Symbol.species]() {
+    return Array;
+  }
 
   constructor(callback: () => void, initialState: NodeStates = {}) {
     if (isArray(initialState)) {
       // By index: a spread runs the iterator protocol (an iterator and an
-      // argument list per call).
+      // arguments list per call).
       super();
       const n = initialState.length;
       for (let i = 0; i < n; i++) {
@@ -20,11 +28,10 @@ export default class States extends Array<DollarString> {
     } else if (isString(initialState)) {
       super(initialState); // Assert as DollarString
     } else {
-      super(
-        ...Object.entries(initialState)
-          .filter(([_key, value]) => value)
-          .map(([key]) => key as DollarString), // Assert as DollarString
-      );
+      super();
+      for (const key in initialState) {
+        if (initialState[key as DollarString]) this.push(key as DollarString);
+      }
     }
 
     this.onChange = callback;
@@ -73,8 +80,8 @@ export default class States extends Array<DollarString> {
 
   merge(newStates: NodeStates) {
     if (newStates === this) {
-      // A self-merge clears the list, as it did when merge emptied the list
-      // and then pushed a spread of it.
+      // As 1.6 (length = 0, then a spread of the emptied list): a self-merge
+      // clears the list.
       this.length = 0;
     } else if (isArray(newStates)) {
       // Copied by index, then cut to length: a spread ran the iterator
@@ -85,8 +92,8 @@ export default class States extends Array<DollarString> {
       }
       this.length = n;
     } else if (isString(newStates)) {
-      this.length = 0; // Clear the current states
-      this.push(newStates); // Assert as DollarString
+      this[0] = newStates;
+      this.length = 1;
     } else {
       for (const state in newStates) {
         const value = newStates[state as DollarString];
@@ -97,7 +104,7 @@ export default class States extends Array<DollarString> {
         } else {
           const stateIndexToRemove = this.indexOf(state as DollarString);
           if (stateIndexToRemove >= 0) {
-            this.splice(stateIndexToRemove, 1);
+            this.removeAt(stateIndexToRemove);
           }
         }
       }
@@ -106,10 +113,23 @@ export default class States extends Array<DollarString> {
   }
 
   remove(state: DollarString) {
-    const stateIndexToRemove = this.indexOf(state);
+    let stateIndexToRemove = this.indexOf(state);
+    // remove('focus') removes '$focus', as has('focus') matches it (B2).
+    if (stateIndexToRemove < 0 && state.charCodeAt(0) !== 36) {
+      stateIndexToRemove = this.indexOf(('$' + state) as DollarString);
+    }
     if (stateIndexToRemove >= 0) {
-      this.splice(stateIndexToRemove, 1);
+      this.removeAt(stateIndexToRemove);
       this.onChange();
     }
+  }
+
+  // Shift in place: splice would allocate the array of removed entries.
+  private removeAt(index: number) {
+    const last = this.length - 1;
+    for (let i = index; i < last; i++) {
+      this[i] = this[i + 1]!;
+    }
+    this.length = last;
   }
 }

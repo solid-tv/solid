@@ -297,6 +297,47 @@ export function convertToShader(node: ElementNode): void {
   useShader(node, shader);
 }
 
+/** The bag keys of the rounded family's raw objects (`rounded` is `borderRadius`). */
+export type RoundedKey = (typeof ROUNDED_KEYS)[number];
+
+/**
+ * Take a rounded-family prop off the node: what style undo does for a key
+ * with no theme, style or default value to write back (styles.ts). Writing
+ * `undefined` would leave the facade keys the last object stood for in the
+ * bag; here they are cleared with the raw object, and the node's rounded
+ * shader is made again from what the bag still holds, so a cleared key
+ * takes its shader type's default (none is left: no shader). A facade key
+ * another object of the family also named is cleared too (the 1.6 merge,
+ * B18, is not undone more finely than that).
+ */
+export function resetShaderProp(node: ElementNode, key: RoundedKey): void {
+  const bag = node._shaderProps;
+  if (bag === undefined || node.slot === NULL) {
+    return;
+  }
+  const previous = bag[key];
+  bag[key] = undefined;
+  if (key === 'rounded') {
+    bag.radius = undefined;
+  } else if (isObject(previous)) {
+    const keys = shaderParse(key, previous).keys;
+    for (let i = 0; i < keys.length; i++) {
+      bag[keys[i]!] = undefined;
+    }
+  }
+  if (!SHADERS_ENABLED || node._shaderFeatures === SHADER_UNMANAGED) {
+    // No shader yet (attach makes it from the bag), or one the app made.
+    return;
+  }
+  if (!hasRoundedProps(bag)) {
+    node._shaderFeatures = SHADER_UNMANAGED;
+    useShader(node, null);
+    return;
+  }
+  // createShader gives every key the bag holds no value for its default.
+  convertToShader(node);
+}
+
 /**
  * Swap the shader convertToShader made when a border width moves to or from
  * 0. For an animated write, `change` holds what animates (facade keys to
