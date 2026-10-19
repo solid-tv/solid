@@ -181,6 +181,8 @@ export class ElementNode implements SlotOwner {
   declare _shader: ShaderNode | undefined;
   /** The raw shader prop objects, by accessor name (shader.ts). */
   declare _shaderProps: Record<string, unknown> | undefined;
+  /** The stop hook of each animated prop, made once and kept (`_animate`). */
+  declare _stopHooks: Partial<Record<StoreProp, () => void>> | undefined;
   /** The feature bits of the rounded shader made, or SHADER_UNMANAGED. */
   declare _shaderFeatures: number;
   /** The key that made the node's shader while it is not the rounded one. */
@@ -484,6 +486,7 @@ export class ElementNode implements SlotOwner {
     this._theme = undefined;
     this._shader = undefined;
     this._shaderProps = undefined;
+    this._stopHooks = undefined;
     this._shaderFeatures = SHADER_UNMANAGED;
     this._shaderKey = undefined;
     this._textProps = undefined;
@@ -1077,10 +1080,22 @@ export class ElementNode implements SlotOwner {
       return false;
     }
     // The same settings object retargets the prop's controller: no
-    // allocation. A new controller gets its stop hook once.
+    // allocation. A new controller (new settings: Row and Column switch
+    // them with the direction) takes the prop's stop hook, made once per
+    // node and prop.
     const controller = animateSlotProp(this.core, this, name, value, settings);
     if (controller.onStop === null) {
-      controller.onStop = stoppedHook(this, name);
+      let hooks = this._stopHooks;
+      if (hooks === undefined) {
+        hooks = {};
+        this._stopHooks = hooks;
+      }
+      let hook = hooks[name];
+      if (hook === undefined) {
+        hook = stoppedHook(this, name);
+        hooks[name] = hook;
+      }
+      controller.onStop = hook;
     }
     const handlers = this.onAnimation;
     if (handlers !== undefined && handlers.animating !== undefined) {

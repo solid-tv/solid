@@ -101,6 +101,11 @@ describe('ElementNode transitions', () => {
     const second = slotOf(core, node, 'x')!.controller;
     expect(second).not.toBe(first);
     expect(first.state).toBe('stopped');
+    // The new controller takes the prop's stop hook, made once per node and
+    // prop: no closure per new controller (Row/Column switch settings with
+    // the direction).
+    expect(second.onStop).not.toBeNull();
+    expect(second.onStop).toBe(first.onStop);
     // The old controller's stop reports its prop.
     expect(stopped).toHaveBeenCalledTimes(1);
     expect(stopped.mock.calls[0]![0]).toBe('x');
