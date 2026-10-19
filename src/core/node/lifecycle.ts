@@ -16,6 +16,7 @@ import {
   SET_LINE_HEIGHT,
   SET_MAX_LINES,
   SET_TEXT,
+  SET_TEXT_ALIGN,
   SET_TEXTURE,
   SET_WIDTH,
 } from './defaults.js';
@@ -307,7 +308,7 @@ export function attach(node: ElementNode): void {
       node.text = node.getText();
     }
 
-    if (isDev && node.textAlign !== 'left' && node.contain === 'none') {
+    if (isDev && set[SET_TEXT_ALIGN] === 1 && node.contain === 'none') {
       console.warn('Text align requires contain: ', node.getText());
     }
 

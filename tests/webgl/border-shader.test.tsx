@@ -48,7 +48,7 @@ v.describe('rounded shader type from the border width', () => {
         node.states.add('$focus');
         const shader = shaderOf(node);
         v.expect(shader.shaderType).toBe(defaultShaderRoundedWithBorder);
-        v.expect(shader.props['border-w']).toEqual([4, 4, 4, 4]);
+        v.expect(shader.props['border-width']).toEqual([4, 4, 4, 4]);
         v.expect(shader.props['border-color']).toBe(RED);
         v.expect(shader.props.radius).toEqual([8, 8, 8, 8]);
         await settle();
@@ -82,9 +82,9 @@ v.describe('rounded shader type from the border width', () => {
 
       node.border = { width: 4, color: RED };
       v.expect(shaderOf(node).shaderType).toBe(defaultShaderRoundedWithBorder);
-      v.expect(shaderOf(node).props['border-w']).toEqual([0, 0, 0, 0]);
+      v.expect(shaderOf(node).props['border-width']).toEqual([0, 0, 0, 0]);
       await v.vi.waitFor(() =>
-        v.expect(shaderOf(node).props['border-w']).toEqual([4, 4, 4, 4]),
+        v.expect(shaderOf(node).props['border-width']).toEqual([4, 4, 4, 4]),
       );
 
       node.border = { width: 0, color: RED };
