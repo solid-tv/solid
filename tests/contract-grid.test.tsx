@@ -344,3 +344,47 @@ v.describe('Grid', () => {
     },
   );
 });
+
+v.describe('Grid: handlers are created once', () => {
+  v.it(
+    'a vertical move scrolls y but leaves the five handlers the same functions',
+    async () => {
+      let grid!: lng.ElementNode;
+      const onDown = v.vi.fn(() => false);
+      dispose = await mount(() => (
+        <view width={1920} height={1080}>
+          <Grid
+            ref={grid}
+            autofocus
+            items={tenItems}
+            columns={3}
+            itemWidth={100}
+            itemHeight={50}
+            onDown={onDown}
+          >
+            {Cell}
+          </Grid>
+        </view>
+      ));
+      const handlers = () => [
+        grid.onUp,
+        grid.onDown,
+        grid.onLeft,
+        grid.onRight,
+        grid.onFocus,
+      ];
+      const before = handlers();
+      v.expect(before.every((h) => typeof h === 'function')).toBe(true);
+      await press('ArrowDown');
+      v.expect([focusedId(), grid.y]).toEqual(['g3', -50]);
+      await press('ArrowDown');
+      v.expect([focusedId(), grid.y]).toEqual(['g6', -100]);
+      const after = handlers();
+      for (let i = 0; i < before.length; i++) {
+        v.expect(after[i]).toBe(before[i]);
+      }
+      // The app's own handler still runs first (read when called).
+      v.expect(onDown).toHaveBeenCalledTimes(2);
+    },
+  );
+});

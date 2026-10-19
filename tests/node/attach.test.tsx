@@ -173,6 +173,38 @@ describe('attach', () => {
     expect(core.nodes.i32[parent.slot * I_STRIDE + I_FIRST_CHILD]).toBe(NULL);
   });
 
+  it('a preserved child removed, then its old parent destroyed, keeps its slot and can be inserted elsewhere', async () => {
+    const { core, root } = scene();
+    const parent = view(core);
+    insertChild(root, parent);
+    const kept = view(core);
+    kept.preserve = true;
+    insertChild(parent, kept);
+    const slot = kept.slot;
+    removeChild(parent, kept);
+    await microtasks();
+    // The delete flush never destroys it, so nothing would unlink it later:
+    // it is out of the store's child list of the old parent at once.
+    expect(kept.slot).toBe(slot);
+    expect(core.nodes.i32[slot * I_STRIDE + I_PARENT]).toBe(NULL);
+    expect(core.nodes.i32[parent.slot * I_STRIDE + I_FIRST_CHILD]).toBe(NULL);
+
+    removeChild(root, parent);
+    await microtasks();
+    expect(parent.slot).toBe(NULL);
+    // destroySubtree of the old parent did not take it along.
+    expect(kept.slot).toBe(slot);
+
+    const other = view(core);
+    insertChild(root, other);
+    insertChild(other, kept);
+    await microtasks();
+    expect(kept.slot).toBe(slot);
+    expect(core.nodes.i32[slot * I_STRIDE + I_PARENT]).toBe(other.slot);
+    expect(kept.preserve).toBe(true);
+    expect(other.children).toContain(kept);
+  });
+
   it('a removed node stays linked while the promise onDestroy returns is pending', async () => {
     const { core, root } = scene();
     const parent = view(core);

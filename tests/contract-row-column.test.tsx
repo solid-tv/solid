@@ -12,10 +12,13 @@ import * as lng from '@solidtv/solid';
 import {
   Row,
   Column,
+  scrollRow,
   useFocusManager,
   type KeyEventTarget,
 } from '@solidtv/solid/primitives';
-import { renderer, tick } from './setup.js';
+import { ElementNode } from '../src/core/node/ElementNode.js';
+import { NodeType } from '../src/core/nodeTypes.js';
+import { core, renderer, tick } from './setup.js';
 
 // The focus manager listens for `keydown` on the target given to
 // useFocusManager (`document` by default). A private target gets the same
@@ -932,4 +935,167 @@ v.describe('Row and Column: transitions and throttleInput', () => {
       v.expect(row.selected).toBe(1);
     },
   );
+});
+
+// A press allocates nothing in the steady state (spec goal 3): the merged
+// transition of a direction is one cached object, so the node's `transition`
+// and the settings object the renderer's animateSlotProp sees stay the same,
+// and the renderer reuses its controller instead of making one per press.
+v.describe('Row and Column: a press reuses the merged transition', () => {
+  v.beforeEach(() => {
+    lng.Config.animationsEnabled = true;
+  });
+  v.afterEach(() => {
+    lng.Config.animationsEnabled = false;
+  });
+
+  interface AnimationSlot {
+    controller: unknown;
+    settings: unknown;
+  }
+  const xSlot = (el: lng.ElementNode): AnimationSlot | undefined => {
+    const map = el.core.nodes.animations[el.slot] as Record<
+      string,
+      AnimationSlot | undefined
+    > | null;
+    return map === null ? undefined : map.x;
+  };
+
+  v.it(
+    'repeated presses in one direction keep the same transition object and the same controller',
+    async () => {
+      let row!: lng.ElementNode;
+      dispose = await mount(() => (
+        <view width={1920} height={1080}>
+          <Row ref={row} autofocus scroll="always">
+            {items(8)}
+          </Row>
+        </view>
+      ));
+      await press('ArrowRight'); // warm-up: builds the cache and the controller
+      const transition = row.transition;
+      const slot = xSlot(row);
+      v.expect(slot).toBeDefined();
+      await press('ArrowRight');
+      await press('ArrowRight');
+      v.expect(focusedId()).toBe('c3');
+      v.expect(row.transition).toBe(transition);
+      v.expect(xSlot(row)!.settings).toBe(slot!.settings);
+      v.expect(xSlot(row)!.controller).toBe(slot!.controller);
+    },
+  );
+
+  v.it(
+    'a direction change swaps to the other cached object, and back to the same one',
+    async () => {
+      let row!: lng.ElementNode;
+      dispose = await mount(() => (
+        <view width={1920} height={1080}>
+          <Row ref={row} autofocus scroll="always">
+            {items(8)}
+          </Row>
+        </view>
+      ));
+      await press('ArrowRight');
+      const right = row.transition;
+      await press('ArrowLeft');
+      const left = row.transition;
+      v.expect(left).not.toBe(right);
+      await press('ArrowRight');
+      v.expect(row.transition).toBe(right);
+      await press('ArrowLeft');
+      v.expect(row.transition).toBe(left);
+    },
+  );
+
+  v.it(
+    'a user transition is merged once: its keys win, and the merged object is reused',
+    async () => {
+      let row!: lng.ElementNode;
+      const base = { x: { duration: 999 }, alpha: true };
+      dispose = await mount(() => (
+        <view width={1920} height={1080}>
+          <Row ref={row} autofocus scroll="always" transition={base}>
+            {items(8)}
+          </Row>
+        </view>
+      ));
+      await press('ArrowRight');
+      const merged = row.transition;
+      v.expect(merged).toEqual(base);
+      await press('ArrowRight');
+      v.expect(row.transition).toBe(merged);
+      // The developer's object is never written to.
+      v.expect(base).toEqual({ x: { duration: 999 }, alpha: true });
+    },
+  );
+
+  v.it(
+    'a new base transition assigned by the app is merged afresh',
+    async () => {
+      let row!: lng.ElementNode;
+      dispose = await mount(() => (
+        <view width={1920} height={1080}>
+          <Row ref={row} autofocus scroll="always" transition={{ alpha: true }}>
+            {items(8)}
+          </Row>
+        </view>
+      ));
+      await press('ArrowRight');
+      const first = row.transition;
+      v.expect(first).toEqual({
+        x: { duration: 180, easing: 'cubic-bezier(0.2, 0, 0, 1)' },
+        alpha: true,
+      });
+      row.transition = { alpha: false };
+      await press('ArrowRight');
+      v.expect(row.transition).not.toBe(first);
+      v.expect(row.transition).toEqual({
+        x: { duration: 180, easing: 'cubic-bezier(0.2, 0, 0, 1)' },
+        alpha: false,
+      });
+    },
+  );
+
+  v.it(
+    'the cache is per element: two Rows with no transition do not share a merged object',
+    async () => {
+      let a!: lng.ElementNode;
+      let b!: lng.ElementNode;
+      dispose = await mount(() => (
+        <view width={1920} height={1080}>
+          <Row ref={a} autofocus scroll="always">
+            {items(8)}
+          </Row>
+          <Row ref={b} scroll="always">
+            {items(8)}
+          </Row>
+        </view>
+      ));
+      await press('ArrowRight');
+      b.setFocus();
+      await flush();
+      await press('ArrowRight');
+      v.expect(a.transition).toBeDefined();
+      v.expect(b.transition).toBeDefined();
+      v.expect(a.transition).not.toBe(b.transition);
+    },
+  );
+});
+
+v.describe('Row and Column: scrolling a node with no parent', () => {
+  v.it('a Row with no parent takes its first scroll (no clipping parent to read)', () => {
+    const row = new ElementNode(core, NodeType.Element);
+    row.width = 1920;
+    row.height = 100;
+    for (let i = 0; i < 3; i++) {
+      const child = new ElementNode(core, NodeType.Element);
+      child.width = 500;
+      child.height = 100;
+      child.x = i * 500;
+      row.insertChild(child, null);
+    }
+    v.expect(row.parent).toBeUndefined();
+    v.expect(() => scrollRow(1, row, undefined, 0)).not.toThrow();
+  });
 });
