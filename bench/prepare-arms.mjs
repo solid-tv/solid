@@ -1,6 +1,7 @@
 // Prepares the benchmark arms under bench/.arms (gitignored).
 //
-//   A: solid 1.6.4 on renderer 1.9.3 (what ships today)
+//   A: this repo at e63c88d (v2 before the store-direct rewrite) on
+//      @solidtv/renderer 2.0.6 from npm
 //   C: this working tree (src/) on its installed @solidtv/renderer
 //      (node_modules/@solidtv/renderer, whatever version that is)
 //
@@ -28,15 +29,15 @@ const rendererCVersion = JSON.parse(
 ).version;
 
 export const PINS = {
-  solidA: '71c170f', // v1.6.4
-  rendererA: '1.9.3', // npm
+  solidA: 'e63c88d', // v2 before the store-direct rewrite
+  rendererA: '2.0.6', // npm
 };
 
 export const ARMS = {
   A: {
     solid: join(armsDir, 'solid-a'),
     renderer: join(armsDir, 'renderer-a'),
-    rendererMajor: 1,
+    rendererMajor: Number(PINS.rendererA.split('.')[0]),
     rendererVersion: PINS.rendererA,
   },
   C: {

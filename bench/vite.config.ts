@@ -9,7 +9,7 @@
 // The bundle is split into four chunks with fixed names, so that a profiler
 // sample or an allocation can be charged to its owner by script URL
 // (bench/harness/analyze.mjs):
-//   assets/reactivity.js  solid-js
+//   assets/reactivity.js  solid-js and its @solidjs/{signals,universal,web}
 //   assets/framework.js   the arm's @solidtv/solid source and its @solid-primitives
 //   assets/renderer.js    the arm's @solidtv/renderer dist
 //   assets/user.js        the entry: bench/src (main, arm bootstrap, scenarios)
@@ -215,7 +215,7 @@ export default defineConfig({
               groups: [
                 {
                   name: 'reactivity',
-                  test: /[\\/]node_modules[\\/]solid-js[\\/]/,
+                  test: /[\\/]node_modules[\\/](solid-js|@solidjs[\\/](signals|universal|web))[\\/]/,
                   priority: 4,
                 },
                 {
