@@ -110,6 +110,7 @@ export function shaderParse(key: string, obj: object): ShaderParse {
   const index = Object.create(null) as Record<string, number | undefined>;
   // The keys of a plain object the app wrote, which `obj` is for a border or
   // shadow: read by name, as a getter on it is read once per parse.
+  // `obj` is a border or shadow object the app wrote: its keys are strings.
   const source = obj as Record<string, unknown>;
   let cached = true;
   const own = Object.keys(obj);
@@ -163,12 +164,14 @@ const BORDER_WIDTH_KEYS = [
 function positive(w: unknown): boolean {
   if (Array.isArray(w)) {
     for (let i = 0; i < w.length; i++) {
+      // A width array holds numbers.
       if ((w[i] as number) > 0) {
         return true;
       }
     }
     return false;
   }
+  // A width is a number (a string or undefined compares false).
   return (w as number) > 0;
 }
 
@@ -215,24 +218,42 @@ function hasRoundedProps(bag: Record<string, unknown>): boolean {
 }
 
 /**
+ * Keys of the last parse whose value the bag did not hold: the positions in
+ * `parse.keys`, in a scratch array so a write allocates nothing (a write
+ * runs to its end before the next starts).
+ */
+const CHANGED: number[] = [];
+
+/**
  * Merge what a rounded-family object stands for into the bag's facade keys,
  * as the facade write does: a key the object does not name keeps its value,
  * so a `$focus` border of `{ width: 4 }` keeps the base border's colour.
+ * Fills CHANGED with the keys whose value differs from what the bag held.
  */
 function mergeIntoBag(
   bag: Record<string, unknown>,
   key: ShaderKey,
   value: unknown,
+  parse: ShaderParse | undefined,
 ): void {
+  CHANGED.length = 0;
   if (key === 'rounded') {
-    bag.radius = value;
+    if (value !== undefined && value !== null && bag.radius !== value) {
+      bag.radius = value;
+      CHANGED.push(0);
+    }
     return;
   }
-  const parse = shaderParse(key, value as object);
+  if (parse === undefined) {
+    return;
+  }
   const keys = parse.keys;
   const values = parse.values;
   for (let i = 0; i < keys.length; i++) {
-    bag[keys[i]!] = values[i];
+    if (bag[keys[i]!] !== values[i]) {
+      bag[keys[i]!] = values[i];
+      CHANGED.push(i);
+    }
   }
 }
 
@@ -262,6 +283,7 @@ export function convertToShader(node: ElementNode): void {
     return;
   }
   node._shaderFeatures = features;
+  node._shaderKey = undefined;
   useShader(node, shader);
 }
 
@@ -299,8 +321,16 @@ export function syncShaderType(
   useShader(node, shader);
 }
 
-/** Write what `value` stands for to `shader`'s facade: only what changed. */
-function writeFacade(shader: ShaderNode, key: ShaderKey, value: unknown): void {
+/**
+ * Write what `value` stands for to the facade of a shader the app made, which
+ * the bag was not built into: only what differs from what it reads back.
+ */
+function writeFacade(
+  shader: ShaderNode,
+  key: ShaderKey,
+  value: unknown,
+  parse: ShaderParse | undefined,
+): void {
   const props = shader.props;
   if (key === 'rounded') {
     if (value !== undefined && value !== null && props.radius !== value) {
@@ -308,15 +338,12 @@ function writeFacade(shader: ShaderNode, key: ShaderKey, value: unknown): void {
     }
     return;
   }
-  if (!isObject(value)) {
+  if (parse === undefined) {
     return;
   }
-  const parse = shaderParse(key, value);
   const keys = parse.keys;
   const values = parse.values;
   for (let i = 0; i < keys.length; i++) {
-    // A facade write repacks every node using the shader: not for a value
-    // it holds already.
     if (props[keys[i]!] !== values[i]) {
       props[keys[i]!] = values[i];
     }
@@ -334,19 +361,20 @@ function bagOf(node: ElementNode): Record<string, unknown> {
 }
 
 /**
- * `border`, a side, `shadow`, `borderRadius`: store the object, then reach
- * the facade. Before attach (no shader yet, not rendered) the object only
- * waits in the bag for convertToShader.
+ * `border`, a side, `shadow`, `borderRadius`: store the object, merge its
+ * parse into the bag, then reach the facade with the keys that changed.
+ * Before attach (no shader yet, not rendered) the object only waits in the
+ * bag for convertToShader. A shader convertToShader made was built from the
+ * bag, so a key the bag held already is on it: writing the same object again
+ * touches nothing (a facade write repacks every node using the shader).
  */
 function writeRounded(node: ElementNode, key: ShaderKey, value: unknown): void {
   const bag = bagOf(node);
   bag[key] = value;
-  if (
-    isObject(value) ||
-    (key === 'rounded' && value !== undefined && value !== null)
-  ) {
-    mergeIntoBag(bag, key, value);
-  }
+  // One parse per write (a getter object's getters run once).
+  const parse =
+    key !== 'rounded' && isObject(value) ? shaderParse(key, value) : undefined;
+  mergeIntoBag(bag, key, value, parse);
   if (!SHADERS_ENABLED) {
     return;
   }
@@ -357,21 +385,36 @@ function writeRounded(node: ElementNode, key: ShaderKey, value: unknown): void {
     }
     return;
   }
-  if (node._shaderFeatures !== SHADER_UNMANAGED) {
-    const before = node._shaderFeatures;
-    syncShaderType(node);
-    if (node._shaderFeatures !== before) {
-      // The new shader was made from the bag, which holds this write.
-      return;
-    }
+  if (node._shaderFeatures === SHADER_UNMANAGED) {
+    // The app's shader: the bag never reached it.
+    writeFacade(shader, key, value, parse);
+    return;
   }
-  writeFacade(shader, key, value);
+  const before = node._shaderFeatures;
+  syncShaderType(node);
+  if (node._shaderFeatures !== before) {
+    // The new shader was made from the bag, which holds this write.
+    return;
+  }
+  const props = shader.props;
+  if (key === 'rounded') {
+    if (CHANGED.length > 0) {
+      props.radius = value;
+    }
+    return;
+  }
+  for (let i = 0; i < CHANGED.length; i++) {
+    const at = CHANGED[i]!;
+    props[parse!.keys[at]!] = parse!.values[at];
+  }
 }
 
 /**
  * `linearGradient`, `radialGradient`, `holePunch`: a shader of a type other
- * than the rounded family, replacing the node's. No value takes it away,
- * and the rounded shader of the border props comes back after attach.
+ * than the rounded family, replacing the node's. No value takes the shader
+ * away only when this key made it (`_shaderKey`), and the rounded shader of
+ * the border props then comes back after attach. The same object again
+ * keeps the shader it made.
  */
 function writeReplacing(
   node: ElementNode,
@@ -380,20 +423,32 @@ function writeReplacing(
   value: unknown,
 ): void {
   const bag = bagOf(node);
+  const previous = bag[key];
   bag[key] = value;
   if (!SHADERS_ENABLED) {
     return;
   }
   if (value === undefined || value === null) {
-    node._shaderFeatures = SHADER_UNMANAGED;
-    useShader(node, null);
-    if (node.rendered) {
-      Config.convertToShader(node);
+    if (node._shaderKey === key) {
+      node._shaderKey = undefined;
+      node._shaderFeatures = SHADER_UNMANAGED;
+      useShader(node, null);
+      if (node.rendered) {
+        Config.convertToShader(node);
+      }
     }
+    return;
+  }
+  if (
+    previous === value &&
+    node._shaderKey === key &&
+    node._shader !== undefined
+  ) {
     return;
   }
   // The gradient and hole punch props are an object, as written.
   const shader = node.core.createShader(type, value as Record<string, unknown>);
+  node._shaderKey = key;
   node._shaderFeatures = SHADER_UNMANAGED;
   useShader(node, shader);
 }
@@ -407,6 +462,7 @@ function writeShader(
     return;
   }
   node._shaderFeatures = SHADER_UNMANAGED;
+  node._shaderKey = value === null ? undefined : 'shader';
   if (Array.isArray(value)) {
     useShader(node, node.core.createShader(value[0], value[1]));
   } else {
@@ -441,6 +497,7 @@ export function installShaderAccessors(proto: ElementNode): void {
     borderTop: {
       get(this: ElementNode): SingleBorderStyle | undefined {
         const bag = this._shaderProps;
+        // The bag holds what the setter stored under this key.
         return bag === undefined
           ? undefined
           : (bag.borderTop as SingleBorderStyle | undefined);
@@ -456,6 +513,7 @@ export function installShaderAccessors(proto: ElementNode): void {
     borderRight: {
       get(this: ElementNode): SingleBorderStyle | undefined {
         const bag = this._shaderProps;
+        // The bag holds what the setter stored under this key.
         return bag === undefined
           ? undefined
           : (bag.borderRight as SingleBorderStyle | undefined);
@@ -471,6 +529,7 @@ export function installShaderAccessors(proto: ElementNode): void {
     borderBottom: {
       get(this: ElementNode): SingleBorderStyle | undefined {
         const bag = this._shaderProps;
+        // The bag holds what the setter stored under this key.
         return bag === undefined
           ? undefined
           : (bag.borderBottom as SingleBorderStyle | undefined);
@@ -486,6 +545,7 @@ export function installShaderAccessors(proto: ElementNode): void {
     borderLeft: {
       get(this: ElementNode): SingleBorderStyle | undefined {
         const bag = this._shaderProps;
+        // The bag holds what the setter stored under this key.
         return bag === undefined
           ? undefined
           : (bag.borderLeft as SingleBorderStyle | undefined);
@@ -501,6 +561,7 @@ export function installShaderAccessors(proto: ElementNode): void {
     shadow: {
       get(this: ElementNode): Record<string, unknown> | undefined {
         const bag = this._shaderProps;
+        // The bag holds what the setter stored under this key.
         return bag === undefined
           ? undefined
           : (bag.shadow as Record<string, unknown> | undefined);
@@ -516,6 +577,7 @@ export function installShaderAccessors(proto: ElementNode): void {
     borderRadius: {
       get(this: ElementNode): number | number[] | undefined {
         const bag = this._shaderProps;
+        // The bag holds what the setter stored under this key.
         return bag === undefined
           ? undefined
           : (bag.rounded as number | number[] | undefined);
@@ -532,6 +594,7 @@ export function installShaderAccessors(proto: ElementNode): void {
     rounded: {
       get(this: ElementNode): number | number[] | undefined {
         const bag = this._shaderProps;
+        // The bag holds what the setter stored under this key.
         return bag === undefined
           ? undefined
           : (bag.rounded as number | number[] | undefined);
@@ -548,6 +611,7 @@ export function installShaderAccessors(proto: ElementNode): void {
     linearGradient: {
       get(this: ElementNode): Record<string, unknown> | undefined {
         const bag = this._shaderProps;
+        // The bag holds what the setter stored under this key.
         return bag === undefined
           ? undefined
           : (bag.linearGradient as Record<string, unknown> | undefined);
@@ -563,6 +627,7 @@ export function installShaderAccessors(proto: ElementNode): void {
     radialGradient: {
       get(this: ElementNode): Record<string, unknown> | undefined {
         const bag = this._shaderProps;
+        // The bag holds what the setter stored under this key.
         return bag === undefined
           ? undefined
           : (bag.radialGradient as Record<string, unknown> | undefined);
@@ -578,6 +643,7 @@ export function installShaderAccessors(proto: ElementNode): void {
     holePunch: {
       get(this: ElementNode): Record<string, unknown> | undefined {
         const bag = this._shaderProps;
+        // The bag holds what the setter stored under this key.
         return bag === undefined
           ? undefined
           : (bag.holePunch as Record<string, unknown> | undefined);

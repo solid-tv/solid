@@ -337,4 +337,85 @@ describe('ElementNode shader props', () => {
     expect(warn).toHaveBeenCalled();
     warn.mockRestore();
   });
+
+  it('writing the same border object again touches no facade prop', () => {
+    const { core, node } = rendered();
+    const border = { width: 4, color: RED, gap: 1 };
+    node.border = border;
+    const shader = node._shader;
+    const mark = vi.spyOn(core.shaders, 'markUsers');
+    node.border = border;
+    node.borderRadius = 8;
+    expect(node._shader).toBe(shader);
+    expect(mark).not.toHaveBeenCalled();
+    // A new object with the same values is no write either.
+    node.border = { width: 4, color: RED, gap: 1 };
+    expect(mark).not.toHaveBeenCalled();
+    // A changed value reaches the facade, and only it.
+    node.border = { width: 6, color: RED, gap: 1 };
+    expect(mark).toHaveBeenCalledTimes(1);
+    expect(node._shader!.props['border-width']).toEqual([6, 6, 6, 6]);
+    mark.mockRestore();
+  });
+
+  it('a getter object is read once per write', () => {
+    const { node } = rendered();
+    let reads = 0;
+    const live = {
+      color: RED,
+      get width() {
+        return (++reads, 3);
+      },
+    };
+    node.border = live;
+    expect(reads).toBe(1);
+    expect(node._shader!.props['border-width']).toEqual([3, 3, 3, 3]);
+  });
+
+  it('writing the same gradient object again keeps its shader', () => {
+    const { core, node } = rendered();
+    const gradient = { colors: [RED, 0x0000ffff], angle: 1 };
+    node.linearGradient = gradient;
+    const shader = node._shader;
+    node.linearGradient = gradient;
+    expect(node._shader).toBe(shader);
+    expect(core.nodes.shaderRefs[node.slot]).toBe(shader);
+    // Another object makes another shader.
+    node.linearGradient = { colors: [RED, RED] };
+    expect(node._shader).not.toBe(shader);
+  });
+
+  it('clearing one replacing key leaves the shader another made', () => {
+    const { core, node } = rendered();
+    node.linearGradient = { colors: [RED, 0x0000ffff] };
+    const gradient = node._shader;
+    node.radialGradient = undefined;
+    node.holePunch = undefined;
+    expect(node._shader).toBe(gradient);
+    expect(typeName(node)).toBe('linearGradient');
+    // The shader of the `shader` prop stays when a gradient key is cleared.
+    const made = core.createShader('rounded', { radius: 2 })!;
+    node.shader = made;
+    node.holePunch = undefined;
+    node.linearGradient = undefined;
+    expect(node._shader).toBe(made);
+    // Clearing the key that made a shader takes it away: the rounded one
+    // of the border props comes back.
+    node.holePunch = { x: 1, y: 1, w: 2, h: 2 };
+    expect(typeName(node)).toBe('holePunch');
+    node.holePunch = undefined;
+    expect(typeName(node)).toBe('rounded');
+    expect(core.nodes.shaderRefs[node.slot]).toBe(node._shader);
+  });
+
+  it('a shadow written after attach swaps in roundedWithShadow; removing it swaps back', () => {
+    const { node } = rendered();
+    expect(typeName(node)).toBe('rounded');
+    node.shadow = { color: 0x000000ff, blur: 8 };
+    expect(typeName(node)).toBe('roundedWithShadow');
+    expect(node._shader!.props['shadow-blur']).toBe(8);
+    node.shadow = undefined;
+    expect(typeName(node)).toBe('rounded');
+    expect(node.shadow).toBeUndefined();
+  });
 });

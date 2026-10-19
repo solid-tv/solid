@@ -108,6 +108,8 @@ export class ElementNode implements SlotOwner {
   declare _shaderProps: Record<string, unknown> | undefined;
   /** The feature bits of the rounded shader made, or SHADER_UNMANAGED. */
   declare _shaderFeatures: number;
+  /** The key that made the node's shader while it is not the rounded one. */
+  declare _shaderKey: string | undefined;
   declare _textProps: Record<string, unknown> | undefined;
   declare _transition: TransitionSetting | undefined;
   declare _animationSettings: AnimationSettings | undefined;
@@ -331,6 +333,7 @@ export class ElementNode implements SlotOwner {
     this._shader = undefined;
     this._shaderProps = undefined;
     this._shaderFeatures = SHADER_UNMANAGED;
+    this._shaderKey = undefined;
     this._textProps = undefined;
     this._transition = undefined;
     this._animationSettings = undefined;
