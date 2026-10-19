@@ -462,8 +462,9 @@ v.describe('contract: $state blocks inside style apply and undo', () => {
     },
   );
 
-  v.it(
-    'undo: a prop only in JSX, overridden by $focus, returns to undefined (the JSX value is lost)',
+  // 2.0: passes from Task 8
+  v.it.skip(
+    'undo: a prop only in JSX, overridden by $focus, reads the renderer default (the JSX value is lost)',
     () => {
       let node!: lng.ElementNode;
       const dispose = renderer.render(() => (
@@ -473,14 +474,52 @@ v.describe('contract: $state blocks inside style apply and undo', () => {
       node.states.add('$focus');
       v.expect(node.color).toBe(BLUE);
       node.states.remove('$focus');
-      v.expect(node.color).toBeUndefined();
+      // A store-backed prop never reads undefined: the transparent default.
+      v.expect(node.color).toBe(0x00000000);
       dispose();
     },
   );
 
-  v.it('undo: a prop with no base value anywhere is written undefined', () => {
-    // The DOM renderer reads back an undefined alpha as undefined and an
-    // undefined scale as 1 (its getter is `props.scale ?? 1`).
+  // What holds on the DOM host too (it reads undefined there): the JSX value
+  // is lost, and the $focus value is gone.
+  v.it(
+    'undo: a prop only in JSX, overridden by $focus, is no longer the JSX value',
+    () => {
+      let node!: lng.ElementNode;
+      const dispose = renderer.render(() => (
+        <view ref={node} color={GREEN} style={{ $focus: { color: BLUE } }} />
+      ));
+      node.states.add('$focus');
+      node.states.remove('$focus');
+      v.expect(node.color).not.toBe(GREEN);
+      v.expect(node.color).not.toBe(BLUE);
+      dispose();
+    },
+  );
+
+  // 2.0: passes from Task 8
+  v.it.skip(
+    'undo: a prop with no base value anywhere reads the renderer default',
+    () => {
+      let node!: lng.ElementNode;
+      const dispose = renderer.render(() => (
+        <view ref={node} style={{ $focus: { alpha: 0.5, scale: 1.2 } }} />
+      ));
+      v.expect(node.alpha).toBe(1);
+      node.states.add('$focus');
+      v.expect(node.alpha).toBe(0.5);
+      v.expect(node.scale).toBe(1.2);
+      node.states.remove('$focus');
+      // A store-backed prop never reads undefined: alpha and scale are 1.
+      v.expect(node.alpha).toBe(1);
+      v.expect(node.scale).toBe(1);
+      dispose();
+    },
+  );
+
+  // What holds on the DOM host too, where alpha reads back undefined (its
+  // getter is `props.alpha`) and scale reads 1 (`props.scale ?? 1`).
+  v.it('undo: a prop with no base value anywhere, scale reads 1', () => {
     let node!: lng.ElementNode;
     const dispose = renderer.render(() => (
       <view ref={node} style={{ $focus: { alpha: 0.5, scale: 1.2 } }} />
@@ -490,7 +529,6 @@ v.describe('contract: $state blocks inside style apply and undo', () => {
     v.expect(node.alpha).toBe(0.5);
     v.expect(node.scale).toBe(1.2);
     node.states.remove('$focus');
-    v.expect(node.alpha).toBeUndefined();
     v.expect(node.scale).toBe(1);
     dispose();
   });
@@ -789,12 +827,37 @@ v.describe('contract: forwardStates', () => {
       parent.states.add('$focus');
       v.expect(statesOf(child)).toEqual(['$focus']);
       v.expect(child.color).toBe(BLUE);
-      // $active's alpha was undone; the style has no alpha, so it is undefined.
-      v.expect(child.alpha).toBeUndefined();
 
       parent.states.remove('$focus');
       v.expect(statesOf(child)).toEqual([]);
       v.expect(child.color).toBe(RED);
+      dispose();
+    },
+  );
+
+  // 2.0: passes from Task 8
+  v.it.skip(
+    "a child's $active alpha is undone by the parent's states: it reads the renderer default",
+    () => {
+      let parent!: lng.ElementNode;
+      let child!: lng.ElementNode;
+      const dispose = renderer.render(() => (
+        <view ref={parent} forwardStates>
+          <view
+            ref={child}
+            states="$active"
+            style={{
+              color: RED,
+              $active: { color: GREEN, alpha: 0.3 },
+              $focus: { color: BLUE },
+            }}
+          />
+        </view>
+      ));
+      v.expect(child.alpha).toBe(0.3);
+      parent.states.add('$focus');
+      // $active's alpha was undone; the style has no alpha, so it reads 1.
+      v.expect(child.alpha).toBe(1);
       dispose();
     },
   );

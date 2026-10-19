@@ -5,8 +5,6 @@
 // through tests/tsconfig.contract.json. A failure here is a type error.
 import type {
   ElementNode,
-  IntrinsicNodeStyleProps,
-  IntrinsicTextNodeStyleProps,
   KeyMap,
   NodeStyles,
   TextStyles,
@@ -31,16 +29,13 @@ declare module '@solidtv/solid' {
   }
   interface NodeStyles {
     contractNodeStyle?: number;
+    // demo app styles.ts: app-specific states
+    contractActive?: NodeStyles;
   }
   interface TextStyles {
     contractTextStyle?: number;
-  }
-  // demo app styles.ts: app-specific states
-  interface IntrinsicNodeStyleProps {
-    contractActive?: IntrinsicNodeStyleProps;
-  }
-  interface IntrinsicTextNodeStyleProps {
-    contractActive?: IntrinsicTextNodeStyleProps;
+    // demo app styles.ts: app-specific states
+    contractActive?: TextStyles;
   }
   // demo app LeftNavWrapper.tsx: custom keys, required like the demo's
   interface KeyMap {
@@ -82,19 +77,19 @@ export function textStylesAugmentation() {
   return [style, bad, inJsx];
 }
 
-export function intrinsicStylePropsAugmentation() {
+export function styleStatesAugmentation() {
   const node = {
     alpha: 1,
     contractActive: { alpha: 0.5 },
-  } satisfies IntrinsicNodeStyleProps;
+  } satisfies NodeStyles;
   const text = {
     fontSize: 20,
     contractActive: { fontSize: 30 },
-  } satisfies IntrinsicTextNodeStyleProps;
+  } satisfies TextStyles;
   // @ts-expect-error -- contractActive is a style object
-  const bad: IntrinsicNodeStyleProps = { contractActive: 1 };
+  const bad: NodeStyles = { contractActive: 1 };
   // @ts-expect-error -- contractActive is a style object
-  const badText: IntrinsicTextNodeStyleProps = { contractActive: 1 };
+  const badText: TextStyles = { contractActive: 1 };
   return [node, text, bad, badText];
 }
 
@@ -132,7 +127,7 @@ export function keyMapAugmentation() {
 // Every type-only export of each entry point today. Importing a name that is
 // gone is a type error. (Runtime names are pinned in publicApi.test.ts.)
 
-// @solidtv/solid: Solid's own types (82). Six of them, the Shader*Props
+// @solidtv/solid: Solid's own types (78). Six of them, the Shader*Props
 // names and WebGlShader, are re-exported by src/core/shaders.ts as aliases
 // of @solidtv/renderer types (the renderer does not export these names, so
 // they are not in the next list).
@@ -147,7 +142,6 @@ export type {
   CoreShaderManager,
   DefaultKeyMap,
   DollarString,
-  DomRendererMainSettings,
   Effects,
   ElementText,
   EventHandlers,
@@ -169,9 +163,6 @@ export type {
   IRendererStage,
   IRendererTextNode,
   IRendererTextNodeProps,
-  IntrinsicNodeProps,
-  IntrinsicNodeStyleProps,
-  IntrinsicTextNodeStyleProps,
   JSX,
   KeyEventLike,
   KeyEventTarget,
