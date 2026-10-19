@@ -17,7 +17,7 @@ import {
   defaultShaderRoundedWithBorder,
   registerDefaultShaders,
 } from '../src/core/shaders.js';
-import States from '../src/core/states.js';
+import { createStates } from '../src/core/states.js';
 
 const RED = 0xff0000ff;
 const GREEN = 0x00ff00ff;
@@ -143,8 +143,8 @@ v.describe('States copies a list by index', () => {
   v.test(
     'merge takes an array or another States (forwardStates) without iterating it, in place',
     () => {
-      const states = new States(() => {}, ['$a', '$b', '$c']);
-      const parent = noIterator(new States(() => {}, ['$x']));
+      const states = createStates(() => {}, ['$a', '$b', '$c']);
+      const parent = noIterator(createStates(() => {}, ['$x']));
 
       v.expect(states.merge(parent)).toBe(states);
       v.expect([...states]).toEqual(['$x']);
@@ -168,17 +168,49 @@ v.describe('States copies a list by index', () => {
   );
 
   v.test('the constructor takes an array without iterating it', () => {
-    const states = new States(
+    const states = createStates(
       () => {},
       noIterator(['$a', '$b'] as DollarString[]),
     );
-    v.expect(states).toBeInstanceOf(States);
     v.expect([...states]).toEqual(['$a', '$b']);
-    v.expect(new States(() => {}, '$c').slice()).toEqual(['$c']);
-    v.expect(new States(() => {}, { $d: true, $e: false }).slice()).toEqual([
+    v.expect(createStates(() => {}, '$c').slice()).toEqual(['$c']);
+    v.expect(createStates(() => {}, { $d: true, $e: false }).slice()).toEqual([
       '$d',
     ]);
   });
+});
+
+v.describe('States is a plain Array', () => {
+  // V8's fast push and pop take only an Array of the initial prototype; on an
+  // Array subclass the generic path drops the backing store when the list
+  // empties, and the next add allocates a new one (76 bytes per focus change).
+  v.test('of the initial prototype, its methods own and non-enumerable', () => {
+    const states = createStates(() => {}, ['$a']);
+    v.expect(Object.getPrototypeOf(states)).toBe(Array.prototype);
+    v.expect(Array.isArray(states)).toBe(true);
+    v.expect(Object.keys(states)).toEqual(['0']);
+    const keys: string[] = [];
+    for (const k in states) keys.push(k);
+    v.expect(keys).toEqual(['0']);
+  });
+
+  v.test(
+    'emptied and refilled, it keeps its methods and calls onChange',
+    () => {
+      const onChange = v.vi.fn();
+      const states = createStates(onChange);
+      states.add('$focus');
+      states.remove('$focus');
+      v.expect(states.length).toBe(0);
+      states.add('$focus');
+      v.expect([...states]).toEqual(['$focus']);
+      v.expect(onChange).toHaveBeenCalledTimes(3);
+      states.merge(['$a', '$b']);
+      states.merge([]);
+      v.expect(states.length).toBe(0);
+      v.expect(states.has('$a')).toBe(false);
+    },
+  );
 });
 
 v.describe('style, theme and the undo of a $state block', () => {

@@ -51,7 +51,8 @@ import type {
   ShaderShadowProps,
 } from '../shaders.js';
 import { NodeType, type TextNode } from '../nodeTypes.js';
-import States, { type NodeStates } from '../states.js';
+import { createStates, type NodeStates } from '../states.js';
+import type States from '../states.js';
 import {
   installAccessors,
   writeHeight,
@@ -802,7 +803,7 @@ export class ElementNode implements SlotOwner {
   get states(): States {
     let states = this._states;
     if (states === undefined) {
-      states = new States(this._stateChanged.bind(this));
+      states = createStates(this._stateChanged.bind(this));
       this._states = states;
     }
     return states;
@@ -811,7 +812,7 @@ export class ElementNode implements SlotOwner {
   set states(states: NodeStates) {
     const current = this._states;
     if (current === undefined) {
-      const created = new States(this._stateChanged.bind(this), states);
+      const created = createStates(this._stateChanged.bind(this), states);
       this._states = created;
       if (this.rendered && created.length > 0) {
         this._stateChanged();
