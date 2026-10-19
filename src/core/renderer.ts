@@ -1,5 +1,6 @@
 import {
   Renderer,
+  prefetchFont,
   type CoreSettings,
   type FontLoadOptions,
   type RendererCore,
@@ -36,9 +37,37 @@ function warnDropped(name: string) {
   );
 }
 
+/** The Renderer the first `startRenderer` made, null when it adopted a core. */
+let renderer: Renderer | null = null;
+
+/**
+ * A `loadFonts()` call made before the renderer existed. The download is
+ * already in flight (`prefetchFont`); only the core-dependent half is owed.
+ */
+interface PendingFontLoad {
+  fonts: FontLoadOptions[];
+  resolve: () => void;
+  reject: (reason?: unknown) => void;
+}
+
+const pendingFontLoads: PendingFontLoad[] = [];
+
+function attachFonts(fonts: FontLoadOptions[]): Promise<unknown> {
+  return Promise.all(fonts.map((font) => core.loadFont(font)));
+}
+
+function flushPendingFonts() {
+  const queued = pendingFontLoads.splice(0, pendingFontLoads.length);
+  for (let i = 0; i < queued.length; i++) {
+    const pending = queued[i]!;
+    attachFonts(pending.fonts).then(() => pending.resolve(), pending.reject);
+  }
+}
+
 /**
  * Start the app's renderer, or adopt `options.core`: the core is then used
- * headless (`renderer` is null). A second call returns the first core.
+ * headless (`renderer` is null). A second call returns the first call's core
+ * and renderer.
  */
 export function startRenderer(options: RendererOptions): {
   core: RendererCore;
@@ -47,10 +76,10 @@ export function startRenderer(options: RendererOptions): {
   if (core !== undefined) {
     if (isDev) {
       console.warn(
-        '[solid] startRenderer was called more than once: the first core is kept',
+        '[solid] startRenderer was called more than once: the new options and core are ignored, the first core is kept',
       );
     }
-    return { core, renderer: null };
+    return { core, renderer };
   }
 
   if (isDev) {
@@ -64,20 +93,53 @@ export function startRenderer(options: RendererOptions): {
 
   if (options.core !== undefined) {
     core = options.core;
-    return { core, renderer: null };
+  } else {
+    // The Renderer's own `canvas` setting is an HTMLCanvasElement; ours is the
+    // mount target, which is its second argument. Key by key, not spread.
+    const source = options as { [name: string]: unknown };
+    const settings: { [name: string]: unknown } = {};
+    const keys = Object.keys(source);
+    for (let i = 0; i < keys.length; i++) {
+      const key = keys[i]!;
+      if (key !== 'canvas' && key !== 'core') {
+        settings[key] = source[key];
+      }
+    }
+    renderer = new Renderer(
+      settings as Partial<RendererMainSettings>,
+      options.canvas === undefined ? 'app' : options.canvas,
+    );
+    core = renderer;
   }
 
-  const renderer = new Renderer(
-    options as Partial<RendererMainSettings>,
-    options.canvas,
-  );
-  core = renderer;
+  // A core exists, so any fonts requested before this point can finish.
+  flushPendingFonts();
+
   return { core, renderer };
 }
 
 /**
- * Load SDF fonts into the core. Needs `startRenderer` to have run.
+ * Load SDF fonts into the core.
+ *
+ * Can be called either side of `startRenderer()`. Calling it *first* is
+ * preferred: the downloads start immediately and overlap the renderer's boot.
+ * The fonts are then attached as soon as the core exists, and the returned
+ * promise cannot settle until `startRenderer()` has run: do not `await` it
+ * before starting the renderer.
  */
 export async function loadFonts(fonts: FontLoadOptions[]): Promise<void> {
-  await Promise.all(fonts.map((font) => core.loadFont(font)));
+  if (core !== undefined) {
+    await attachFonts(fonts);
+    return;
+  }
+
+  if (fonts.length === 0) {
+    return;
+  }
+  for (let i = 0; i < fonts.length; i++) {
+    prefetchFont(fonts[i]!);
+  }
+  await new Promise<void>((resolve, reject) => {
+    pendingFontLoads.push({ fonts, resolve, reject });
+  });
 }

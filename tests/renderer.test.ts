@@ -44,4 +44,82 @@ describe('startRenderer', () => {
     expect(second.core).toBe(first);
     expect(warn).toHaveBeenCalledTimes(1);
   });
+
+  describe('the GL path', () => {
+    afterEach(() => {
+      vi.doUnmock('@solidtv/renderer');
+    });
+
+    // A Renderer stand-in that records its arguments and is a real core.
+    const mockRenderer = async () => {
+      const calls: unknown[][] = [];
+      vi.doMock('@solidtv/renderer', async (original) => {
+        const real = await original<typeof import('@solidtv/renderer')>();
+        return {
+          ...real,
+          Renderer: function (...args: unknown[]) {
+            calls.push(args);
+            return new real.RendererCore({ appWidth: 640, appHeight: 360 });
+          },
+        };
+      });
+      return calls;
+    };
+
+    it('mounts on "app" by default and keeps canvas and core out of the settings', async () => {
+      const calls = await mockRenderer();
+      const mod = await load();
+      const started = mod.startRenderer({ appWidth: 1280, appHeight: 720 });
+      expect(calls.length).toBe(1);
+      expect(calls[0]![1]).toBe('app');
+      expect(calls[0]![0]).toEqual({ appWidth: 1280, appHeight: 720 });
+      expect(started.renderer).not.toBeNull();
+      expect(started.core).toBe(started.renderer);
+      // A second call returns the first call's renderer too.
+      vi.spyOn(console, 'warn').mockImplementation(() => {});
+      expect(mod.startRenderer({ core: headless() }).renderer).toBe(
+        started.renderer,
+      );
+    });
+
+    it('passes the canvas target through as the second argument', async () => {
+      const calls = await mockRenderer();
+      const { startRenderer } = await load();
+      const target = document.createElement('div');
+      startRenderer({ canvas: target, appWidth: 800 });
+      expect(calls[0]![1]).toBe(target);
+      expect(Object.keys(calls[0]![0] as object)).toEqual(['appWidth']);
+    });
+  });
+
+  it('loadFonts before startRenderer prefetches and waits, then loads through the core', async () => {
+    // The real prefetch would start a network request.
+    const prefetchFont = vi.fn();
+    vi.doMock('@solidtv/renderer', async (original) => ({
+      ...(await original<typeof import('@solidtv/renderer')>()),
+      prefetchFont,
+    }));
+    const mod = await load();
+    vi.doUnmock('@solidtv/renderer');
+    const font = {
+      fontFamily: 'Test',
+      atlasUrl: 'test.png',
+      atlasDataUrl: 'test.json',
+    };
+    const given = headless();
+    const loadFont = vi
+      .spyOn(given, 'loadFont')
+      .mockImplementation(() => Promise.resolve());
+    let done = false;
+    const pending = mod.loadFonts([font]).then(() => {
+      done = true;
+    });
+    await Promise.resolve();
+    expect(done).toBe(false);
+    expect(prefetchFont).toHaveBeenCalledWith(font);
+    expect(loadFont).not.toHaveBeenCalled();
+    mod.startRenderer({ core: given });
+    await pending;
+    expect(loadFont).toHaveBeenCalledWith(font);
+  });
 });
