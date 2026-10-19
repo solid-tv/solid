@@ -1,0 +1,12 @@
+[
+  {
+    "entry": "every export",
+    "minified": 108254,
+    "gzip": 35225
+  },
+  {
+    "entry": "typical app slice",
+    "minified": 65320,
+    "gzip": 18967
+  }
+]
