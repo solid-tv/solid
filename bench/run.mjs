@@ -363,6 +363,14 @@ async function runOnce({ origin, arm, scenario, mode, run }) {
       [warmup, measured],
     );
     record.ops = ops;
+    // The profilers stop before the end-state probe, so its reads (on 2.0,
+    // the node getters) are not charged to the measured ops.
+    let stopped;
+    if (mode === 'alloc') {
+      stopped = await cdp.send('HeapProfiler.stopSampling');
+    } else if (mode === 'profile') {
+      stopped = await cdp.send('Profiler.stop');
+    }
     states.end = await state();
     if (states.start !== null) {
       // With whole cycles of ops, the state after the measured ops is the
@@ -374,7 +382,7 @@ async function runOnce({ origin, arm, scenario, mode, run }) {
     if (mode === 'time') {
       record.stats = timeStats(ops);
     } else if (mode === 'alloc') {
-      const { profile } = await cdp.send('HeapProfiler.stopSampling');
+      const { profile } = stopped;
       const { buckets, sites } = chargeAllocations(profile.head);
       const perOp = {};
       for (const b of BUCKETS) {
@@ -395,7 +403,7 @@ async function runOnce({ origin, arm, scenario, mode, run }) {
         .slice(0, 30)
         .map(([k, v]) => [k, v / measured]);
     } else if (mode === 'profile') {
-      const { profile } = await cdp.send('Profiler.stop');
+      const { profile } = stopped;
       const { total, chunks: byChunk, fns } = chargeProfile(profile);
       const perChunk = {};
       for (const [k, v] of Object.entries(byChunk)) {

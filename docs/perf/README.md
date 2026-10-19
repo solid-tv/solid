@@ -48,10 +48,10 @@ Run the measured series on a quiet machine: the summary records the
 
 ## Arms and builds
 
-| Arm | Solid                      | Renderer                                                       |
-| --- | -------------------------- | -------------------------------------------------------------- |
-| A   | 1.6.4 (`71c170f`)          | npm 1.9.3                                                      |
-| C   | this working tree (`src/`) | the installed `@solidtv/renderer` (`node_modules`), its `dist` |
+| Arm | Solid                                               | Renderer                                                       |
+| --- | --------------------------------------------------- | -------------------------------------------------------------- |
+| A   | `v2` at `e63c88d` (before the store-direct rewrite) | npm 2.0.6                                                      |
+| C   | this working tree (`src/`)                          | the installed `@solidtv/renderer` (`node_modules`), its `dist` |
 
 `bench/prepare-arms.mjs` prepares arm A under `bench/.arms` (a `git archive`
 of the pinned commit, and `npm pack` of the pinned renderer); arm C is the
@@ -67,11 +67,13 @@ match a chunk or the flex hook. The runner rebuilds every arm it runs unless
 `--skip-build`, and records each arm's source (`source` in each JSON; C is
 marked `+dirty` when `src/` has uncommitted changes).
 
-While `src/` is unchanged from 1.6.4, **A and C run the same Solid code**, so
-A/C (the ratios in the summary) is the in-session noise floor, plus whatever
-differs between the two renderer versions (the summary lists each arm's
-Solid and renderer; today's lockfile installs 1.9.0). After a change to `src/`,
-A/C is the change's effect (above 1: C is faster or allocates less).
+A/C (the ratios in the summary) is the effect of everything between the two
+arms (above 1: C is faster or allocates less): the Solid source and the
+renderer version (the summary lists each arm's Solid and renderer). When an
+arm A is pinned to the same Solid code as C, A/C is the in-session noise
+floor instead. Arm R (1.8 on renderer 2.0, spec section 7) is not prepared
+here: 1.8 runs on renderer 1.x, and this harness builds one Solid source
+per arm against the renderer bootstrap of its major version.
 
 **Flex.** Every arm runs `src/core/flex.ts`, the one flex engine; the count
 build wraps its default export to count passes.
@@ -228,7 +230,10 @@ The op records above. No instrumentation beyond the rAF wrap and the
 
 CDP `HeapProfiler.startSampling` around the measured ops with
 `includeObjectsCollectedByMajorGC` and `…MinorGC` (objects that die young
-count), sampling interval 1 byte by default (every allocation). Each node's
+count), sampling interval 1 byte by default (every allocation): a `0` is no
+allocation at all, there is no sampling floor. The sampling stops before
+the scenario's end-state `probe()` runs, so its reads are not charged to
+the ops. Each node's
 bytes are charged to the innermost frame with a script URL on its stack
 (builtins have none), and that frame's chunk names the owner:
 

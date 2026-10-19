@@ -36,14 +36,32 @@ export function focusPath(): number[] {
   return path;
 }
 
+/** The values arm A's renderer node holds (its 1.x-style `w`). */
+export interface LngValues {
+  x?: number;
+  y?: number;
+  w?: number;
+  scale?: number;
+}
+
+/**
+ * Arm A's renderer node (`node.lng`), or undefined on 2.0, where the
+ * ElementNode is the renderer's handle and its getters read the store.
+ */
+export function lngOf(node: ElementNode): LngValues | undefined {
+  // `lng` is not on the 2.0 type; only arm A's nodes have it.
+  return (node as unknown as { lng?: LngValues }).lng;
+}
+
 /** Target and live (renderer) position of a node, rounded. */
 export function pos(node: ElementNode | undefined): number[] {
   if (!node) return [];
+  const lng = lngOf(node);
   return [
     Math.round(node.x ?? 0),
     Math.round(node.y ?? 0),
-    Math.round(node.lng.x ?? 0),
-    Math.round(node.lng.y ?? 0),
+    Math.round(lng ? (lng.x ?? 0) : node.x),
+    Math.round(lng ? (lng.y ?? 0) : node.y),
   ];
 }
 

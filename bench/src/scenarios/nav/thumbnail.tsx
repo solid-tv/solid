@@ -6,6 +6,7 @@ import { For } from 'solid-js';
 import {
   backAndForth,
   focusPath,
+  lngOf,
   makeItems,
   pos,
   thumbnail,
@@ -34,9 +35,10 @@ const thumbnailFocus: NavScenario = {
   probe: () => ({
     focus: focusPath(),
     row: pos(row),
-    scale: ((row?.children ?? []) as ElementNode[]).map(
-      (c) => Math.round((c.lng.scale ?? 1) * 100) / 100,
-    ),
+    scale: ((row?.children ?? []) as ElementNode[]).map((c) => {
+      const lng = lngOf(c);
+      return Math.round((lng ? (lng.scale ?? 1) : c.scale) * 100) / 100;
+    }),
   }),
 };
 

@@ -17,6 +17,7 @@ import { Column, Row } from '@solidtv/solid/primitives';
 import { For } from 'solid-js';
 import {
   focusPath,
+  lngOf,
   plainTile,
   pos,
   theme,
@@ -152,6 +153,13 @@ function App() {
   );
 }
 
+/** The backdrop's renderer-side width: arm A's `lng.w`, or 2.0's store. */
+function liveWidth(node: ElementNode | undefined): number {
+  if (!node) return 0;
+  const lng = lngOf(node);
+  return lng ? (lng.w ?? 0) : node.width;
+}
+
 const navDrawerToggle: NavScenario = {
   id: 'navdrawer-toggle',
   title:
@@ -166,7 +174,7 @@ const navDrawerToggle: NavScenario = {
       focus: focusPath(),
       drawerStates: [...(drawer?.states ?? [])],
       backdropStates: [...(backdrop?.states ?? [])],
-      backdropWidth: [backdrop?.width, Math.round(backdrop?.lng.w ?? 0)],
+      backdropWidth: [backdrop?.width, Math.round(liveWidth(backdrop))],
       drawerWidth: drawer?.width,
       buttonWidths: buttons.map((b) => b.width),
       activeButtons: buttons.filter((b) => b.states.has('$active')).length,
