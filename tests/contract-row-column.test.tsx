@@ -1087,18 +1087,77 @@ v.describe('Row and Column: a press reuses the merged transition', () => {
 });
 
 v.describe('Row and Column: scrolling a node with no parent', () => {
-  v.it('a Row with no parent takes its first scroll (no clipping parent to read)', () => {
-    const row = new ElementNode(core, NodeType.Element);
-    row.width = 1920;
-    row.height = 100;
-    for (let i = 0; i < 3; i++) {
-      const child = new ElementNode(core, NodeType.Element);
-      child.width = 500;
-      child.height = 100;
-      child.x = i * 500;
-      row.insertChild(child, null);
-    }
-    v.expect(row.parent).toBeUndefined();
-    v.expect(() => scrollRow(1, row, undefined, 0)).not.toThrow();
+  v.it(
+    'a Row with no parent takes its first scroll (no clipping parent to read)',
+    () => {
+      const row = new ElementNode(core, NodeType.Element);
+      row.width = 1920;
+      row.height = 100;
+      for (let i = 0; i < 3; i++) {
+        const child = new ElementNode(core, NodeType.Element);
+        child.width = 500;
+        child.height = 100;
+        child.x = i * 500;
+        row.insertChild(child, null);
+      }
+      v.expect(row.parent).toBeUndefined();
+      v.expect(() => scrollRow(1, row, undefined, 0)).not.toThrow();
+    },
+  );
+});
+
+v.describe('Row and Column: scroll during a transition', () => {
+  v.beforeEach(() => {
+    lng.Config.animationsEnabled = true;
   });
+  v.afterEach(() => {
+    lng.Config.animationsEnabled = false;
+  });
+
+  // scroll="auto" steps from the current position (the last target while a
+  // transition runs), so a press mid-flight that read the animated position
+  // would land short.
+  v.it(
+    'a press mid-transition scrolls on from the target, not the animated position (Row in a Column)',
+    async () => {
+      let col!: lng.ElementNode;
+      let row!: lng.ElementNode;
+      const linear = { duration: 160, easing: 'linear' };
+      dispose = await mount(() => (
+        <Column
+          ref={col}
+          autofocus
+          y={100}
+          scroll="auto"
+          transition={{ y: linear }}
+        >
+          <Row ref={row} scroll="auto" transition={{ x: linear }}>
+            {items(10)}
+          </Row>
+          {Array.from({ length: 7 }, () => (
+            <Row scroll="auto">{items(2)}</Row>
+          ))}
+        </Column>
+      ));
+      v.expect([row.x, col.y]).toEqual([0, 100]);
+
+      // One frame (16 of 160 ms) into the first scroll: x is in flight.
+      await press('ArrowRight');
+      v.expect(row.x).toBeLessThan(0);
+      v.expect(row.x).toBeGreaterThan(-430);
+      // The second press steps on from the first one's target (-430).
+      await press('ArrowRight');
+      for (let i = 0; i < 20; i++) tick();
+      v.expect(row.x).toBe(-860);
+
+      await press('ArrowDown');
+      v.expect(col.y).toBeLessThan(100);
+      v.expect(col.y).toBeGreaterThan(-130);
+      await press('ArrowDown');
+      for (let i = 0; i < 20; i++) tick();
+      v.expect(col.y).toBe(-360);
+      // Scrolling never moves the cross axis.
+      v.expect(col.x).toBe(0);
+    },
+  );
 });
