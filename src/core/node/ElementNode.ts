@@ -80,6 +80,8 @@ import {
   writeKey,
 } from './styles.js';
 import { installTextAccessors, writeTextNumber } from './textProps.js';
+import { destroy, insertChild, removeChild } from './lifecycle.js';
+import { deferFocus, setFocus, updateLayout } from './postMutation.js';
 
 /** The two kinds of ElementNode: a `<view>` and a `<text>`. */
 export type ElementKind = typeof NodeType.Element | typeof NodeType.TextNode;
@@ -232,7 +234,8 @@ export class ElementNode implements SlotOwner {
   // the constructor too so a write adds no field.
   /** The app's string id (KeepAlive, focus, getChildById), not the slot. */
   declare id: string | undefined;
-  declare autofocus: unknown;
+  /** `autofocus` as written (the accessor focuses the node). */
+  declare _autofocus: unknown;
   declare forwardFocus:
     | number
     | ((this: ElementNode, elm: ElementNode) => boolean | void)
@@ -243,10 +246,10 @@ export class ElementNode implements SlotOwner {
   declare onDestroy:
     | ((this: ElementNode, el: ElementNode) => Promise<void> | void)
     | undefined;
+  /** After the flex layout; a true return lays the parent out too. */
   declare onLayout:
-    | ((this: ElementNode, target: ElementNode) => void)
+    | ((this: ElementNode, target: ElementNode) => boolean | void)
     | undefined;
-  declare updateLayoutOn: unknown;
   declare onUp: KeyHandler | undefined;
   declare onDown: KeyHandler | undefined;
   declare onLeft: KeyHandler | undefined;
@@ -307,6 +310,33 @@ export class ElementNode implements SlotOwner {
   declare _applied: Record<string, unknown> | undefined;
   /** The `$state` blocks written on the node (JSX `$name`, theme keys). */
   declare _stateBlocks: Record<string, unknown> | undefined;
+  // Layout (flex.ts) and the lifecycle (lifecycle.ts).
+  /** Flex grew or shrank a child: the children's layouts run again. */
+  declare _containsFlexGrow: boolean | null | undefined;
+  /** Attach gave the node its parent's width (the app set none). */
+  declare _calcWidth: boolean | undefined;
+  /** Attach gave the node its parent's height (the app set none). */
+  declare _calcHeight: boolean | undefined;
+  declare minWidth: number | undefined;
+  declare minHeight: number | undefined;
+  /** The container's main size before flex last resized it. */
+  declare preFlexwidth: number | undefined;
+  declare preFlexheight: number | undefined;
+  /** A flex item laid out again once it has loaded (an image's size). */
+  declare autosize: boolean | undefined;
+  /** Called when the node is taken out of its parent's children. */
+  declare onRemove: ((this: ElementNode, el: ElementNode) => void) | undefined;
+  // Focus (focusManager.ts, Row and Column).
+  /** The index of the selected child (Row, Column). */
+  declare selected: number | undefined;
+  /** Key presses closer together than this (ms) are dropped. */
+  declare throttleInput: number | undefined;
+  declare _lastAnyKeyPressTime: number | undefined;
+  /** The focus manager's generation stamp for the focus-path diff. */
+  declare _focusGen: number;
+  /** Dev tooling: emitted by the Babel devtools plugin. */
+  declare componentName: string | undefined;
+  declare componentLocation: string | undefined;
 
   // Prototype accessors (animation.ts).
   declare transition: TransitionSetting | undefined;
@@ -460,14 +490,13 @@ export class ElementNode implements SlotOwner {
     this._fontFamily = undefined;
     this._fontWeight = undefined;
     this.id = undefined;
-    this.autofocus = undefined;
+    this._autofocus = undefined;
     this.forwardFocus = undefined;
     this.skipFocus = undefined;
     this.onCreate = undefined;
     this.onRender = undefined;
     this.onDestroy = undefined;
     this.onLayout = undefined;
-    this.updateLayoutOn = undefined;
     this.onUp = undefined;
     this.onDown = undefined;
     this.onLeft = undefined;
@@ -489,7 +518,171 @@ export class ElementNode implements SlotOwner {
     this._undoCount = 0;
     this._applied = undefined;
     this._stateBlocks = undefined;
+    this._containsFlexGrow = undefined;
+    this._calcWidth = undefined;
+    this._calcHeight = undefined;
+    this.minWidth = undefined;
+    this.minHeight = undefined;
+    this.preFlexwidth = undefined;
+    this.preFlexheight = undefined;
+    this.autosize = undefined;
+    this.onRemove = undefined;
+    this.selected = undefined;
+    this.throttleInput = undefined;
+    this._lastAnyKeyPressTime = undefined;
+    this._focusGen = 0;
+    this.componentName = undefined;
+    this.componentLocation = undefined;
     core.nodes.handles[slot] = this;
+  }
+
+  // The tree (lifecycle.ts) and focus and layout (postMutation.ts).
+
+  /** Insert `node` before `before` (DOM insertBefore); links and attaches. */
+  insertChild(node: SolidNode, before?: SolidNode | null): void {
+    insertChild(this, node, before);
+  }
+
+  /** Take `node` out of the children; destroyed unless inserted again. */
+  removeChild(node: SolidNode): void {
+    removeChild(this, node);
+  }
+
+  /**
+   * Run `onDestroy` (waiting for a promise it returns), then destroy the
+   * node's subtree in the renderer. The children list is left alone.
+   */
+  destroy(): void {
+    destroy(this);
+  }
+
+  /** Destroyed in the renderer: the slot is gone. */
+  get destroyed(): boolean {
+    return this.slot === NULL;
+  }
+
+  /** Make the node (or the child forwardFocus names) the active element. */
+  setFocus(): void {
+    setFocus(this);
+  }
+
+  /** Run the flex layout and `onLayout` now. */
+  updateLayout(): void {
+    updateLayout(this);
+  }
+
+  /** Has a flex layout or an `onLayout` to run when the children change. */
+  requiresLayout(): boolean {
+    return this.display === 'flex' || this.onLayout !== undefined;
+  }
+
+  /** A write lays the node out at once (any value). */
+  get updateLayoutOn(): null {
+    return null;
+  }
+
+  set updateLayoutOn(_v: unknown) {
+    updateLayout(this);
+  }
+
+  get autofocus(): unknown {
+    return this._autofocus;
+  }
+
+  /**
+   * A truthy value focuses the node in the post-mutation pass, after its
+   * children attach (forwardFocus needs them); a signal re-focuses.
+   */
+  set autofocus(val: unknown) {
+    this._autofocus = val;
+    if (val) {
+      deferFocus(this);
+    }
+  }
+
+  /** Kept by the delete flush when removed: KeepAlive, Preserve. */
+  get preserve(): boolean {
+    return this._queueDelete === 0;
+  }
+
+  set preserve(v: boolean) {
+    this._queueDelete = v ? 0 : undefined;
+  }
+
+  get hasChildren(): boolean {
+    return this.children.length > 0;
+  }
+
+  /** The child at `selected`, or the first element after it. */
+  get selectedNode(): ElementNode | undefined {
+    const children = this.children;
+    for (let i = this.selected || 0; i < children.length; i++) {
+      const element = children[i]!;
+      if (element._type !== NodeType.Text) {
+        this.selected = i;
+        return element;
+      }
+    }
+    return undefined;
+  }
+
+  /** The child with app id `id`. */
+  getChildById(id: string): SolidNode | undefined {
+    const children = this.children;
+    for (let i = 0; i < children.length; i++) {
+      const c = children[i]!;
+      if (c._type !== NodeType.Text && c.id === id) {
+        return c;
+      }
+    }
+    return undefined;
+  }
+
+  /** The descendant with app id `id`, depth first. */
+  searchChildrenById(id: string): ElementNode | undefined {
+    const children = this.children;
+    for (let i = 0; i < children.length; i++) {
+      const child = children[i]!;
+      if (child._type !== NodeType.Text) {
+        if (child.id === id) {
+          return child;
+        }
+        const found = child.searchChildrenById(id);
+        if (found) {
+          return found;
+        }
+      }
+    }
+    return undefined;
+  }
+
+  /**
+   * Call the `on<Event>` handler of the node, then of each ancestor, with
+   * the node and `data`, until one returns true (the 1.x bubbling `emit`,
+   * with one argument: `emit` is the renderer's event delivery now).
+   */
+  bubble(event: string, data?: unknown): boolean {
+    const name = 'on' + event.charAt(0).toUpperCase() + event.slice(1);
+    // A handler prop, by the name the event gives it.
+    let handler: unknown = (this as unknown as Record<string, unknown>)[name];
+    if (
+      typeof handler === 'function' &&
+      handler.call(this, this, data) === true
+    ) {
+      return true;
+    }
+    let current = this.parent;
+    while (current !== undefined) {
+      handler = (current as unknown as Record<string, unknown>)[name];
+      if (
+        typeof handler === 'function' &&
+        handler.call(current, this, data) === true
+      ) {
+        return true;
+      }
+      current = current.parent;
+    }
+    return false;
   }
 
   // Styles and states (1.8's port; the helpers are styles.ts).

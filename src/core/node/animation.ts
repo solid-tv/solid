@@ -1,4 +1,5 @@
 import {
+  NULL,
   createAnimation,
   type AnimateProps,
   type IAnimationController,
@@ -103,7 +104,8 @@ export function animateNode(
   props: AnimateProps,
   settings: AnimationSettings | undefined,
 ): IAnimationController {
-  if (!node.rendered) {
+  // Destroyed (slot NULL): inert too, so that a chain drains.
+  if (!node.rendered || node.slot === NULL) {
     if (isDev) {
       console.log('NOT RENDERED! CANNOT ANIMATE');
     }
