@@ -15,6 +15,7 @@ import {
   I_COLOR_BR,
   I_COLOR_TL,
   I_COLOR_TR,
+  NULL,
   setColor,
   setField,
   setZIndex,
@@ -25,6 +26,11 @@ import {
   type SlotOwner,
   type Texture,
   type TextureOptions,
+  type TextAlign,
+  type TextContain,
+  type TextFontStyle,
+  type TextVerticalAlign,
+  type TextWordBreak,
 } from '@solidtv/renderer';
 import type { Styles } from '../intrinsicTypes.js';
 import { NodeType, type TextNode } from '../nodeTypes.js';
@@ -33,9 +39,12 @@ import {
   installAccessors,
   writeHeight,
   writePlaceholderColor,
+  writeTextHeight,
+  writeTextWidth,
   writeWidth,
 } from './accessors.js';
-import { SET_COUNT, type StoreProp } from './defaults.js';
+import { SET_COUNT, type StoreProp, type TextNumberProp } from './defaults.js';
+import { installTextAccessors, writeTextNumber } from './textProps.js';
 
 /** The two kinds of ElementNode: a `<view>` and a `<text>`. */
 export type ElementKind = typeof NodeType.Element | typeof NodeType.TextNode;
@@ -148,6 +157,10 @@ export class ElementNode implements SlotOwner {
   declare _center: boolean | undefined;
   declare _centerX: boolean | undefined;
   declare _centerY: boolean | undefined;
+  // The fontFamily and fontWeight as written; the text state's family is
+  // derived from both (textProps.ts, B17).
+  declare _fontFamily: string | undefined;
+  declare _fontWeight: number | string | undefined;
 
   // App props with no accessor: plain fields the app writes, assigned in
   // the constructor too so a write adds no field.
@@ -250,6 +263,25 @@ export class ElementNode implements SlotOwner {
   declare center: boolean | undefined;
   declare centerX: boolean | undefined;
   declare centerY: boolean | undefined;
+  // The text props (textProps.ts): the renderer's text state on a `<text>`,
+  // `_textProps` on a `<view>`.
+  declare text: string;
+  declare fontFamily: string | undefined;
+  declare fontWeight: number | string | undefined;
+  declare fontSize: number;
+  declare fontStyle: TextFontStyle;
+  declare lineHeight: number;
+  declare textAlign: TextAlign;
+  declare verticalAlign: TextVerticalAlign;
+  declare contain: TextContain;
+  declare maxWidth: number;
+  declare maxHeight: number;
+  declare maxLines: number;
+  declare overflowSuffix: string;
+  declare wordBreak: TextWordBreak;
+  declare letterSpacing: number;
+  declare offsetY: number;
+  declare forceLoad: boolean;
 
   /**
    * A node on a new slot of `core` (a text slot for a `<text>`), or on
@@ -314,6 +346,8 @@ export class ElementNode implements SlotOwner {
     this._center = undefined;
     this._centerX = undefined;
     this._centerY = undefined;
+    this._fontFamily = undefined;
+    this._fontWeight = undefined;
     this.id = undefined;
     this.autofocus = undefined;
     this.forwardFocus = undefined;
@@ -379,10 +413,39 @@ export class ElementNode implements SlotOwner {
     this._onEvent = undefined;
   }
 
+  /**
+   * Lay the text out now instead of in the next walk, so that `width` and
+   * `height` read its size (the flex pass sizes by it). False on a
+   * `<view>`, on a destroyed node, and while the font's description is
+   * missing.
+   */
+  measureText(): boolean {
+    if (this._type !== NodeType.TextNode || this.slot === NULL) {
+      return false;
+    }
+    return this.core.textNodes.measure(this.slot);
+  }
+
+  /** The text of the string children of a `<text>`, joined. */
+  getText(): string {
+    const children = this.children;
+    const len = children.length;
+    if (len === 1) {
+      return children[0]!.text;
+    }
+    let result = '';
+    for (let i = 0; i < len; i++) {
+      result += children[i]!.text;
+    }
+    return result;
+  }
+
   /** The animation setter track's write: a plain store write. */
   writeProp(name: string, value: number): void {
-    // A name outside StoreProp falls through setNow's default.
-    this.setNow(name as StoreProp, value);
+    // The animation track writes the names of the props it animates: the
+    // store props and the numeric text props (a name outside both falls
+    // through setNow's default).
+    this.setNow(name as StoreProp | TextNumberProp, value);
   }
 
   /**
@@ -390,7 +453,7 @@ export class ElementNode implements SlotOwner {
    * marking it as set by the app (`_set`): for the animation track, the
    * flex engine and the primitives that move nodes themselves.
    */
-  setNow(name: StoreProp, value: number): void {
+  setNow(name: StoreProp | TextNumberProp, value: number): void {
     const nodes = this.core.nodes;
     const s = this.slot;
     switch (name) {
@@ -401,10 +464,18 @@ export class ElementNode implements SlotOwner {
         setField(nodes, s, F_Y, value, DIRTY_LOCAL);
         break;
       case 'width':
-        writeWidth(nodes, s, value);
+        if (this._type === NodeType.TextNode) {
+          writeTextWidth(this, value);
+        } else {
+          writeWidth(nodes, s, value);
+        }
         break;
       case 'height':
-        writeHeight(nodes, s, value);
+        if (this._type === NodeType.TextNode) {
+          writeTextHeight(this, value);
+        } else {
+          writeHeight(nodes, s, value);
+        }
         break;
       case 'alpha':
         setField(nodes, s, F_ALPHA, value, DIRTY_ALPHA);
@@ -482,12 +553,21 @@ export class ElementNode implements SlotOwner {
       case 'placeholderColor':
         writePlaceholderColor(nodes, s, value);
         break;
+      case 'fontSize':
+      case 'lineHeight':
+      case 'maxWidth':
+      case 'maxHeight':
+      case 'maxLines':
+      case 'letterSpacing':
+      case 'offsetY':
+        writeTextNumber(this, name, value);
+        break;
       default:
-        // Not a store prop (a text-state name the animation track writes,
-        // Task 4): nothing to write here.
+        // Not a prop of ours: nothing to write.
         break;
     }
   }
 }
 
 installAccessors(ElementNode.prototype);
+installTextAccessors(ElementNode.prototype);

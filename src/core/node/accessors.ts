@@ -40,11 +40,14 @@ import {
   setTexture,
   setTextureOptions,
   setZIndex,
+  relayoutText,
+  textStateOf,
   type ClippingValue,
   type NodeStore,
   type Texture,
   type TextureOptions,
 } from '@solidtv/renderer';
+import { NodeType } from '../nodeTypes.js';
 import type { ElementNode } from './ElementNode.js';
 import {
   DEFAULT,
@@ -101,6 +104,47 @@ export function writeHeight(nodes: NodeStore, slot: number, v: number): void {
     return;
   }
   nodes.applySize(slot, nodes.f64[slot * F_STRIDE + F_WIDTH]!, v);
+}
+
+/**
+ * `width` written on a `<text>`: once attached it is the text's `maxWidth`
+ * (as the renderer's TextNode setter has it); before attach it is stored as
+ * the node's own size, which attach (applyTextSizeAtAttach) turns into
+ * `maxWidth` once.
+ */
+export function writeTextWidth(node: ElementNode, v: number): void {
+  const nodes = node.core.nodes;
+  const s = node.slot;
+  if (s === NULL) {
+    return;
+  }
+  if (!node.rendered) {
+    writeWidth(nodes, s, v);
+    return;
+  }
+  const t = textStateOf(nodes, s);
+  if (t.maxWidth !== v) {
+    t.maxWidth = v;
+    relayoutText(nodes, s);
+  }
+}
+
+/** `height` written on a `<text>`: `maxHeight`, as for `writeTextWidth`. */
+export function writeTextHeight(node: ElementNode, v: number): void {
+  const nodes = node.core.nodes;
+  const s = node.slot;
+  if (s === NULL) {
+    return;
+  }
+  if (!node.rendered) {
+    writeHeight(nodes, s, v);
+    return;
+  }
+  const t = textStateOf(nodes, s);
+  if (t.maxHeight !== v) {
+    t.maxHeight = v;
+    relayoutText(nodes, s);
+  }
 }
 
 /**
@@ -185,9 +229,16 @@ export function installAccessors(proto: ElementNode): void {
     width: {
       get(this: ElementNode): number {
         const s = this.slot;
-        return s === NULL
-          ? DEFAULT.width
-          : this.core.nodes.f64[s * F_STRIDE + F_WIDTH]!;
+        if (s === NULL) {
+          return DEFAULT.width;
+        }
+        const nodes = this.core.nodes;
+        const w = nodes.f64[s * F_STRIDE + F_WIDTH]!;
+        // A text reads its maxWidth, else its laid-out width, so a
+        // contain 'width' text is a flex item of its maxWidth.
+        return this._type === NodeType.TextNode
+          ? textStateOf(nodes, s).maxWidth || w
+          : w;
       },
       set(this: ElementNode, v: number) {
         const s = this.slot;
@@ -196,16 +247,25 @@ export function installAccessors(proto: ElementNode): void {
         }
         this._set[SET_WIDTH] = 1;
         if (this._transition === undefined || !this._animate('width', v)) {
-          writeWidth(this.core.nodes, s, v);
+          if (this._type === NodeType.TextNode) {
+            writeTextWidth(this, v);
+          } else {
+            writeWidth(this.core.nodes, s, v);
+          }
         }
       },
     },
     height: {
       get(this: ElementNode): number {
         const s = this.slot;
-        return s === NULL
-          ? DEFAULT.height
-          : this.core.nodes.f64[s * F_STRIDE + F_HEIGHT]!;
+        if (s === NULL) {
+          return DEFAULT.height;
+        }
+        const nodes = this.core.nodes;
+        const h = nodes.f64[s * F_STRIDE + F_HEIGHT]!;
+        return this._type === NodeType.TextNode
+          ? textStateOf(nodes, s).maxHeight || h
+          : h;
       },
       set(this: ElementNode, v: number) {
         const s = this.slot;
@@ -214,7 +274,11 @@ export function installAccessors(proto: ElementNode): void {
         }
         this._set[SET_HEIGHT] = 1;
         if (this._transition === undefined || !this._animate('height', v)) {
-          writeHeight(this.core.nodes, s, v);
+          if (this._type === NodeType.TextNode) {
+            writeTextHeight(this, v);
+          } else {
+            writeHeight(this.core.nodes, s, v);
+          }
         }
       },
     },

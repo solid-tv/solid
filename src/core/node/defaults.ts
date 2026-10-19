@@ -32,6 +32,19 @@ export type StoreProp =
   | 'colorBr'
   | 'placeholderColor';
 
+/**
+ * The numeric text props (TextState fields), which the renderer's animation
+ * setter track writes through `writeProp` and `setNow` lands in the state.
+ */
+export type TextNumberProp =
+  | 'fontSize'
+  | 'lineHeight'
+  | 'maxWidth'
+  | 'maxHeight'
+  | 'maxLines'
+  | 'letterSpacing'
+  | 'offsetY';
+
 // `_set` indexes (spec 5.3): one byte per prop, 1 once the app wrote it
 // through its accessor. Store props first, in StoreProp order, then the
 // store-backed props that are not numbers. Later props take SET_COUNT and
@@ -68,8 +81,26 @@ export const SET_DATA = 28;
 export const SET_SRC = 29;
 export const SET_TEXTURE = 30;
 export const SET_TEXTURE_OPTIONS = 31;
+// The text props (Task 4), in the order of their accessors.
+export const SET_TEXT = 32;
+export const SET_FONT_FAMILY = 33;
+export const SET_FONT_WEIGHT = 34;
+export const SET_FONT_SIZE = 35;
+export const SET_FONT_STYLE = 36;
+export const SET_LINE_HEIGHT = 37;
+export const SET_TEXT_ALIGN = 38;
+export const SET_VERTICAL_ALIGN = 39;
+export const SET_CONTAIN = 40;
+export const SET_MAX_WIDTH = 41;
+export const SET_MAX_HEIGHT = 42;
+export const SET_MAX_LINES = 43;
+export const SET_OVERFLOW_SUFFIX = 44;
+export const SET_WORD_BREAK = 45;
+export const SET_LETTER_SPACING = 46;
+export const SET_OFFSET_Y = 47;
+export const SET_FORCE_LOAD = 48;
 /** The length of a node's `_set`. */
-export const SET_COUNT = 32;
+export const SET_COUNT = 49;
 
 /**
  * What a store prop reads on a destroyed node, and what style undo writes
