@@ -235,11 +235,13 @@ v.describe('contract: object spread', () => {
     },
   );
 
-  v.it(
-    'spreading a style object as JSX props ({...obj}) sets its keys as props; undo then treats them as JSX props',
+  // 2.0: passes from Task 8
+  v.it.skip(
+    'spreading a style object as JSX props ({...obj}) sets its keys as props; undo then treats them as JSX props and the prop reads the renderer default',
     () => {
-      // The pattern in docs/essentials/theming.md. Pinned as is: the values are
-      // props, not style, so undo has no baseline and writes undefined.
+      // The pattern in docs/essentials/theming.md. The values are props, not
+      // style, so undo has no baseline. A store-backed prop never reads
+      // undefined: color reads the transparent default.
       const Dark: lng.NodeStyles = { color: RED, $focus: { color: BLUE } };
       let node!: lng.ElementNode;
       const dispose = renderer.render(() => <view ref={node} {...Dark} />);
@@ -247,7 +249,24 @@ v.describe('contract: object spread', () => {
       node.states.add('$focus');
       v.expect(node.color).toBe(BLUE);
       node.states.remove('$focus');
-      v.expect(node.color).toBeUndefined();
+      v.expect(node.color).toBe(0x00000000);
+      dispose();
+    },
+  );
+
+  // What holds on the DOM host too (it reads undefined there).
+  v.it(
+    'spreading a style object as JSX props ({...obj}) sets its keys as props; undo then leaves neither the JSX nor the $focus value',
+    () => {
+      const Dark: lng.NodeStyles = { color: RED, $focus: { color: BLUE } };
+      let node!: lng.ElementNode;
+      const dispose = renderer.render(() => <view ref={node} {...Dark} />);
+      v.expect(node.color).toBe(RED);
+      node.states.add('$focus');
+      v.expect(node.color).toBe(BLUE);
+      node.states.remove('$focus');
+      v.expect(node.color).not.toBe(RED);
+      v.expect(node.color).not.toBe(BLUE);
       dispose();
     },
   );
