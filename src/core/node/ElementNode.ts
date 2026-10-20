@@ -300,8 +300,8 @@ export class ElementNode implements SlotOwner {
 
   // App props with no accessor: plain fields the app writes, assigned in
   // the constructor too so a write adds no field.
-  /** The app's string id (KeepAlive, focus, getChildById), not the slot. */
-  declare id: string | undefined;
+  /** `id` as written (the accessor mirrors it to the inspector). */
+  declare _id: string | undefined;
   /** `autofocus` as written (the accessor focuses the node). */
   declare _autofocus: unknown;
   declare forwardFocus:
@@ -569,7 +569,7 @@ export class ElementNode implements SlotOwner {
     this._centerY = undefined;
     this._fontFamily = undefined;
     this._fontWeight = undefined;
-    this.id = undefined;
+    this._id = undefined;
     this._autofocus = undefined;
     this.forwardFocus = undefined;
     this.skipFocus = undefined;
@@ -692,6 +692,29 @@ export class ElementNode implements SlotOwner {
 
   set updateLayoutOn(_v: unknown) {
     updateLayout(this);
+  }
+
+  /** The app's string id (KeepAlive, focus, getChildById), not the slot. */
+  get id(): string | undefined {
+    return this._id;
+  }
+
+  /** With the renderer's inspector on, the id is also `data.testId` (1.x). */
+  set id(id: string | undefined) {
+    this._id = id;
+    if (Config.rendererOptions?.inspector) {
+      const data = this.data;
+      const next: Record<string, unknown> = {};
+      if (data !== null) {
+        for (const key in data) {
+          if (Object.prototype.hasOwnProperty.call(data, key)) {
+            next[key] = data[key];
+          }
+        }
+      }
+      next.testId = id;
+      this.data = next;
+    }
   }
 
   get autofocus(): unknown {

@@ -24,6 +24,7 @@ import {
   SET_SCALE,
   SET_X,
 } from '../../src/core/node/defaults.js';
+import { Config } from '../../src/core/config.js';
 import { NodeType } from '../../src/core/nodeTypes.js';
 
 const headless = () => new RendererCore({ appWidth: 640, appHeight: 360 });
@@ -182,5 +183,25 @@ describe('ElementNode accessors', () => {
     expect(core.nodes.handles[view.slot]).toBe(view);
     expect(core.nodes.handles[text.slot]).toBe(text);
     expect(core.nodes.handles[root.slot]).toBe(root);
+  });
+
+  it('id writes data.testId when the inspector is on', () => {
+    const core = headless();
+    const node = new ElementNode(core, NodeType.Element);
+    const options = Config.rendererOptions;
+    try {
+      // Off: the id is kept, and data is left alone.
+      node.id = 'plain';
+      expect(node.id).toBe('plain');
+      expect(node.data).toEqual({});
+      // On: the id is also data.testId, next to the data the app set.
+      Config.rendererOptions = { inspector: class {} as never };
+      node.data = { keep: 1 };
+      node.id = 'tile';
+      expect(node.id).toBe('tile');
+      expect(node.data).toEqual({ keep: 1, testId: 'tile' });
+    } finally {
+      Config.rendererOptions = options;
+    }
   });
 });
