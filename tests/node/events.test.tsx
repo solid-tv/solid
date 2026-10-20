@@ -73,4 +73,65 @@ describe('ElementNode events', () => {
     core.events.flush();
     expect(failed).toHaveBeenCalledWith(node, 'err');
   });
+
+  it('bubble walks the on<Event> handlers up the parent chain', () => {
+    const core = headless();
+    const root = new ElementNode(core, NodeType.Element);
+    const mid = new ElementNode(core, NodeType.Element);
+    const leaf = new ElementNode(core, NodeType.Element);
+    mid.parent = root;
+    leaf.parent = mid;
+    const order: string[] = [];
+    const payload = { n: 1 };
+    const atRoot = vi.fn(function (this: ElementNode) {
+      order.push('root');
+    });
+    const atMid = vi.fn(function (this: ElementNode) {
+      order.push('mid');
+      return true;
+    });
+    const atLeaf = vi.fn(function (this: ElementNode) {
+      order.push('leaf');
+    });
+    const loose = root as unknown as Record<string, unknown>;
+    loose.onCustom = atRoot;
+    (mid as unknown as Record<string, unknown>).onCustom = atMid;
+    (leaf as unknown as Record<string, unknown>).onCustom = atLeaf;
+    // The leaf, then mid; mid returns true, so the root is not reached.
+    expect(leaf.bubble('custom', payload)).toBe(true);
+    expect(order).toEqual(['leaf', 'mid']);
+    // A handler is called with the bubbling node and the data, `this` its owner.
+    expect(atMid).toHaveBeenCalledWith(leaf, payload);
+    expect(atMid.mock.contexts[0]).toBe(mid);
+    expect(atRoot).not.toHaveBeenCalled();
+    // No handler returns true: every one runs, and the result is false.
+    (mid as unknown as Record<string, unknown>).onCustom = undefined;
+    order.length = 0;
+    expect(leaf.bubble('custom')).toBe(false);
+    expect(order).toEqual(['leaf', 'root']);
+  });
+
+  it('emit warns once per name when only an on<Name> handler exists', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const node = new ElementNode(headless(), NodeType.Element);
+      (node as unknown as Record<string, unknown>).onWarnOnce = () => {};
+      node.emit('warnOnce', null);
+      node.emit('warnOnce', null);
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(String(warn.mock.calls[0]![0])).toContain('bubble(warnOnce)');
+      // No handler of that name: no warning.
+      node.emit('quiet', null);
+      expect(warn).toHaveBeenCalledTimes(1);
+      // A listener registered: delivered, no warning.
+      const fn = vi.fn();
+      (node as unknown as Record<string, unknown>).onHeard = () => {};
+      node.on('heard', fn);
+      node.emit('heard', 1);
+      expect(fn).toHaveBeenCalledTimes(1);
+      expect(warn).toHaveBeenCalledTimes(1);
+    } finally {
+      warn.mockRestore();
+    }
+  });
 });

@@ -67,21 +67,44 @@ Both viewport events receive a `{ previous, current }` payload of
 
 These additional events provide control over element state and position within the SolidTV Renderer, allowing you to react to changes such as visibility or load state with custom logic.
 
-## Emitting Custom Events with `emit`
+## Listening to Events: `on`, `off` and `onEvent`
 
-In addition to handling events, components can trigger their own custom events using the `emit` method. This method allows components to communicate with their ancestors by dispatching an event up the hierarchy.
+The renderer's events reach a node through listeners. Register one with
+`on(name, fn)`, remove it with `off(name, fn)`, or give the node an `onEvent`
+object, which registers each key and replaces the handlers of the previous
+object. A listener is called with the node as `this` and as the first
+argument, then the event's payload.
+
+```jsx
+const onLoaded = (element, payload) => console.log('loaded', payload);
+
+nodeRef.on('loaded', onLoaded);
+nodeRef.off('loaded', onLoaded);
+```
+
+`node.emit(name, data)` is the renderer's own delivery to those listeners. It
+calls the listeners of that node, returns nothing, and does not bubble. Do not
+use it to talk to ancestors: an `on<Name>` prop is not a listener, so
+`emit('customEvent')` does not call `onCustomEvent`.
+
+## Emitting Custom Events with `bubble`
+
+To send an event up to the ancestors, use `bubble(event, data?)` (it was
+`emit` in 1.x). Components can use it to communicate with their ancestors by
+dispatching an event up the hierarchy.
 
 ### Usage Example:
 
 ```jsx
-nodeRef.emit('customEvent', { message: 'Hello, world!' });
+nodeRef.bubble('customEvent', { message: 'Hello, world!' });
 // function triggerCallback(this: MyComponent, nodeRef, payload) {
 
 <MyComponent onCustomEvent={triggerCallback} />;
 ```
 
-### How `emit` Works:
+### How `bubble` Works:
 
 1. It starts at the current component and looks for a handler named `onCustomEvent` (where `CustomEvent` is capitalized).
 2. If a handler exists and returns `true`, the event stops propagating.
 3. Otherwise, it continues up the component tree until it reaches the root or finds a handler that returns `true`.
+4. It returns `true` when a handler stopped the event, `false` when none did.

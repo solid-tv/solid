@@ -103,6 +103,37 @@ export type ElementKind = typeof NodeType.Element | typeof NodeType.TextNode;
 /** A child of an ElementNode: an element, or a string inside a `<text>`. */
 export type SolidNode = ElementNode | TextNode;
 
+/** Event names `emit` has already warned about (dev only). */
+const warnedEmit: Record<string, true> = {};
+
+/**
+ * Dev only, cold path: `emit(name)` found no listener while the node has an
+ * `on<Name>` handler, the 1.x bubbling `emit` call that is `bubble` now.
+ * Once per name.
+ */
+function warnEmitHandler(node: ElementNode, name: string): void {
+  if (warnedEmit[name] === true) {
+    return;
+  }
+  const handler = 'on' + name.charAt(0).toUpperCase() + name.slice(1);
+  if (
+    typeof (node as unknown as Record<string, unknown>)[handler] === 'function'
+  ) {
+    warnedEmit[name] = true;
+    console.warn(
+      'emit(' +
+        name +
+        ') delivers to on(' +
+        name +
+        ') listeners only; ' +
+        handler +
+        ' is not called. Use bubble(' +
+        name +
+        ') for the 1.x behaviour.',
+    );
+  }
+}
+
 /** A listener of a renderer event (`loaded`, `inViewport`, ...). */
 export type NodeEventHandler = (node: ElementNode, data: unknown) => void;
 
@@ -1171,11 +1202,11 @@ export class ElementNode implements SlotOwner {
 
   emit(name: string, data: unknown): void {
     const events = this._onEvent;
-    if (events === undefined) {
-      return;
-    }
-    const list = events[name];
+    const list = events === undefined ? undefined : events[name];
     if (list === undefined) {
+      if (isDev) {
+        warnEmitHandler(this, name);
+      }
       return;
     }
     for (let i = 0; i < list.length; i++) {
