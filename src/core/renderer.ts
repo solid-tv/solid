@@ -161,7 +161,10 @@ export function loadFonts(fonts: FontLoadOptions[]): Promise<void> {
       pendingFontLoads.push({ fonts, resolve, reject });
     });
   } catch (error) {
-    return Promise.reject(error);
+    // Rethrown inside a promise: the rejection reason is the caller's, as it was.
+    return new Promise<void>(() => {
+      throw error;
+    });
   }
 }
 
