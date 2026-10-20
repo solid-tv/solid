@@ -5,6 +5,26 @@ import { setStateBlock } from './core/node/styles.js';
 import type { DollarString } from './core/intrinsicTypes.js';
 import type { SolidNode, SolidRendererOptions } from './types.js';
 
+/** Removed 1.x prop names already warned about (dev only). */
+const warnedRemoved: Record<string, true> = {};
+
+/** Dev only: `w`, `h` and `effects` type-check through the index signature but do nothing. */
+function warnRemovedProp(name: string): void {
+  if (warnedRemoved[name] === true) {
+    return;
+  }
+  warnedRemoved[name] = true;
+  console.warn(
+    name === 'effects'
+      ? '`effects` is ignored in 2.0: write the direct keys (border, shadow, linearGradient, ...)'
+      : '`' +
+          name +
+          '` is ignored in 2.0: use `' +
+          (name === 'w' ? 'width' : 'height') +
+          '`',
+  );
+}
+
 /**
  * A prop write from JSX: a `$name` prop is a state block (styles.ts); any
  * other name is the node's prop of that name, written through its setter.
@@ -14,6 +34,9 @@ function writeProp(node: ElementNode, name: string, value: unknown): void {
     // The check above makes the name a DollarString.
     setStateBlock(node, name as DollarString, value);
   } else {
+    if (isDev && (name === 'w' || name === 'h' || name === 'effects')) {
+      warnRemovedProp(name);
+    }
     // A JSX prop names a prop of the node: an accessor or a field. The
     // class has no index signature, so the write goes through a record view.
     (node as unknown as Record<string, unknown>)[name] = value;

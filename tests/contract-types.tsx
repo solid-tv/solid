@@ -130,6 +130,20 @@ export function textStylesAugmentation() {
   return [style, bad, inJsx];
 }
 
+// The index signature admits any other prop, but `w`, `h` and `effects` are
+// 1.x names the node ignores: they are errors, in props and in styles.
+export function removedPropNames() {
+  // @ts-expect-error -- `w` is `width`
+  const w = <view w={1} />;
+  // @ts-expect-error -- `h` is `height`
+  const h = <text h={1}>x</text>;
+  // @ts-expect-error -- `effects` is gone: write the direct keys
+  const effects = <view effects={{}} />;
+  // @ts-expect-error -- `w` is `width`, as a style key too
+  const style: NodeStyles = { w: 1 };
+  return [w, h, effects, style];
+}
+
 export function styleStatesAugmentation() {
   const node = {
     alpha: 1,

@@ -130,6 +130,10 @@ export interface NodeProps
   // Any other prop: an app's own field on the node (1.x typed the node with
   // an index signature; the class has none now, its props do).
   [key: string]: unknown;
+  // 1.x names the index signature would admit and the node ignores.
+  w?: never;
+  h?: never;
+  effects?: never;
   ref?: ElementNode | ((node: ElementNode) => void);
   states?: NodeStates;
   style?: NodeStyles;
@@ -169,6 +173,10 @@ export interface TextProps
     > {
   // Any other prop, as for NodeProps.
   [key: string]: unknown;
+  // As for NodeProps.
+  w?: never;
+  h?: never;
+  effects?: never;
   ref?: ElementNode | ((node: ElementNode) => void);
   states?: NodeStates;
   fontWeight?: number | string;
