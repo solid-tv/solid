@@ -40,7 +40,14 @@ export const Image: Component<ImageProps> = (props) => {
   // show the texture and call the app's own, as Solid calls them.
   const onEvent: OnEvent = {};
   if (userEvents !== undefined) {
-    Object.assign(onEvent, userEvents);
+    // OnEvent has no index signature: both sides are read as records to copy by key.
+    for (const key in userEvents) {
+      if (Object.prototype.hasOwnProperty.call(userEvents, key)) {
+        (onEvent as Record<string, unknown>)[key] = (
+          userEvents as Record<string, unknown>
+        )[key];
+      }
+    }
   }
   onEvent.loaded = (target, event) => {
     show();

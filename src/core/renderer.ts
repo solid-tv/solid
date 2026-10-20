@@ -144,19 +144,25 @@ export function startRenderer(options: RendererOptions): {
  * promise cannot settle until `startRenderer()` has run: do not `await` it
  * before starting the renderer.
  */
-export async function loadFonts(fonts: FontLoadOptions[]): Promise<void> {
-  if (core !== undefined) {
-    await attachFonts(fonts);
-    return;
-  }
+export function loadFonts(fonts: FontLoadOptions[]): Promise<void> {
+  // A synchronous throw rejects the promise, as it did under `await`.
+  try {
+    if (core !== undefined) {
+      return attachFonts(fonts).then(toVoid);
+    }
 
-  if (fonts.length === 0) {
-    return;
+    if (fonts.length === 0) {
+      return Promise.resolve();
+    }
+    for (let i = 0; i < fonts.length; i++) {
+      prefetchFont(fonts[i]!);
+    }
+    return new Promise<void>((resolve, reject) => {
+      pendingFontLoads.push({ fonts, resolve, reject });
+    });
+  } catch (error) {
+    return Promise.reject(error);
   }
-  for (let i = 0; i < fonts.length; i++) {
-    prefetchFont(fonts[i]!);
-  }
-  await new Promise<void>((resolve, reject) => {
-    pendingFontLoads.push({ fonts, resolve, reject });
-  });
 }
+
+function toVoid(): void {}
