@@ -332,6 +332,10 @@ its replacement.
 | `renderer.stage.shManager` and the other 1.x renderer shims                                                                                                    | `renderer.registerShaderType(...)`, and `core` (the `RendererCore`) for the rest                                                                                                                                                                                    |
 | `Config.rendererOptions` typed as the 1.x renderer's settings                                                                                                  | `RendererOptions`: the renderer's `CoreSettings` plus the options of the GL loop (and `canvas`, or `core` to run headless)                                                                                                                                          |
 | `renderEngine`, `fontEngines` in `Config.rendererOptions`                                                                                                      | Dropped: there is one engine (WebGL) and one text engine (SDF). They are ignored with a console warning                                                                                                                                                             |
+| `startLightningRenderer(options, node)`, the 1.x export                                                                                                        | `startRenderer(options)`, with the mount target in `options.canvas`. `createRenderer(options, node)` is unchanged: it passes `node` on as `canvas`                                                                                                                  |
+| `registerDefaultShaders(shManager)` and the `registerDefaultShader*` functions, taking the shader manager                                                      | They take a `RendererCore`: pass the exported `renderer` (or your headless core), as in `registerDefaultShaders(renderer)`                                                                                                                                          |
+| `Config.convertToShader`, `(node, effects) => shader`                                                                                                          | `(node) => void`: it reads the node's props and writes the shader to the node itself                                                                                                                                                                                |
+| `isINode(x)`, `logRenderTree(node)`, `loadFontToDom(font)`                                                                                                     | `isINode`: use `x instanceof ElementNode`. `logRenderTree`: none. `loadFontToDom`: `core.loadFont(font)`, or `loadFonts([...])`                                                                                                                                     |
 | `node.emit('name', data)` bubbling to the `on<Name>` handlers up the parent chain, returning `true` when one handled it                                        | `node.bubble('name', data?)`, with the same walk and result. `emit(name, data)` is now the renderer's delivery to `on(name, fn)` listeners: it returns nothing, does not bubble, and never calls an `on<Name>` prop (dev builds warn once per name when one exists) |
 
 Types that went with them: `Effects`, `StyleEffects`, `RenderedNode` (every
@@ -377,10 +381,11 @@ Behaviour you may notice:
 - **Border and shadow transitions allocate per write.** The two shaders animate
   their parsed props, which allocates on each write, so nodes with a border or
   shadow transition are outside the zero-garbage rule of the plain props.
-- **A removed node stays drawn until its destroy.** `removeChild` unlinks the
-  node and queues the delete, and the node is destroyed at the next
-  post-mutation flush, so an exit animation started in the same tick still
-  plays. A node reinserted before the flush keeps its slot.
+- **A removed node stays drawn until its destroy.** `removeChild` runs
+  `onRemove` and queues the delete; the node stays linked in the renderer's
+  store, and drawn, until it is destroyed at the next post-mutation flush, so an
+  exit animation started in the same tick still plays. A node reinserted before
+  the flush keeps its slot.
 - **`preserve`d nodes are unlinked at remove.** The flush never destroys a node
   with `preserve`, so `removeChild` unlinks it from its renderer parent at once,
   right after `onRemove`. Hide it in `onRemove` if it must not stay on screen;
