@@ -353,6 +353,7 @@ const LightningRendererNumberProps = [
 const LightningRendererNonAnimatingProps = [
   'absX',
   'absY',
+  'atlasGroup',
   'autosize',
   'clipping',
   'contain',

@@ -1294,6 +1294,8 @@ function resolveNodeDefaults(
     placeholderColor: props.placeholderColor ?? 0,
     data: {},
     imageType: props.imageType,
+    rtl: props.rtl ?? null,
+    atlasGroup: props.atlasGroup,
   };
 }
 
@@ -1366,7 +1368,7 @@ export class DOMNode extends EventEmitter implements IRendererNode {
   ) {
     super();
 
-    // @ts-ignore
+    // @ts-expect-error
     this.div._node = this;
     this.div.setAttribute('data-id', String(this.id));
     elMap.set(this, this.div);
@@ -1825,6 +1827,19 @@ export class DOMNode extends EventEmitter implements IRendererNode {
   }
   set srcY(v) {
     this.props.srcY = v;
+  }
+  get atlasGroup() {
+    return this.props.atlasGroup;
+  }
+  set atlasGroup(v) {
+    this.props.atlasGroup = v;
+  }
+  // Stored only: the DOM renderer does not mirror rtl layouts.
+  get rtl() {
+    return this.props.rtl;
+  }
+  set rtl(v) {
+    this.props.rtl = v ?? null;
   }
 
   get ignoreParentAlpha(): boolean {

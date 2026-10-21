@@ -183,6 +183,20 @@ v.describe('Nodes: el.lng is the raw renderer node, with props applied', () => {
       dispose();
     },
   );
+
+  v.test('atlasGroup reaches the renderer node, at render and after', () => {
+    let el!: lng.ElementNode;
+    const dispose = renderer.render(() => (
+      <view ref={el} atlasGroup="row-1" />
+    ));
+    const node = el.lng as unknown as { atlasGroup?: string };
+    v.expect(node.atlasGroup).toBe('row-1');
+
+    el.atlasGroup = 'row-2';
+    v.expect(node.atlasGroup).toBe('row-2');
+    v.expect(el.atlasGroup).toBe('row-2');
+    dispose();
+  });
 });
 
 v.describe('Nodes: .animate(...).start().waitUntilStopped()', () => {
