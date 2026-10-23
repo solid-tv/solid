@@ -488,18 +488,62 @@ type Suppression = {
 // key differently still finds it. Entries for one key share a Suppression.
 const suppressedKeys = new Map<KeyNameOrKeyCode, Suppression>();
 
-// The suppression of an event's key: looked up under its name, then its
-// keyCode (keyNameId, keyCodeId), either of which may be undefined.
+// An event's entry in a map keyed by key identity: looked up under its name,
+// then its keyCode (keyNameId, keyCodeId), either of which may be undefined.
+const findByIdentity = <T>(
+  map: Map<KeyNameOrKeyCode, T>,
+  name: KeyNameOrKeyCode | undefined,
+  code: KeyNameOrKeyCode | undefined,
+): T | undefined => {
+  let found: T | undefined;
+  if (name !== undefined) found = map.get(name);
+  if (found === undefined && code !== undefined) found = map.get(code);
+  return found;
+};
+
 const findSuppression = (
   name: KeyNameOrKeyCode | undefined,
   code: KeyNameOrKeyCode | undefined,
-): Suppression | undefined => {
-  let found: Suppression | undefined;
-  if (name !== undefined) found = suppressedKeys.get(name);
-  if (found === undefined && code !== undefined) {
-    found = suppressedKeys.get(code);
+): Suppression | undefined => findByIdentity(suppressedKeys, name, code);
+
+// Keys down with no key-up yet, for Config.inferKeyRepeat: when each last sent
+// a key-down. Indexed under every identity like suppressedKeys, so a key-up
+// naming the key differently (webOS Back) still ends the press.
+type HeldKey = { ids: KeyNameOrKeyCode[]; time: number };
+const heldKeys = new Map<KeyNameOrKeyCode, HeldKey>();
+
+// Marks a key-down as a repeat when it follows a key-down of the same key,
+// with no key-up between, by less than `windowMs`. KeyboardEvent.repeat is a
+// read-only getter; an own property shadows it, so handlers, useHold and the
+// suppression check below all read the same value.
+const inferRepeat = (
+  e: KeyboardEvent,
+  name: KeyNameOrKeyCode | undefined,
+  code: KeyNameOrKeyCode | undefined,
+  windowMs: number,
+): void => {
+  const now = performance.now();
+  const held = findByIdentity(heldKeys, name, code);
+  if (held === undefined) {
+    const ids = keyIdentities(e);
+    const entry: HeldKey = { ids, time: now };
+    for (let i = 0; i < ids.length; i++) heldKeys.set(ids[i]!, entry);
+    return;
   }
-  return found;
+  if (!e.repeat && now - held.time < windowMs) {
+    Object.defineProperty(e, 'repeat', { value: true });
+  }
+  held.time = now;
+};
+
+const releaseHeldKey = (
+  name: KeyNameOrKeyCode | undefined,
+  code: KeyNameOrKeyCode | undefined,
+): void => {
+  const held = findByIdentity(heldKeys, name, code);
+  if (!held) return;
+  const ids = held.ids;
+  for (let i = 0; i < ids.length; i++) heldKeys.delete(ids[i]!);
 };
 
 const liftSuppression = (found: Suppression | undefined): void => {
@@ -559,6 +603,9 @@ const handleKeyEvents = (
   if (keydown) {
     const name = keyNameId(keydown);
     const code = keyCodeId(keydown);
+    if (Config.inferKeyRepeat) {
+      inferRepeat(keydown, name, code, Config.inferKeyRepeat);
+    }
     if (keydown.repeat) {
       if (findSuppression(name, code)) return true;
     } else {
@@ -576,7 +623,10 @@ const handleKeyEvents = (
     // The key is up: whatever was suppressing its repeats is done. Settle it
     // before propagating, so a suppressor that is still in the focus path sees
     // its own release callback rather than a second one via the key-up below.
-    liftSuppression(findSuppression(keyNameId(keyup), keyCodeId(keyup)));
+    const name = keyNameId(keyup);
+    const code = keyCodeId(keyup);
+    releaseHeldKey(name, code);
+    liftSuppression(findSuppression(name, code));
 
     return propagateKeyPress(
       keyup,
@@ -696,5 +746,6 @@ export const useFocusManager = (
     eventTarget.removeEventListener('keydown', keyPressHandler);
     eventTarget.removeEventListener('keyup', keyUpHandler);
     suppressedKeys.clear();
+    heldKeys.clear();
   });
 };

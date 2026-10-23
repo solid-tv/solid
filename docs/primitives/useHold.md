@@ -175,6 +175,14 @@ The three signals a key can offer, in the order the primitive prefers them:
 | Key-up only on real release | Yes              | No key-up by the threshold means still held — set `holdRequiresRepeat: false`. |
 | Key-up immediately on press | **No**           | Tap and hold are indistinguishable. LG Back behaves this way.                  |
 
+Some devices auto-repeat a held key without ever setting `repeat`: every
+key-down reports `repeat: false`, and a single key-up arrives on release. To
+`useHold` each of those looks like a new press that restarts the timer, so a
+hold never fires and the release resolves as a tap. Set
+[`Config.inferKeyRepeat`](./useFocusManager.md#inferred-repeats-configinferkeyrepeat)
+on such a device and the focus manager marks them as repeats before `useHold`
+sees them.
+
 If a press delivers no key-up and no auto-repeat by the threshold, it is
 ambiguous, and by default resolves as a **tap** — which is what keeps taps
 working on remotes that swallow key-up entirely (webOS OK). Set
