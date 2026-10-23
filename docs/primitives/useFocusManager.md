@@ -137,6 +137,32 @@ Config.preventDefaultOnHandledKeys = true;
 It is off by default, since in a browser it changes what handled keys do: a
 handled arrow no longer scrolls the page, say.
 
+### Inferred Repeats (`Config.inferKeyRepeat`)
+
+Some devices never set `KeyboardEvent.repeat`. Holding a key sends a stream of
+key-downs that all report `repeat: false`, followed by one key-up on release.
+Anything that relies on `repeat` breaks: [useHold](./useHold.md) sees each
+key-down as a new press, and a key latched by a hold is released by what looks
+like a fresh press.
+
+Set `Config.inferKeyRepeat` to a window in milliseconds and the focus manager
+marks a key-down as a repeat when the same key sent a key-down less than that
+long ago with no key-up in between. Handlers then read `e.repeat` as `true`.
+
+```javascript
+import { Config } from '@solidtv/solid';
+
+Config.inferKeyRepeat = 700;
+```
+
+The window is measured from the key's previous key-down, so it only has to
+cover the device's initial auto-repeat delay. A key-up that never arrives stops
+mattering once the window passes, so a lost key-up cannot leave the key stuck.
+
+It is off by default; enable it only on the devices that need it. On a key
+that never sends a key-up (webOS OK), a second tap inside the window would be
+read as a repeat.
+
 ### Focus History Logging
 
 Focus history logging records each focus change — whether triggered by a key press or programmatically — into a ring buffer of up to 50 entries. This is a **dev-only** feature: recording and printing are both gated behind the `isDev` flag and do nothing in production builds.

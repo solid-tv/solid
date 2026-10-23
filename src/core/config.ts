@@ -74,6 +74,17 @@ export interface Config {
   fontWeightAlias?: Record<string, number | string>;
   throttleInput?: number;
   /**
+   * For devices that never set `KeyboardEvent.repeat`: while a key is held
+   * they send a stream of `repeat=false` key-downs, and one key-up on release.
+   * With this set (in ms), a key-down of a key that has had no key-up since
+   * its previous key-down, arriving within this many ms of it, is marked as a
+   * repeat (`repeat` reads `true`) before anything handles it. It must cover
+   * the device's initial auto-repeat delay. A key-up that never arrives stops
+   * mattering once the window passes. Off by default: on a key that swallows
+   * key-up (webOS OK), a second tap inside the window would read as a repeat.
+   */
+  inferKeyRepeat?: number;
+  /**
    * Call `preventDefault()` on every key event the app consumed: a handler
    * returned `true`, or the focus manager dropped the press itself (a
    * throttled press, a suppressed repeat). A host that hands the system
