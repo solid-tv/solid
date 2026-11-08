@@ -1001,3 +1001,66 @@ v.describe('VirtualRow: work per press (1.7)', () => {
     });
   }
 });
+
+v.describe('VirtualRow: each replaced with new items', () => {
+  type Tile = { id: number };
+  const toTiles = (ids: number[]): Tile[] => ids.map((id) => ({ id }));
+  const TileItem = (props: { item: Tile }) => (
+    <view id={`t${props.item.id}`} item={props.item} width={200} height={100} />
+  );
+  const changes: Record<string, (ids: number[]) => number[]> = {
+    'moves the focused item to the front': (ids) => [
+      ids[3]!,
+      ...ids.filter((_, i) => i !== 3),
+    ],
+    'removes the focused item': (ids) => ids.filter((_, i) => i !== 3),
+  };
+
+  for (const [scroll, wrap] of [
+    ['always', true],
+    ['auto', false],
+  ] as const) {
+    for (const [name, change] of Object.entries(changes)) {
+      v.it(
+        `scroll="${scroll}"${wrap ? ' + wrap' : ''}, ${name}: focus stays on the selected child`,
+        async () => {
+          const ids = Array.from({ length: 20 }, (_, i) => i);
+          const [each, setEach] = s.createSignal(toTiles(ids));
+          let row!: lng.ElementNode;
+          dispose = await mount(() => (
+            <view width={1920} height={1080}>
+              <VirtualRow
+                ref={row}
+                autofocus
+                x={50}
+                each={each()}
+                displaySize={4}
+                scroll={scroll}
+                wrap={wrap}
+              >
+                {(item) => <TileItem item={item()} />}
+              </VirtualRow>
+            </view>
+          ));
+          await press('ArrowRight', 'ArrowRight', 'ArrowRight');
+          const changed = change(ids);
+          setEach(toTiles(changed));
+          await flush();
+
+          const steps: [boolean, string | undefined][] = [];
+          for (let i = 0; i < 2; i++) {
+            await press('ArrowRight');
+            steps.push([
+              row.children[row.selected] === lng.activeElement(),
+              focusedId(),
+            ]);
+          }
+          v.expect(steps).toEqual([
+            [true, `t${changed[4]}`],
+            [true, `t${changed[5]}`],
+          ]);
+        },
+      );
+    }
+  }
+});

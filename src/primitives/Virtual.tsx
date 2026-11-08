@@ -617,6 +617,7 @@ function createVirtual<T>(
         c = Math.max(0, itemCount() - 1);
         setCursor(c);
       }
+      slice.slice = noItems;
       viewRef.selected = computeSlice(c, 0).selected;
     }),
   );
