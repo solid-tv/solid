@@ -536,7 +536,8 @@ function createVirtual<T>(
         c = Math.max(0, itemCount() - 1);
         setCursor(c);
       }
-      const newState = computeSlice(c, 0, slice());
+      // An empty window makes computeSlice rebuild it from the new items.
+      const newState = computeSlice(c, 0, { ...slice(), slice: [] });
       setSlice(newState);
       viewRef.selected = newState.selected;
     }),
