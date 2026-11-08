@@ -232,9 +232,12 @@ function createVirtual<T>(
           } else {
             // Initial setup
             if (c > 0) {
+              // Near the end, the window navigation reaches there: it starts
+              // at total - displaySize. Subtracting bufferSize as well put
+              // the focused item past the last visible slot.
               start = Math.min(
                 c - (scrollIndex() || 1),
-                total - props.displaySize - bufferSize(),
+                total - props.displaySize,
               );
               selected = Math.max(scrollIndex() || 1, c - start);
               shiftBy = total - c < 3 ? c - total : -1;
@@ -291,7 +294,8 @@ function createVirtual<T>(
           if (delta === 0 && c > 0) {
             //initial setup
             selected = c > startScrolling ? startScrolling : c;
-            start = Math.max(0, c - startScrolling + 1);
+            // The window slot `selected` holds item c (start was one more).
+            start = c - selected;
             shiftBy = c > startScrolling ? -1 : 0;
             atStart = c < startScrolling;
           } else if (delta > 0) {
@@ -471,6 +475,7 @@ function createVirtual<T>(
         ).start();
       } else {
         this.lng[axis] = (prevChildPos - active[axis]) + childSize * slice().shiftBy;
+        targetPosition = this.lng[axis];
       }
     });
   };
@@ -492,14 +497,20 @@ function createVirtual<T>(
         viewRef.children[activeIndex]?.setFocus();
       }
 
-      if (newState.shiftBy === 0) return;
-
-      const childSize = computeSize(slice().selected);
       // Original Position is offset to support scrollToIndex
-      originalPosition = originalPosition ?? viewRef.lng[axis];
-      targetPosition = targetPosition ?? viewRef.lng[axis];
-
-      viewRef.lng[axis] = (viewRef.lng[axis] || 0) + childSize * -1;
+      originalPosition = originalPosition ?? viewRef.lng[axis] ?? 0;
+      // The window is laid out from scratch (delta 0), so the row goes to
+      // its original position, one slot further with a shift. Shifting from
+      // the current position moved an already scrolled row a second slot.
+      let position: number = originalPosition;
+      if (newState.shiftBy !== 0) position -= computeSize(slice().selected);
+      if (cachedAnimationController?.state === 'running') {
+        cachedAnimationController.stop();
+      }
+      viewRef.lng[axis] = position;
+      // The next press shifts from targetPosition: left at the position
+      // before the shift, it moved the row one slot too far.
+      targetPosition = position;
     });
   };
 

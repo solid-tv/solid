@@ -506,25 +506,26 @@ v.describe('VirtualRow: onSelectedChanged and selected', () => {
       v.expect(rowStep(row)).toEqual(['v5', 1, 5, -180, '4,5,6,7,8,9']);
       v.expect(calls).toEqual([[1, 'v5', 1]]);
 
-      // Current behaviour: the first press after an initial selected puts x
-      // back to 50 as the window shifts, so the focused item sits one slot
-      // further right (screen x 280) than when the row starts at 0 (screen x
-      // 50, see the auto case). The position used is the one saved before the
-      // initial shift (Virtual.tsx:500-502).
+      // The presses after an initial selected keep x where it is, as when
+      // the row starts at 0 (see the auto case). Before 1.7.2 the first press
+      // put x back to 50, one slot too far.
       await press('ArrowRight');
-      v.expect(rowStep(row)).toEqual(['v6', 1, 6, 50, '5,6,7,8,9,10']);
+      v.expect(rowStep(row)).toEqual(['v6', 1, 6, -180, '5,6,7,8,9,10']);
       await press('ArrowLeft', 'ArrowLeft');
-      v.expect(rowStep(row)).toEqual(['v4', 1, 4, 50, '3,4,5,6,7,8']);
+      v.expect(rowStep(row)).toEqual(['v4', 1, 4, -180, '3,4,5,6,7,8']);
       calls.length = 0;
 
+      // A reactive change on a scrolled row places it as the initial value
+      // does (one slot, not one more on top of the current scroll). Near the
+      // end, the window is the one navigation reaches there.
       setSel(9);
       await flush();
-      v.expect(rowStep(row)).toEqual(['v9', 3, 9, -180, '6,7,8,9,10,11']);
+      v.expect(rowStep(row)).toEqual(['v9', 1, 9, -180, '8,9,10,11']);
       v.expect(calls).toEqual([]);
 
       await press('ArrowRight');
-      v.expect(rowStep(row)).toEqual(['v10', 3, 10, 50, '7,8,9,10,11']);
-      v.expect(calls).toEqual([[4, 'v10', 3]]);
+      v.expect(rowStep(row)).toEqual(['v10', 2, 10, -180, '8,9,10,11']);
+      v.expect(calls).toEqual([[2, 'v10', 1]]);
     },
   );
 
@@ -675,5 +676,140 @@ v.describe('VirtualRow: each replaced with new items', () => {
         },
       );
     }
+  }
+});
+
+v.describe('VirtualRow: initial selected (scroll="auto")', () => {
+  // 12 items, displaySize 4, 200-wide children + gap 30: the visible slots
+  // are at screen x = row x + 0, 230, 460, 690. An initial `selected` places
+  // the window as navigation would, and the presses after it keep the row
+  // where it is.
+  const screenX = (row: lng.ElementNode) => row.x + lng.activeElement()!.x;
+  const cases: [x: number, selected: number, screen: number, window: string][] =
+    [
+      [50, 11, 510, '8,9,10,11'],
+      [50, 10, 280, '8,9,10,11'],
+      [50, 9, 50, '8,9,10,11'],
+      [50, 5, 50, '4,5,6,7,8,9'],
+      [0, 11, 460, '8,9,10,11'],
+      [0, 5, 0, '4,5,6,7,8,9'],
+    ];
+  for (const [x, selected, screen, window] of cases) {
+    v.it(
+      `x=${x}, selected=${selected}: the focused item is visible and keeps its screen x`,
+      async () => {
+        let row!: lng.ElementNode;
+        dispose = await mount(() => (
+          <view width={1920} height={1080}>
+            <VirtualRow
+              ref={row}
+              autofocus
+              x={x}
+              each={twelve}
+              displaySize={4}
+              selected={selected}
+            >
+              {(item) => <Item item={item()} />}
+            </VirtualRow>
+          </view>
+        ));
+        await flush();
+        v.expect([focusedId(), screenX(row), mounted(row)]).toEqual([
+          `v${selected}`,
+          screen,
+          window,
+        ]);
+        const seen: [string | undefined, number][] = [];
+        for (const key of [
+          'ArrowLeft',
+          'ArrowLeft',
+          'ArrowLeft',
+          'ArrowRight',
+        ]) {
+          await press(key);
+          seen.push([focusedId(), screenX(row)]);
+        }
+        v.expect(seen).toEqual([
+          [`v${selected - 1}`, screen],
+          [`v${selected - 2}`, screen],
+          [`v${selected - 3}`, screen],
+          [`v${selected - 2}`, screen],
+        ]);
+      },
+    );
+  }
+});
+
+v.describe('VirtualRow: selected on a scrolled row', () => {
+  for (const scroll of ['auto', 'edge', 'always'] as const) {
+    v.it(
+      `scroll="${scroll}": a reactive selected places the row as the initial value does`,
+      async () => {
+        const place = async (initial: number | undefined, keys: string[]) => {
+          let row!: lng.ElementNode;
+          const [sel, setSel] = s.createSignal(initial);
+          const d = await mount(() => (
+            <view width={1920} height={1080}>
+              <VirtualRow
+                ref={row}
+                autofocus
+                x={50}
+                each={twelve}
+                displaySize={4}
+                scroll={scroll}
+                selected={sel()}
+              >
+                {(item) => <Item item={item()} />}
+              </VirtualRow>
+            </view>
+          ));
+          await press(...keys);
+          if (initial === undefined) {
+            setSel(7);
+            await flush();
+          }
+          await flush();
+          const placed = [focusedId(), row.x + lng.activeElement()!.x];
+          await press('ArrowRight');
+          const next = [focusedId(), row.x + lng.activeElement()!.x];
+          d();
+          return [placed, next];
+        };
+        // selected={7} from the start vs. set to 7 after scrolling right.
+        const fromStart = await place(7, []);
+        const afterScroll = await place(undefined, [
+          'ArrowRight',
+          'ArrowRight',
+          'ArrowRight',
+          'ArrowRight',
+          'ArrowRight',
+        ]);
+        v.expect(fromStart[0]![0]).toBe('v7');
+        v.expect(afterScroll).toEqual(fromStart);
+      },
+    );
+  }
+});
+
+v.describe('VirtualRow: initial selected (scroll="edge")', () => {
+  for (const selected of [1, 3, 7, 11]) {
+    v.it(`selected=${selected} focuses that item`, async () => {
+      dispose = await mount(() => (
+        <view width={1920} height={1080}>
+          <VirtualRow
+            autofocus
+            x={50}
+            each={twelve}
+            displaySize={4}
+            scroll="edge"
+            selected={selected}
+          >
+            {(item) => <Item item={item()} />}
+          </VirtualRow>
+        </view>
+      ));
+      await flush();
+      v.expect(focusedId()).toBe(`v${selected}`);
+    });
   }
 });
