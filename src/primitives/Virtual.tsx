@@ -147,7 +147,13 @@ function createVirtual<T>(
     const total = itemCount();
     if (total === 0) return applySlice(0, noItems, 0, delta, 0, true, 0);
 
-    if (total <= props.displaySize) {
+    // Everything is mounted and the row does not scroll. Not for auto without
+    // wrap at exactly displaySize items: there, as for a longer list, the
+    // last item ends one slot short of displaySize, so the row scrolls.
+    if (
+      total < props.displaySize ||
+      (total === props.displaySize && (props.wrap || scrollType() !== 'auto'))
+    ) {
       const clamped = utils.clamp(c, 0, total - 1);
       return applySlice(
         0,

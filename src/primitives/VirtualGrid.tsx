@@ -121,6 +121,10 @@ export function VirtualGrid<T>(props: VirtualGridProps<T>): s.JSX.Element {
     setCursor(prevStart + idx);
     if (newRowIndex === prevRowIndex) return;
 
+    // Read before the window changes: the post-mutation flex pass can run
+    // before applyShift, and active.y read there is already the new layout,
+    // so the rows jumped a row instead of animating once the window slid.
+    shiftPrevRowY = this.y + active.y;
     setSlice(items().slice(start(), end()));
 
     // this.selected is relative to the slice
@@ -149,14 +153,14 @@ export function VirtualGrid<T>(props: VirtualGridProps<T>): s.JSX.Element {
   let shiftActive!: lng.ElementNode;
   let shiftIdx = 0;
   let shiftLastIdx: number | undefined;
+  let shiftPrevRowY = 0;
   function applyShift() {
     const view = shiftView;
     const active = shiftActive;
-    const prevRowY = view.y + active.y;
     // One flex pass per window shift: lay out here only if the post-mutation
     // layout has not already run since the window changed.
     if (layoutPending) view.updateLayout();
-    view.lng.y = prevRowY - active.y;
+    view.lng.y = shiftPrevRowY - active.y;
     columnScroll(shiftIdx, view, active, shiftLastIdx);
   }
 

@@ -596,6 +596,53 @@ v.describe('VirtualRow: window and scroll modes', () => {
       ]);
     },
   );
+
+  v.it(
+    'scroll="auto", item count === displaySize: the row scrolls one slot, the last item ends where it does for a longer list',
+    async () => {
+      let row!: lng.ElementNode;
+      dispose = await mount(() => (
+        <view width={1920} height={1080}>
+          <VirtualRow
+            ref={row}
+            autofocus
+            x={50}
+            each={[0, 1, 2, 3]}
+            displaySize={4}
+          >
+            {(item) => <Item item={item()} />}
+          </VirtualRow>
+        </view>
+      ));
+      const focusedX = () => row.x + (lng.activeElement() as lng.ElementNode).x;
+      const seen = [[focusedId(), focusedX()]];
+      for (const key of [
+        'ArrowRight',
+        'ArrowRight',
+        'ArrowRight',
+        'ArrowRight',
+        'ArrowLeft',
+        'ArrowLeft',
+        'ArrowLeft',
+      ]) {
+        await press(key);
+        seen.push([focusedId(), focusedX()]);
+      }
+      // As with 5 or 12 items, the last item ends at 510, one slot short of
+      // 740: with no scroll it ended at 740, out of view. Left retraces the
+      // longer lists' path back to 50.
+      v.expect(seen).toEqual([
+        ['v0', 50],
+        ['v1', 50],
+        ['v2', 280],
+        ['v3', 510],
+        ['v3', 510],
+        ['v2', 510],
+        ['v1', 280],
+        ['v0', 50],
+      ]);
+    },
+  );
 });
 
 v.describe('VirtualRow: bufferSize and onEndReached', () => {

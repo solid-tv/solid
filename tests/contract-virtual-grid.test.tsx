@@ -710,4 +710,86 @@ v.describe('VirtualGrid', () => {
       v.expect(focusedId()).toBe('g14');
     },
   );
+
+  // Animations are on, as in an app. The DOM renderer's animations run on
+  // requestAnimationFrame, and jsdom's frame time is on another clock than
+  // the performance.now() the animations start from, so frames are driven
+  // here with a time far ahead: each y transition ends on its first frame.
+  v.it(
+    'with animations on, every row change animates y from where the rows were: they do not jump when the window slides (row 3 on, buffer 2)',
+    async () => {
+      const settle = async () => {
+        for (let i = 0; i < 4; i++) await flush();
+      };
+      v.vi.stubGlobal(
+        'requestAnimationFrame',
+        (cb: (time: number) => void) =>
+          setTimeout(() => cb(performance.now() + 1e6), 0),
+      );
+      lng.Config.animationsEnabled = true;
+      try {
+        let grid!: lng.ElementNode;
+        // Visual y of each mounted cell, by data item.
+        const cellYs = () =>
+          new Map(
+            grid.children.map((c) => [
+              (c as lng.ElementNode).item as number,
+              grid.lng.y + c.lng.y,
+            ]),
+          );
+        let atStart: Map<number, number> | undefined;
+        const onAnimation = {
+          animating(this: lng.ElementNode, name: string) {
+            if (this === grid && name === 'y') atStart = cellYs();
+          },
+        };
+        dispose = await mount(() => (
+          <view width={1920} height={1080}>
+            <VirtualGrid
+              ref={grid}
+              autofocus
+              y={40}
+              width={700}
+              columns={3}
+              each={range(60)}
+              onAnimation={onAnimation}
+            >
+              {(item) => <Cell item={item()} />}
+            </VirtualGrid>
+          </view>
+        ));
+        // Down 3 onward slides the window down (a row above is unmounted),
+        // and Up from there slides it back.
+        const steps = [
+          ...[1, 2, 3, 4, 5, 6].map((row) => ['ArrowDown', row] as const),
+          ...[5, 4, 3, 2, 1, 0].map((row) => ['ArrowUp', row] as const),
+        ];
+        for (const [key, row] of steps) {
+          const before = cellYs();
+          atStart = undefined;
+          await press(key);
+          await settle();
+          v.expect(focusedId()).toBe(`g${row * 3}`);
+          v.expect(
+            atStart,
+            `${key} to row ${row}: no y transition`,
+          ).toBeDefined();
+          const jumped = [...atStart!].filter(
+            ([item, y]) => before.has(item) && before.get(item) !== y,
+          );
+          v.expect(
+            jumped,
+            `${key} to row ${row}: cells moved before the transition`,
+          ).toEqual([]);
+          // The transition ran to the row's place.
+          v.expect(grid.lng.y, `${key} to row ${row}: y`).toBe(
+            Math.max(-160, 40 - row * 100),
+          );
+        }
+      } finally {
+        lng.Config.animationsEnabled = false;
+        v.vi.unstubAllGlobals();
+      }
+    },
+  );
 });
