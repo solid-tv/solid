@@ -43,6 +43,19 @@ function createVirtual<T>(
   const items = s.createMemo(() => props.each || []);
   const itemCount = s.createMemo(() => items().length);
   const scrollType = s.createMemo(() => props.scroll || 'auto');
+  const viewportSize = () => props[isRow ? 'width' : 'height'];
+  const hasViewportBounds = () => {
+    const size = viewportSize();
+    return (
+      (scrollType() === 'edge' || scrollType() === 'auto') &&
+      !props.wrap &&
+      props.uniformSize !== false &&
+      typeof size === 'number' &&
+      size > 0 &&
+      size < Infinity
+    );
+  };
+  const usesViewportBounds = () => hasViewportBounds() && !props.scrollStopLast;
 
   const initiallyLocked =
     !!props.skipInitialWrap &&
@@ -393,6 +406,11 @@ function createVirtual<T>(
         break;
     }
 
+    if (usesViewportBounds()) {
+      start = boundWindowStart(start, total);
+      selected = c - start;
+    }
+
     let newSlice = prev.slice;
     if (start !== prev.start || newSlice.length === 0) {
       const all = items();
@@ -421,6 +439,35 @@ function createVirtual<T>(
   }
 
   let viewRef!: lngp.NavigableElement;
+
+  function boundWindowStart(start: number, total: number) {
+    const slot = computeSize();
+    if (!usesViewportBounds() || !slot) return start;
+    // Include the partially visible leading item when the tail meets the viewport.
+    const visible = Math.ceil(
+      ((viewportSize() as number) + (viewRef.gap || 0)) / slot,
+    );
+    return utils.clamp(start, 0, Math.max(0, total - visible));
+  }
+
+  function boundPosition(position: number, index: number) {
+    if (!usesViewportBounds()) return position;
+    const slot = computeSize();
+    if (!slot) return position;
+    const initial = originalPosition ?? 0;
+    const minimum = Math.min(
+      0,
+      (viewportSize() as number) - (itemCount() * slot - (viewRef.gap || 0)),
+    );
+    const base = initial + slice.start * slot;
+    const offset =
+      index === 0 || minimum === 0
+        ? 0
+        : index === itemCount() - 1
+          ? minimum
+          : utils.clamp(position - base, minimum, 0);
+    return base + offset;
+  }
 
   function scrollToIndex(this: lng.ElementNode, index: number) {
     s.untrack(() => {
@@ -475,7 +522,10 @@ function createVirtual<T>(
 
     if (lng.Config.animationsEnabled) {
       view.lng[axis] = shiftPrevChildPos - active[axis];
-      targetPosition = view.lng[axis] + childSize * slice.shiftBy;
+      targetPosition = boundPosition(
+        view.lng[axis] + childSize * slice.shiftBy,
+        cursor(),
+      );
       const settings = view.animationSettings;
       if (settings !== shiftSettingsFrom) {
         shiftSettings = {};
@@ -500,8 +550,10 @@ function createVirtual<T>(
         .animate(shiftProps, shiftSettings)
         .start();
     } else {
-      view.lng[axis] =
-        shiftPrevChildPos - active[axis] + childSize * slice.shiftBy;
+      view.lng[axis] = boundPosition(
+        shiftPrevChildPos - active[axis] + childSize * slice.shiftBy,
+        cursor(),
+      );
       targetPosition = view.lng[axis];
     }
   }
@@ -574,9 +626,20 @@ function createVirtual<T>(
     const item = items()[safeSel];
     setCursor(safeSel);
     const shiftBy = computeSlice(safeSel, 0).shiftBy;
+    const bounded = hasViewportBounds();
+    if (bounded) viewRef.selected = slice.selected;
 
     queueMicrotask(() => {
+      if (bounded && safeSel !== cursor()) return;
       if (layoutPending) viewRef.updateLayout();
+      // On initial mount the item size is only available after the first layout.
+      if (
+        bounded &&
+        boundWindowStart(slice.start, itemCount()) !== slice.start
+      ) {
+        computeSlice(safeSel, 0);
+        if (layoutPending) viewRef.updateLayout();
+      }
       const activeIndex = viewRef.children.findIndex((x) => x.item === item);
       if (activeIndex === -1) return;
       viewRef.selected = activeIndex;
@@ -591,7 +654,11 @@ function createVirtual<T>(
       // the current position moved an already scrolled row a second slot.
       let position: number = originalPosition;
       if (shiftBy !== 0) position -= computeSize(slice.selected);
-      if (cachedAnimationController?.state === 'running') {
+      position = boundPosition(position, safeSel);
+      if (
+        cachedAnimationController?.state === 'running' ||
+        (bounded && cachedAnimationController?.state === 'scheduled')
+      ) {
         cachedAnimationController.stop();
       }
       viewRef.lng[axis] = position;
@@ -636,7 +703,20 @@ function createVirtual<T>(
       }
       slice.slice = noItems;
       viewRef.selected = computeSlice(c, 0).selected;
+      if (hasViewportBounds()) updateSelected([c]);
     }),
+  );
+
+  s.createEffect(
+    s.on(
+      [() => props.width, () => props.height, () => props.scrollStopLast],
+      () => {
+        if (!hasViewportBounds()) return;
+        slice.slice = noItems;
+        updateSelected([s.untrack(cursor)]);
+      },
+      { defer: true },
+    ),
   );
 
   // Clears layoutPending: the row's flex pass has run since the window
