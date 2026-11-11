@@ -334,7 +334,12 @@ function updateNodeStyles(node: DOMNode | DOMText) {
 
   if (props.alpha !== 1) style += `opacity: ${props.alpha};`;
 
-  if (props.clipping) {
+  if (Array.isArray(props.clipping)) {
+    // [top, right, bottom, left] margins grow the clip box past the node's
+    // bounds, as in the WebGL renderer. Legacy `clip` (every node is absolute)
+    const [t, r, b, l] = props.clipping;
+    style += `clip: rect(${-t}px, ${props.w + r}px, ${props.h + b}px, ${-l}px);`;
+  } else if (props.clipping) {
     style += `overflow: hidden;`;
   }
 
