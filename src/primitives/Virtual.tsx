@@ -128,7 +128,13 @@ function createVirtual<T>(
         cursor: 0,
       };
 
-    if (total <= props.displaySize) {
+    // Everything is mounted and the row does not scroll. Not for auto without
+    // wrap at exactly displaySize items: there, as for a longer list, the
+    // last item ends one slot short of displaySize, so the row scrolls.
+    if (
+      total < props.displaySize ||
+      (total === props.displaySize && (props.wrap || scrollType() !== 'auto'))
+    ) {
       return {
         start: 0,
         slice: items() as T[],

@@ -102,6 +102,10 @@ export function VirtualGrid<T>(props: VirtualGridProps<T>): s.JSX.Element {
     setCursor(prevStart + idx);
     if (newRowIndex === prevRowIndex) return;
 
+    // Read before the window changes: the post-mutation flex pass can run
+    // before the microtask below, and active.y read there is already the new
+    // layout, so the rows jumped a row instead of animating once the window slid.
+    const prevRowY = this.y + active.y;
     setSlice(items().slice(start(), end()));
 
     // this.selected is relative to the slice
@@ -116,7 +120,6 @@ export function VirtualGrid<T>(props: VirtualGridProps<T>): s.JSX.Element {
     }
 
     queueMicrotask(() => {
-      const prevRowY = this.y + active.y;
       this.updateLayout();
       this.lng.y = prevRowY - active.y;
       columnScroll(idx, elm, active, lastIdx);
