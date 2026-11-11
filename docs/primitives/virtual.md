@@ -51,6 +51,12 @@ import { VirtualRow, VirtualColumn } from './primitives/Virtual';
 
 Use `cursor` property on the node to get the absolute index in the list of items.
 
+### Scroll Animations
+
+Changing the reactive `animationSettings.duration` to `0` finishes an active
+scroll immediately at its target position. Focus and navigation are preserved.
+Changing it back to a positive duration enables animation for subsequent scrolls.
+
 ### Performance Optimization
 
 - Renders only a subset of the full list (`slice`) for improved memory and render-time performance.

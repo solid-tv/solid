@@ -626,6 +626,20 @@ function createVirtual<T>(
 
   s.createEffect(s.on([() => props.selected, items], updateSelected));
 
+  s.createEffect(() => {
+    if (
+      props.animationSettings?.duration !== 0 ||
+      !cachedAnimationController ||
+      (cachedAnimationController.state !== 'running' &&
+        cachedAnimationController.state !== 'scheduled')
+    ) {
+      return;
+    }
+    // Settings are copied when a scroll starts; finish it when motion is disabled.
+    cachedAnimationController.stop();
+    if (targetPosition !== undefined) viewRef.lng[axis] = targetPosition;
+  });
+
   s.createEffect(
     s.on(items, () => {
       if (!viewRef) return;
