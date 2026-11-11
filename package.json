@@ -1,6 +1,6 @@
 {
   "name": "@solidtv/solid",
-  "version": "1.7.2",
+  "version": "1.7.3",
   "description": "SolidTV",
   "type": "module",
   "exports": {
