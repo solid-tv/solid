@@ -35,7 +35,7 @@
 import * as v from 'vitest';
 import * as s from 'solid-js';
 import { loadFonts, type ElementNode } from '@solidtv/solid';
-import { frameCount, latoFont, render, settle } from './setup.js';
+import { frameCount, latoFont, render, renderer, settle } from './setup.js';
 
 /** x, y, width and height, as the app reads them from the ElementNode. */
 function expectBox(
