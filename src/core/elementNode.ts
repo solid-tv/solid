@@ -374,6 +374,7 @@ const LightningRendererNonAnimatingProps = [
   'offsetY',
   'overflowSuffix',
   'placeholderColor',
+  'fallbackImage',
   'preventCleanup',
   'scrollable',
   'scrollY',
@@ -904,6 +905,7 @@ export class ElementNode {
       text: undefined,
       ignoreParentAlpha: undefined,
       placeholderColor: undefined,
+      fallbackImage: undefined,
     };
     this.children = [];
 
