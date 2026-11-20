@@ -20,13 +20,15 @@ import calculateFlex, { getArrayValue } from './flexLayout.js';
 import {
   log,
   isArray,
-  keyExists,
+  isObject,
+  isString,
   isINode,
   isElementNode,
   isElementText,
   logRenderTree,
   isFunction,
 } from './utils.js';
+import { compileBlock, shaderParse, type BlockPlan } from './stylePlan.js';
 import { isDev, SHADERS_ENABLED } from './env.js';
 import { Config, isDomRendererActive } from './config.js';
 import type {
@@ -90,6 +92,9 @@ const layoutBuckets: Array<Array<ElementNode | undefined>> = [];
 const layoutBucketSize: number[] = [];
 let layoutMaxDepth = -1; // deepest bucket that may hold a node
 let layoutSweepDepth = -1; // bucket the layout phase is on, -1 outside it
+// A node was queued since the layout phase last ran to its end (one that
+// threw leaves it set, so the entries it left run next time).
+let layoutPending = false;
 
 // Text measurement (design 3.4): a `<text>` whose parent lays out is sized by
 // the renderer's synchronous `measure()` before the parent's flex, not by the
@@ -167,11 +172,64 @@ function runPostMutation() {
     elementDeleteCount = 0;
   }
 
-  // Phase 2: layout
+  // Phase 2: layout. Inline, not a function of its own: terser's default
+  // `reduce_funcs` turns a module function with one call site into a
+  // closure per call (as with every helper on this path).
   if (fontWaitingDue === true) {
-    measureFontWaiting();
+    TextMeasure.measureFontWaiting();
   }
-  runLayoutQueue();
+  if (layoutPending === true || textMeasureCount > 0) {
+    measureQueuedTexts();
+    // Start from the deepest bucket there is, so entries a run that threw
+    // left behind are not stranded.
+    layoutMaxDepth = layoutBuckets.length - 1;
+    let textSweeps = 0;
+    while (layoutMaxDepth >= 0) {
+      let depth = layoutMaxDepth;
+      layoutMaxDepth = -1;
+      for (; depth >= 0; depth--) {
+        layoutSweepDepth = depth;
+        const bucket = layoutBuckets[depth]!;
+        // Read the size every time: a run can queue more at this depth.
+        for (let i = 0; i < layoutBucketSize[depth]!; i++) {
+          const node = bucket[i];
+          bucket[i] = undefined;
+          if (node !== undefined && node._layoutQueued === true) {
+            node.updateLayout();
+          }
+        }
+        layoutBucketSize[depth] = 0;
+      }
+      layoutSweepDepth = -1;
+      // Texts the sweep wrote (flex sizing a text, an onLayout): measured
+      // now, so the container of one that resized runs again in another
+      // sweep.
+      if (textMeasureCount > 0 && textSweeps < MAX_TEXT_SWEEPS) {
+        textSweeps++;
+        measureQueuedTexts();
+      }
+    }
+    if (textMeasureCount > 0) {
+      // Not converging: drop the rest (each is measured again at its next
+      // change), or the run its writes scheduled would start over.
+      for (let i = 0; i < textMeasureCount; i++) {
+        const t = textMeasureQueue[i];
+        textMeasureQueue[i] = undefined;
+        if (t !== undefined) {
+          t._text!.due = false;
+        }
+      }
+      textMeasureCount = 0;
+      if (isDev) {
+        console.warn(
+          '[solid] Text sizes did not settle in ' +
+            MAX_TEXT_SWEEPS +
+            ' layout passes (a layout that changes the size of a text it lays out); the rest waits for its next change.',
+        );
+      }
+    }
+    layoutPending = false;
+  }
 
   // Phase 3: focus.  setFocus() may have evaluated forwardFocus pre-render
   // (when no children existed yet); deferredFocusElement re-runs setFocus
@@ -190,6 +248,7 @@ function runPostMutation() {
 function enqueueLayout(node: ElementNode): void {
   if (node._layoutQueued === true) return;
   node._layoutQueued = true;
+  layoutPending = true;
   // The depth in its tree: a removed node's tree ends at it.
   let depth = 0;
   for (
@@ -221,57 +280,6 @@ function enqueueLayout(node: ElementNode): void {
 function queueLayout(node: ElementNode): void {
   enqueueLayout(node);
   schedulePostMutation();
-}
-
-function runLayoutQueue(): void {
-  measureQueuedTexts();
-  // Start from the deepest bucket there is, so entries a run that threw left
-  // behind are not stranded.
-  layoutMaxDepth = layoutBuckets.length - 1;
-  let textSweeps = 0;
-  while (layoutMaxDepth >= 0) {
-    let depth = layoutMaxDepth;
-    layoutMaxDepth = -1;
-    for (; depth >= 0; depth--) {
-      layoutSweepDepth = depth;
-      const bucket = layoutBuckets[depth]!;
-      // Read the size every time: a run can queue more at this depth.
-      for (let i = 0; i < layoutBucketSize[depth]!; i++) {
-        const node = bucket[i];
-        bucket[i] = undefined;
-        if (node !== undefined && node._layoutQueued === true) {
-          node.updateLayout();
-        }
-      }
-      layoutBucketSize[depth] = 0;
-    }
-    layoutSweepDepth = -1;
-    // Texts the sweep wrote (flex sizing a text, an onLayout): measured now,
-    // so the container of one that resized runs again in another sweep.
-    if (textMeasureCount > 0 && textSweeps < MAX_TEXT_SWEEPS) {
-      textSweeps++;
-      measureQueuedTexts();
-    }
-  }
-  if (textMeasureCount > 0) {
-    // Not converging: drop the rest (each is measured again at its next
-    // change), or the run its writes scheduled would start over.
-    for (let i = 0; i < textMeasureCount; i++) {
-      const t = textMeasureQueue[i];
-      textMeasureQueue[i] = undefined;
-      if (t !== undefined) {
-        t._text!.due = false;
-      }
-    }
-    textMeasureCount = 0;
-    if (isDev) {
-      console.warn(
-        '[solid] Text sizes did not settle in ' +
-          MAX_TEXT_SWEEPS +
-          ' layout passes (a layout that changes the size of a text it lays out); the rest waits for its next change.',
-      );
-    }
-  }
 }
 
 /**
@@ -315,51 +323,6 @@ function fontWaitHeard(): void {
   schedulePostMutationInFrame();
 }
 
-/**
- * Measures the texts that waited for a font (`_waitForFont`): one whose font
- * is there now stops waiting and, if its size changed, queues its parent; one
- * whose font is still missing waits again.
- */
-function measureFontWaiting(): void {
-  fontWaitingDue = false;
-  const n = fontWaiting.length;
-  // A text whose font is still missing is appended again (_waitForFont),
-  // which must not sweep the list under this loop.
-  measuringFontWaiting = true;
-  try {
-    for (let i = 0; i < n; i++) {
-      const t = fontWaiting[i]!;
-      const m = t._text!;
-      if (m.waiting !== true) {
-        continue; // measured meanwhile
-      }
-      // Off first, so a measure() now queues no `loaded` for it.
-      (t.lng as IRendererTextNode).off('loaded', fontWaitHeard);
-      m.waiting = false;
-      if (t.destroyed === true) {
-        continue;
-      }
-      const parent = t._parent;
-      if (parent === undefined || parent._requiresLayout !== true) {
-        m.w = NaN;
-        continue;
-      }
-      // Waits again (appended past n) while the font is still missing.
-      if (t._measureText() === true) {
-        enqueueLayout(parent);
-      }
-    }
-  } finally {
-    measuringFontWaiting = false;
-  }
-  // Keep the entries appended meanwhile, without allocating.
-  const length = fontWaiting.length;
-  for (let i = n; i < length; i++) {
-    fontWaiting[i - n] = fontWaiting[i]!;
-  }
-  fontWaiting.length = length - n;
-}
-
 /** Drops the texts that no longer wait for a font (destroyed ones). */
 function sweepFontWaiting(): void {
   let kept = 0;
@@ -373,38 +336,26 @@ function sweepFontWaiting(): void {
   fontWaitingSweepAt = kept * 2 > 64 ? kept * 2 : 64;
 }
 
-/** The props a text's layout reads that an animation can change. */
-function animatesTextLayout(props: Partial<AnimateProps>): boolean {
-  return (
-    'fontSize' in props ||
-    'lineHeight' in props ||
-    'letterSpacing' in props ||
-    'maxWidth' in props ||
-    'maxHeight' in props ||
-    'maxLines' in props ||
-    'w' in props ||
-    'h' in props
-  );
-}
-
 /**
  * What Solid knows of a `<text>` it measures (`ElementNode._text`), made the
  * first time: only texts in a container that lays out have one. Its sizes
  * start as doubles, so storing a measured size allocates nothing.
  */
 class TextMeasure {
+  // `declare`d, assigned in the constructor: a class field would be emitted
+  // as a native field that starts undefined (design 3.6.5).
   /** A prop its layout reads was written since it was last measured; queued. */
-  due: boolean;
+  declare due: boolean;
   /** Its font was missing when measured (`_waitForFont`). */
-  waiting: boolean;
+  declare waiting: boolean;
   /** Width and height, as flex reads them, when last measured; NaN before. */
-  w: number;
-  h: number;
+  declare w: number;
+  declare h: number;
   /**
    * Hears every layout (`_listenTextLoaded`): a text Solid animated a layout
    * prop of, and every measured text in DOM builds. For its lifetime.
    */
-  listening: boolean;
+  declare listening: boolean;
 
   constructor() {
     this.due = false;
@@ -413,6 +364,76 @@ class TextMeasure {
     this.h = NaN;
     this.listening = false;
   }
+
+  /**
+   * Measures the texts that waited for a font (`_waitForFont`): one whose
+   * font is there now stops waiting and, if its size changed, queues its
+   * parent; one whose font is still missing waits again. A method, not a
+   * module function: the post-mutation pass is its one caller, and terser's
+   * default `reduce_funcs` turns such a function into a closure per call.
+   * (Its own: the try would keep that pass from being optimized.)
+   */
+  static measureFontWaiting(): void {
+    fontWaitingDue = false;
+    const n = fontWaiting.length;
+    // A text whose font is still missing is appended again (_waitForFont),
+    // which must not sweep the list under this loop.
+    measuringFontWaiting = true;
+    try {
+      for (let i = 0; i < n; i++) {
+        const t = fontWaiting[i]!;
+        const m = t._text!;
+        if (m.waiting !== true) {
+          continue; // measured meanwhile
+        }
+        // Off first, so a measure() now queues no `loaded` for it.
+        (t.lng as IRendererTextNode).off('loaded', fontWaitHeard);
+        m.waiting = false;
+        if (t.destroyed === true) {
+          continue;
+        }
+        const parent = t._parent;
+        if (
+          parent === undefined ||
+          t._detached === true ||
+          parent._requiresLayout !== true
+        ) {
+          m.w = NaN;
+          continue;
+        }
+        // Waits again (appended past n) while the font is still missing.
+        if (t._measureText() === true) {
+          enqueueLayout(parent);
+        }
+      }
+    } finally {
+      measuringFontWaiting = false;
+    }
+    // Keep the entries appended meanwhile, without allocating.
+    const length = fontWaiting.length;
+    for (let i = n; i < length; i++) {
+      fontWaiting[i - n] = fontWaiting[i]!;
+    }
+    fontWaiting.length = length - n;
+  }
+}
+
+/**
+ * The settings of an animation that has none (no `animationSettings` on the
+ * node or in Config): one object, so renderer v2's animateProp, which reuses
+ * its controller for the same settings object, retargets a running one
+ * rather than stopping it and making another per write. Nothing writes it.
+ */
+const NO_ANIMATION_SETTINGS: Readonly<AnimationSettings> = Object.freeze({});
+
+/** onAnimation.stopped for one write, after its duration and delay. */
+function fireAnimationStopped(
+  node: ElementNode,
+  stopped: AnimationEventHandler,
+  name: string,
+  value: number,
+): void {
+  stopped.call(node, name, value);
 }
 
 onFontLoaded(() => {
@@ -452,55 +473,23 @@ const EFFECT_SHADER_KEYS = [
   'shadow',
 ] as const satisfies ReadonlyArray<keyof StyleEffects>;
 
-const hasOwnProperty = Object.prototype.hasOwnProperty;
-
-// Handle individual border sides: transform width/w to bottom/left/right/top
-const borderSideMap: Record<string, string> = {
-  borderBottom: 'bottom',
-  borderLeft: 'left',
-  borderRight: 'right',
-  borderTop: 'top',
-};
-
-// The shader prop each key of a style object writes, per style prefix
-// (`border` + `width` → `border-w`, `borderTop` + `w` → `border-top`): built
-// at a key's first write, so that a write builds no string.
-const shaderPropNames: Record<string, Record<string, string> | undefined> =
-  Object.create(null);
-
 const parseAndAssignShaderProps = (
   prefix: string,
   obj: Record<string, unknown>,
-  props: Record<string, unknown> = {},
+  props: Record<string, unknown>,
 ) => {
-  if (!obj) return;
-
-  const side = borderSideMap[prefix];
-  const actualPrefix = side ? 'border' : prefix;
-  let names = shaderPropNames[prefix];
-  if (names === undefined) {
-    names = Object.create(null) as Record<string, string>;
-    shaderPropNames[prefix] = names;
-  }
-
-  props[actualPrefix] = obj;
-  // The object's own enumerable keys in order, as Object.entries gave them,
-  // without its arrays and closure.
-  for (const key in obj) {
-    if (!hasOwnProperty.call(obj, key)) continue;
-    let name = names[key];
-    if (name === undefined) {
-      let transformedKey = key === 'width' ? 'w' : key;
-
-      // If border side and key is width/w, transform to side (bottom/left/right/top)
-      if (side && transformedKey === 'w') {
-        transformedKey = side;
-      }
-
-      name = actualPrefix + '-' + transformedKey;
-      names[key] = name;
+  // Parsed once per object (stylePlan.ts): `border` and `border-w`, ... A
+  // sub-prop the props already hold with that value is not written again
+  // (a facade write repacks); the result is the merge 1.6's writes gave.
+  const parse = shaderParse(prefix, obj);
+  const keys = parse.keys;
+  const values = parse.values;
+  for (let i = 0; i < keys.length; i++) {
+    const name = keys[i]!;
+    const value = values[i];
+    if (props[name] !== value) {
+      props[name] = value;
     }
-    props[name] = obj[key];
   }
 };
 
@@ -508,19 +497,10 @@ const assignEffects = (v: StyleEffects, props: Record<string, unknown>) => {
   if (v.rounded) props.radius = v.rounded.radius;
   if (v.borderRadius) props.radius = v.borderRadius;
   for (const k of EFFECT_SHADER_KEYS) {
-    if (v[k]) parseAndAssignShaderProps(k, v[k], props);
-  }
-};
-
-const assignShaderProp = (
-  key: string,
-  value: unknown,
-  props: Record<string, unknown>,
-) => {
-  if (key === 'rounded' || typeof value === 'number') {
-    props.radius = value;
-  } else {
-    parseAndAssignShaderProps(key, value as Record<string, unknown>, props);
+    const obj = v[k];
+    if (isObject(obj)) {
+      parseAndAssignShaderProps(k, obj, props);
+    }
   }
 };
 
@@ -558,6 +538,120 @@ const hasBorderWidth = (
   }
   return false;
 };
+
+const copyOf = (value: unknown): unknown =>
+  isArray(value) ? value.slice() : value;
+
+/** A renderer `AdvancedProp`, as far as the gradient update reads it. */
+interface AdvancedPropLike {
+  default?: unknown;
+  resolve?: unknown;
+  set?: unknown;
+}
+
+/** The gradient shaders the raw accessors made, by accessor key. */
+const gradientShaders = new WeakMap<object, string>();
+
+/** Marks a key a state change tracks but has not written yet. */
+const UNWRITTEN = {};
+
+/**
+ * The border family: the style keys whose objects write the `border-*`
+ * shader props (a `border` write sets all four widths, a side its own).
+ */
+const BORDER_FAMILY: Record<string, boolean | undefined> = {
+  border: true,
+  borderTop: true,
+  borderRight: true,
+  borderBottom: true,
+  borderLeft: true,
+};
+
+/**
+ * Append the keys of the `$state` block `block` that `keys` does not hold
+ * yet (they are written for the first time). Returns the new count.
+ */
+function trackKeys(
+  block: unknown,
+  keys: string[],
+  count: number,
+  applied: Record<string, unknown>,
+): number {
+  if (!isObject(block)) {
+    return count;
+  }
+  const blockKeys = compileBlock(block).keys;
+  for (let j = 0; j < blockKeys.length; j++) {
+    const key = blockKeys[j]!;
+    let k = 0;
+    while (k < count && keys[k] !== key) {
+      k++;
+    }
+    if (k === count) {
+      if (count < keys.length) {
+        keys[count] = key;
+      } else {
+        keys.push(key);
+      }
+      count++;
+      applied[key] = UNWRITTEN;
+    }
+  }
+  return count;
+}
+
+/** The base value undo restores: theme[key], else style[key] (pinned). */
+function styleFallback(node: ElementNode, key: string): unknown {
+  const theme = node._theme as Record<string, unknown> | undefined;
+  let value = theme !== undefined ? theme[key] : undefined;
+  if (value === undefined) {
+    const style = node._style as Record<string, unknown> | undefined;
+    if (style !== undefined) {
+      value = style[key];
+    }
+  }
+  if (isDev && value === undefined) {
+    console.warn('fallback style key not found: ', key);
+  }
+  return value;
+}
+
+/**
+ * The value `key` takes with `states` on: from the block of the state of
+ * highest precedence that has it (the later in `order`, then the later
+ * added; `order` undefined: the later added), else the base value.
+ */
+function resolveStateValue(
+  node: ElementNode,
+  key: string,
+  states: States,
+  order: DollarString[] | undefined,
+): unknown {
+  let best = -2;
+  let plan: BlockPlan | undefined;
+  let at = 0;
+  for (let i = 0; i < states.length; i++) {
+    const state = states[i]!;
+    const block = node[state];
+    if (isObject(block)) {
+      const candidate = compileBlock(block);
+      const pos = candidate.index[key];
+      if (pos !== undefined) {
+        const rank = order === undefined ? -1 : order.indexOf(state);
+        if (rank >= best) {
+          best = rank;
+          plan = candidate;
+          at = pos;
+        }
+      }
+    }
+  }
+  if (plan === undefined) {
+    return styleFallback(node, key);
+  }
+  // A getter is read now, each time the state is applied (pinned).
+  return plan.getters[at] === true ? plan.block[key] : plan.values[at];
+}
 
 export function convertToShader(
   node: ElementNode,
@@ -650,7 +744,12 @@ export interface ElementNode extends RendererNode, FocusNode {
   _theme?: Styles;
   _lastAnyKeyPressTime?: number;
   _type: 'element' | 'textNode';
+  /** @internal The keys state changes wrote, in first-write order: undo walks them. Reused, never shrunk. */
   _undoStyles?: string[];
+  /** @internal How many entries of `_undoStyles` are live. */
+  _undoCount: number;
+  /** @internal Per key in `_undoStyles`, the value the last state change wrote. */
+  _applied?: Record<string, unknown>;
   _display?: 'flex' | 'block';
   _onLayout?: (this: ElementNode, target: ElementNode) => void;
   _requiresLayout: boolean;
@@ -1129,6 +1228,10 @@ export class ElementNode {
     this._flexY = undefined;
     this._flexW = undefined;
     this._flexH = undefined;
+    // Written by flexLayout when it resizes a container: here, so that
+    // write adds no field.
+    this.preFlexwidth = undefined;
+    this.preFlexheight = undefined;
     this._hasRenderedChildren = undefined;
     this._effects = undefined;
     this._shaderProps = undefined;
@@ -1142,6 +1245,8 @@ export class ElementNode {
     this._theme = undefined;
     this._lastAnyKeyPressTime = undefined;
     this._undoStyles = undefined;
+    this._undoCount = 0;
+    this._applied = undefined;
     this._display = undefined;
     this._onLayout = undefined;
     this._requiresLayout = false;
@@ -1199,14 +1304,15 @@ export class ElementNode {
   set effects(v: StyleEffects) {
     if (!SHADERS_ENABLED) return;
     let target = this.lng.shader || {};
-    if (this.lng.shader?.props) {
-      target = this.lng.shader.props;
+    const props = this.lng.shader?.props;
+    if (props) {
+      target = props;
     }
     assignEffects(v, target);
 
-    const props = this._shaderProps;
-    if (props !== undefined) {
-      if (props !== target) assignEffects(v, props);
+    const kept = this._shaderProps;
+    if (kept !== undefined) {
+      if (kept !== target) assignEffects(v, kept);
       this._syncShaderType();
     }
 
@@ -1357,7 +1463,14 @@ export class ElementNode {
       index = children.length;
       children.push(node as ElementNode);
     } else {
-      insertAt(children, index, node as ElementNode);
+      // Shifted up by hand: splice allocates, and a module helper with this
+      // one call site would be a closure per call under terser's defaults.
+      let i = children.length;
+      children.push(node as ElementNode);
+      for (; i > index; i--) {
+        children[i] = children[i - 1]!;
+      }
+      children[index] = node as ElementNode;
     }
 
     if (!drawn) {
@@ -1393,7 +1506,18 @@ export class ElementNode {
     const children = this.children;
     const index = lastIndexOf(children, node);
     if (index > -1) {
-      removeAt(children, index);
+      // Shifted down by hand: splice allocates the array of removed items,
+      // and a module helper with this one call site would be a closure per
+      // call under terser's defaults.
+      if (index === 0) {
+        children.shift();
+      } else {
+        const last = children.length - 1;
+        for (let i = index; i < last; i++) {
+          children[i] = children[i + 1]!;
+        }
+        children.pop();
+      }
       if (isElementNode(node)) {
         node._detached = true;
         if (node.onRemove) {
@@ -1476,7 +1600,7 @@ export class ElementNode {
     (this.lng as INode).animateProp(
       name,
       value,
-      animationSettings || this.animationSettings || {},
+      animationSettings || this.animationSettings || NO_ANIMATION_SETTINGS,
     );
     // A text's layout prop: its container follows the animated sizes.
     if (
@@ -1505,7 +1629,8 @@ export class ElementNode {
     }
     if (stopped) {
       const total = (settings?.duration ?? 0) + (settings?.delay ?? 0);
-      setTimeout(() => stopped.call(this, name, value), total);
+      // Its arguments through the timer, not a closure per write.
+      setTimeout(fireAnimationStopped, total, this, stopped, name, value);
     }
   }
 
@@ -1519,9 +1644,21 @@ export class ElementNode {
     }
     const controller = (this.lng as IRendererNode).animate(
       props,
-      animationSettings || this.animationSettings || {},
+      animationSettings || this.animationSettings || NO_ANIMATION_SETTINGS,
     );
-    if (this._type === NodeType.TextNode && animatesTextLayout(props)) {
+    // A prop the text's layout reads (inline: a module function with this
+    // one call site would be a closure per call under terser's defaults).
+    if (
+      this._type === NodeType.TextNode &&
+      ('fontSize' in props ||
+        'lineHeight' in props ||
+        'letterSpacing' in props ||
+        'maxWidth' in props ||
+        'maxHeight' in props ||
+        'maxLines' in props ||
+        'w' in props ||
+        'h' in props)
+    ) {
       // Started now or later, again or not at all: the text hears its
       // layouts from now on (`_listenTextLoaded`).
       this._textLayoutAnimated();
@@ -1785,6 +1922,15 @@ export class ElementNode {
       return;
     }
     m.listening = true;
+    this._hearTextLayouts();
+  }
+
+  /**
+   * @internal The listener `_listenTextLoaded` adds, once per text. A method
+   * of its own: an arrow's `this` is allocated in a context on every call of
+   * the method that holds it, and that one runs on every animated write.
+   */
+  _hearTextLayouts(): void {
     (this.lng as IRendererTextNode).on('loaded', () => {
       if (this._textSizeChanged() === true) {
         enqueueLayout(this._parent!);
@@ -1837,7 +1983,9 @@ export class ElementNode {
       // If onDestroy returns a promise, wait for it to resolve before destroying
       // Useful with animations waitUntilStopped method which returns promise
       if (destroyPromise instanceof Promise) {
-        void destroyPromise.then(() => this._destroy());
+        // Bound here, not an arrow: an arrow's `this` is allocated in a
+        // context on every destroy(), a promise or not.
+        void destroyPromise.then(this._destroy.bind(this));
       } else {
         this._destroy();
       }
@@ -1942,9 +2090,49 @@ export class ElementNode {
   }
 
   set states(states: NodeStates) {
-    this._states = this._states
-      ? this._states.merge(states)
-      : new States(this._stateChanged.bind(this), states);
+    const current = this._states;
+    if (current === undefined) {
+      const created = new States(this._stateChanged.bind(this), states);
+      this._states = created;
+      if (this.rendered && created.length > 0) {
+        this._stateChanged();
+      }
+      return;
+    }
+    // An unchanged list is a no-op (design 3.3.3): nothing to re-apply.
+    // "Unchanged" by the rules of States.merge: an array or a string
+    // replaces the list, an object adds its truthy keys (`has`) and removes
+    // its falsy ones. (Inline on purpose here and in the gradient accessor:
+    // terser's default `reduce_funcs` turns a single-use helper into a
+    // closure per call.)
+    const len = current.length;
+    let changed = false;
+    if (isArray(states)) {
+      changed = states.length !== len;
+      for (let i = 0; !changed && i < len; i++) {
+        changed = states[i] !== current[i];
+      }
+    } else if (isString(states)) {
+      changed = len !== 1 || current[0] !== states;
+    } else {
+      for (const key in states) {
+        const state = key as DollarString;
+        if (states[state]) {
+          changed = !current.has(state);
+        } else {
+          for (let i = 0; !changed && i < len; i++) {
+            changed = current[i] === state;
+          }
+        }
+        if (changed) {
+          break;
+        }
+      }
+    }
+    if (!changed) {
+      return;
+    }
+    current.merge(states);
     if (this.rendered) {
       this._stateChanged();
     }
@@ -2110,14 +2298,24 @@ export class ElementNode {
     }
   }
 
+  /**
+   * Apply the `$state` blocks of the active states (design 3.3). The keys
+   * any state wrote since the states were last empty are tracked in
+   * `_undoStyles`, in first-write order; each takes its value from the
+   * active block of highest precedence, else the base value (`theme`, then
+   * `style`, then undefined: pinned). After render a key is written only
+   * when that value differs from the one written last (`_applied`); before
+   * render every key is written, into the props bag, as before 1.7.
+   */
   _stateChanged() {
     if (isDev) log('State Changed: ', this, this.states);
+    const states = this.states;
 
     if (isDev) {
       const div = (this.lng as IRendererNode)?.div;
       if (div) {
-        if (this.states.length > 0) {
-          div.dataset.states = this.states.join(' ');
+        if (states.length > 0) {
+          div.dataset.states = states.join(' ');
         } else {
           delete div.dataset.states;
         }
@@ -2125,89 +2323,171 @@ export class ElementNode {
     }
 
     if (this.forwardStates) {
-      // apply states to children first
-      const states = this.states.slice() as States;
-      this.children.forEach((c) => {
-        c.states = states;
-      });
+      // Children first. They take this list: their setter copies it
+      // (forwardStates overwrites their own states, pinned) and does nothing
+      // when it is unchanged.
+      const children = this.children;
+      for (let i = 0; i < children.length; i++) {
+        children[i]!.states = states;
+      }
     }
 
-    const states = this.states;
-
-    // An empty _undoStyles (left behind once a state style has been undone)
-    // must not force the resolution branch: with nothing to undo and no style
-    // matching any active state, the branch provably assigns nothing, and it
-    // runs on every path element of every focus change.
-    if (
-      (this._undoStyles !== undefined && this._undoStyles.length > 0) ||
-      keyExists(this, states)
-    ) {
-      let stylesToUndo: { [key: string]: any } | undefined;
-      if (this._undoStyles && this._undoStyles.length) {
-        stylesToUndo = {};
-        this._undoStyles.forEach((styleKey) => {
-          let fallbackValue = this.theme[styleKey];
-
-          if (fallbackValue === undefined) {
-            fallbackValue = this.style[styleKey];
-          }
-
-          if (isDev) {
-            if (fallbackValue === undefined) {
-              console.warn('fallback style key not found: ', styleKey);
-            }
-          }
-          stylesToUndo![styleKey] = fallbackValue;
-        });
+    const n = states.length;
+    const count = this._undoCount;
+    if (count === 0) {
+      // Nothing to undo: done unless an active state has a block. This runs
+      // on every path element of every focus change.
+      let i = 0;
+      while (i < n && !isObject(this[states[i]!])) {
+        i++;
       }
-
-      const numStates = states.length;
-      if (numStates === 0) {
-        Object.assign(this, stylesToUndo);
-        this._undoStyles = [];
+      if (i === n) {
         return;
       }
+    }
 
-      let newStyles: Styles;
-      if (numStates === 1) {
-        newStyles = this[states[0] as keyof Styles] as Styles;
-        newStyles = stylesToUndo
-          ? { ...stylesToUndo, ...newStyles }
-          : newStyles;
-      } else {
-        let sortedStates = states as DollarString[];
-        const stateOrder = this.stateOrder || Config.stateOrder;
-        if (stateOrder && stateOrder.length > 0) {
-          sortedStates = states.slice().sort((a, b) => {
-            const aIdx = stateOrder.indexOf(a);
-            const bIdx = stateOrder.indexOf(b);
+    if (this._undoStyles === undefined) {
+      this._undoStyles = [];
+    }
+    if (this._applied === undefined) {
+      this._applied = Object.create(null) as Record<string, unknown>;
+    }
+    this._writeStates(n);
+  }
 
-            // If a state is in the stateOrder, it should have higher specificity
-            // than states not in the stateOrder.
-            if (aIdx !== -1 && bIdx === -1) return 1;
-            if (aIdx === -1 && bIdx !== -1) return -1;
+  /**
+   * The state-style loops of `_stateChanged`, for `n` active states: a
+   * method of its own, so that `_stateChanged`, which runs for every path
+   * element of every focus change, stays the short early-return above. Each
+   * key is written through its setter, as before 1.7: a border or shadow
+   * object merges into the shader props, the later write of a sub-prop
+   * winning.
+   */
+  _writeStates(n: number) {
+    const states = this._states!;
+    const keys = this._undoStyles!;
+    const applied = this._applied!;
+    const diff = this.rendered;
+    let count = this._undoCount;
 
-            return aIdx - bIdx;
-          });
+    // The border family's keys write one set of shader props. When a change
+    // writes some of the tracked family keys and skips the others as
+    // unchanged, a written one may have overwritten what a skipped one holds
+    // (a `border` sets all four widths): then the family is written again,
+    // every tracked key in tracked order, the order 1.6 wrote the merged
+    // object in, so the later key wins as it did. (The shadow is one key.)
+    let borderKeys = 0;
+    let borderWrites = 0;
+
+    if (n === 0) {
+      // Undo every tracked key, in its order (`transition` too: pinned), to
+      // its base value. A setter that throws leaves the keys after it for
+      // the next change, as before 1.7.
+      for (let i = 0; i < count; i++) {
+        const key = keys[i]!;
+        const value = styleFallback(this, key);
+        const border = BORDER_FAMILY[key] === true;
+        if (border) {
+          borderKeys++;
         }
-
-        newStyles = sortedStates.reduce((acc, state) => {
-          const styles = this[state];
-          return styles ? { ...acc, ...styles } : acc;
-        }, stylesToUndo || {});
+        if (!diff || value !== applied[key]) {
+          applied[key] = value;
+          this[key] = value;
+          if (border) {
+            borderWrites++;
+          }
+        }
       }
+      if (borderWrites !== 0 && borderWrites !== borderKeys) {
+        this._rewriteBorderKeys(count);
+      }
+      this._undoCount = 0;
+      return;
+    }
 
-      if (newStyles) {
-        this._undoStyles = Object.keys(newStyles);
-        // Apply transition first
-        if (newStyles.transition !== undefined) {
-          this.transition = newStyles.transition;
+    // Track the active blocks' keys, block by block in precedence order
+    // (lowest first), after the tracked ones: the key order of the merged
+    // object before 1.7, which decides the write order.
+    const stateOrder = this.stateOrder || Config.stateOrder;
+    const order =
+      n > 1 && stateOrder !== undefined && stateOrder.length > 0
+        ? stateOrder
+        : undefined;
+    if (order === undefined) {
+      for (let i = 0; i < n; i++) {
+        count = trackKeys(this[states[i]!], keys, count, applied);
+      }
+    } else {
+      // States not in `order` first, in the order added, then by `order`.
+      let lastRank = -2;
+      let lastPos = -1;
+      for (let done = 0; done < n; done++) {
+        let pick = 0;
+        let pickRank = 0;
+        let found = false;
+        for (let i = 0; i < n; i++) {
+          const rank = order.indexOf(states[i]!);
+          if (
+            (rank > lastRank || (rank === lastRank && i > lastPos)) &&
+            (!found || rank < pickRank)
+          ) {
+            pick = i;
+            pickRank = rank;
+            found = true;
+          }
         }
+        count = trackKeys(this[states[pick]!], keys, count, applied);
+        lastRank = pickRank;
+        lastPos = pick;
+      }
+    }
+    this._undoCount = count;
 
-        // Apply the styles
-        Object.assign(this, newStyles);
-      } else {
-        this._undoStyles = [];
+    // `transition` first, so the other keys animate with it (pinned); one
+    // that resolves to undefined is written in its place.
+    for (let i = 0; i < count; i++) {
+      if (keys[i] === 'transition') {
+        const value = resolveStateValue(this, 'transition', states, order);
+        if (value !== undefined && (!diff || value !== applied.transition)) {
+          applied.transition = value;
+          this.transition = value as ElementNode['transition'];
+        }
+        break;
+      }
+    }
+    for (let i = 0; i < count; i++) {
+      const key = keys[i]!;
+      const value = resolveStateValue(this, key, states, order);
+      const border = BORDER_FAMILY[key] === true;
+      if (border) {
+        borderKeys++;
+      }
+      if (!diff || value !== applied[key]) {
+        applied[key] = value;
+        this[key] = value;
+        if (border) {
+          borderWrites++;
+        }
+      }
+    }
+    if (borderWrites !== 0 && borderWrites !== borderKeys) {
+      // The tracked count as it is now: a setter above may have changed the
+      // states and tracked more keys.
+      this._rewriteBorderKeys(this._undoCount);
+    }
+  }
+
+  /**
+   * Write every tracked border-family key again, in tracked order, with the
+   * value the state change resolved for it (`_applied`): see `_writeStates`.
+   */
+  _rewriteBorderKeys(count: number) {
+    const keys = this._undoStyles!;
+    const applied = this._applied!;
+    for (let i = 0; i < count; i++) {
+      const key = keys[i]!;
+      if (BORDER_FAMILY[key] === true) {
+        this[key] = applied[key];
       }
     }
   }
@@ -2436,14 +2716,23 @@ export class ElementNode {
     this.onCreate?.(this);
     this.onRender?.(this);
 
-    if (node.onEvent) {
-      const onEvent = node.onEvent;
-      // Own enumerable keys in order, as Object.entries gave them.
+    const onEvent = node.onEvent;
+    if (onEvent) {
+      // for-in with an own-property test, as Object.entries (Chrome 54)
+      // reads it: the floor is Chrome 47.
       for (const name in onEvent) {
-        if (!hasOwnProperty.call(onEvent, name)) continue;
-        const handler = onEvent[name as keyof OnEvent]!;
-        if (typeof node.lng.on === 'function') {
-          node.lng.on(name, (_inode, data) => handler.call(node, node, data));
+        if (
+          Object.prototype.hasOwnProperty.call(onEvent, name) &&
+          typeof node.lng.on === 'function'
+        ) {
+          const handler = onEvent[name as keyof OnEvent]!;
+          // The listener captures these block-scoped names, not render()'s
+          // `node`: a captured local is allocated in a context on every
+          // call, onEvent or not.
+          const target = node;
+          node.lng.on(name, (_inode, data) =>
+            handler.call(target, target, data),
+          );
         }
       }
     }
@@ -2518,29 +2807,6 @@ function lastIndexOf<T>(list: T[], item: T): number {
     i--;
   }
   return i === 0 ? -1 : i;
-}
-
-/** Removes `list[index]` without allocating (`splice` returns an array). */
-function removeAt<T>(list: T[], index: number): void {
-  if (index === 0) {
-    list.shift();
-    return;
-  }
-  const last = list.length - 1;
-  for (let i = index; i < last; i++) {
-    list[i] = list[i + 1]!;
-  }
-  list.pop();
-}
-
-/** Inserts `item` at `index` without allocating. */
-function insertAt<T>(list: T[], index: number, item: T): void {
-  let i = list.length;
-  list.push(item);
-  for (; i > index; i--) {
-    list[i] = list[i - 1]!;
-  }
-  list[index] = item;
 }
 
 /** The first rendered element in `children` from `from` on: the renderer sibling to draw before. */
@@ -3245,7 +3511,63 @@ Object.defineProperty(ElementNode.prototype, 'fontStretch', {
 export function createRawShaderAccessor<T>(key: keyof StyleEffects) {
   return {
     set(this: ElementNode, value: T) {
+      const shader = this.lng.shader as IRendererShader | null | undefined;
+      if (
+        shader != null &&
+        isObject(value) &&
+        gradientShaders.get(shader) === key
+      ) {
+        // The gradient shader this accessor made: update it, not a new one,
+        // to the props createShader would have built from `value`: a
+        // declared prop `value` does not name takes its default. The type's
+        // declaration is read here, each set: a gradient is set rarely.
+        const type = shader.shaderType as unknown;
+        const defs = isObject(type) ? type.props : undefined;
+        if (!isObject(defs)) {
+          // The DOM renderer keeps the given object as the props.
+          shader.props = value as IRendererShaderProps;
+        } else {
+          const props = shader.props as Record<string, unknown>;
+          // Props first, then aliases, each in declaration order, as
+          // createShader applies them; an alias only writes when given.
+          for (let pass = 0; pass < 2; pass++) {
+            for (const name in defs) {
+              const def = defs[name];
+              // An AdvancedProp has a default (the registry's test).
+              const advanced = isObject(def) && def.default !== undefined;
+              const alias =
+                advanced && (def as AdvancedPropLike).set !== undefined;
+              if (alias !== (pass === 1)) {
+                continue;
+              }
+              const resolves =
+                advanced && (def as AdvancedPropLike).resolve !== undefined;
+              const given = value[name];
+              if (given !== undefined) {
+                // createShader copies an array, unless the prop resolves it.
+                props[name] = resolves ? given : copyOf(given);
+              } else if (!alias) {
+                // What a shader created without it holds: a prop that
+                // resolves its value resolves its default from undefined, a
+                // plain one takes a copy of its default.
+                props[name] = resolves
+                  ? undefined
+                  : copyOf(advanced ? (def as AdvancedPropLike).default : def);
+              }
+            }
+          }
+        }
+        if (this.rendered && isDomRendererActive()) {
+          // The DOM renderer restyles when its shader is assigned.
+          (this.lng as IRendererNode).shader = shader;
+        }
+        return;
+      }
       this.shader = [key, value as unknown as IRendererShaderProps];
+      const created = this.lng.shader as object | null | undefined;
+      if (created != null) {
+        gradientShaders.set(created, key);
+      }
     },
 
     get(this: ElementNode) {
@@ -3266,47 +3588,84 @@ export function shaderAccessor<T extends Record<string, any> | number>(
 ) {
   return {
     set(this: ElementNode, value: T) {
-      let target = this.lng.shader || {};
-      this._effects = this._effects || {};
-      this._effects[key] = value;
-
+      let effects = this._effects;
+      if (effects === undefined) {
+        effects = this._effects = {};
+      }
+      const prev: unknown = effects[key];
+      effects[key] = value;
+      // The radius (a number written to a border key too), else a border or
+      // shadow object: as before 1.7, its sub-props merge into the shader
+      // props, the later write winning, so a state undo that writes the
+      // style's object back leaves the sub-props it does not name (B18, not
+      // fixed in 1.7); undefined writes nothing.
+      const radius = key === 'rounded' || typeof value === 'number';
+      const shader = this.lng.shader as IRendererShader | null | undefined;
+      const props = shader != null ? shader.props : undefined;
+      let target: Record<string, unknown>;
       let animationSettings: AnimationSettings | undefined;
-
-      if (this.lng.shader?.props) {
-        target = this.lng.shader.props;
-        const transitionKey = key === 'rounded' ? 'borderRadius' : key;
-        if (
-          this.transition &&
-          (this.transition === true || this.transition[transitionKey])
-        ) {
-          target = {};
-          animationSettings =
-            this.transition === true || this.transition[transitionKey] === true
-              ? undefined
-              : (this.transition[transitionKey] as
-                  | undefined
-                  | AnimationSettings);
+      if (props != null) {
+        target = props as Record<string, unknown>;
+        // With a transition for the key, the sub-props go into a target of
+        // their own, which animates (one of `true` is built and dropped, as
+        // before 1.7).
+        const transition = this.transition;
+        if (transition) {
+          const setting =
+            transition === true
+              ? true
+              : transition[key === 'rounded' ? 'borderRadius' : key];
+          if (setting) {
+            target = {};
+            animationSettings =
+              setting === true ? undefined : (setting as AnimationSettings);
+          }
         }
+      } else {
+        // No shader yet: before render, the props bag createShader reads at
+        // render; after render, the props of a new shader. (A rendered DOM
+        // node without one holds the renderer's shared default: never write
+        // into it.)
+        target =
+          shader != null && !this.rendered
+            ? (shader as unknown as Record<string, unknown>)
+            : {};
+      }
+      if (radius) {
+        // Into the shader's props only when it changed. An animated undo to
+        // no radius animates to 0, which is what 1.6.4 showed: renderer 1.9
+        // made a track for undefined and resolved it to [0, 0, 0, 0];
+        // renderer 2.0 makes no track for undefined.
+        if (target === props && value === prev) {
+          return;
+        }
+        target.radius =
+          value === undefined && animationSettings !== undefined ? 0 : value;
+      } else if (isObject(value)) {
+        parseAndAssignShaderProps(key, value, target);
       }
 
-      assignShaderProp(key, value, target);
-
-      const props = this._shaderProps;
-      if (props !== undefined) {
-        const animated = target !== this.lng.shader?.props;
+      // A shader convertToShader made keeps its props and swaps its type when
+      // a border width moves to or from 0. An animated write swaps a border
+      // it adds in before the animation reads its start values; one it
+      // removes stays until the animation stops.
+      const kept = this._shaderProps;
+      if (kept !== undefined) {
+        const animated = target !== props;
         if (animated) this._syncShaderType(target);
-        if (props !== target) assignShaderProp(key, value, props);
+        if (kept !== target) {
+          if (radius) kept.radius = target.radius;
+          else if (isObject(value)) parseAndAssignShaderProps(key, value, kept);
+        }
         if (!animated) this._syncShaderType();
       }
-
       this._writeShaderTarget(target);
-
-      if (animationSettings) {
+      if (animationSettings !== undefined) {
         const animation = this.animate(
           { shaderProps: target },
           animationSettings,
         ).start();
-        if (props !== undefined) {
+        if (kept !== undefined) {
           void animation.waitUntilStopped().then(() => this._syncShaderType());
         }
       }
