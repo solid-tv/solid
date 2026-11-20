@@ -498,6 +498,17 @@ function updateNodeStyles(node: DOMNode | DOMText) {
       // Renderer 1.8 widened `src` to `string | Blob | ImageData`; the DOM
       // renderer only paints string URLs.
       rawImgSrc = props.src;
+    } else if (typeof Blob !== 'undefined' && props.src instanceof Blob) {
+      if (node.blobSrc !== props.src) {
+        node.clearBlobUrl();
+        node.blobSrc = props.src;
+        node.blobUrl = URL.createObjectURL(props.src);
+      }
+      rawImgSrc = node.blobUrl;
+    }
+
+    if (node.blobUrl && rawImgSrc !== node.blobUrl) {
+      node.clearBlobUrl();
     }
 
     if (rawImgSrc) {
@@ -1395,6 +1406,9 @@ export class DOMNode extends EventEmitter implements IRendererNode {
   lazyImageSubTextureProps:
     | InstanceType<lng.TextureMap['SubTexture']>['props']
     | null = null;
+
+  blobUrl: string | null = null;
+  blobSrc: Blob | null = null;
   boundsDirty = true;
   children = new Set<DOMNode>();
   /** Cached result of the last updateNodeStyles call — avoids redundant setAttribute writes. */
@@ -1442,8 +1456,18 @@ export class DOMNode extends EventEmitter implements IRendererNode {
   // Like CoreNode, destroying a node marks its whole subtree destroyed.
   private markDestroyed() {
     this.destroyed = true;
+    this.clearBlobUrl();
     for (const child of this.children) {
       child.markDestroyed();
+    }
+  }
+
+  // clears blob logic
+  clearBlobUrl() {
+    if (this.blobUrl) {
+      URL.revokeObjectURL(this.blobUrl);
+      this.blobSrc = null;
+      this.blobUrl = null;
     }
   }
 
