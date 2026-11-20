@@ -1,4 +1,4 @@
-// Renderer 1.x bootstrap (both arms): the engines are passed in, and shader
+// Renderer 1.x bootstrap (arm A): the engines are passed in, and shader
 // types register on the stage's shader manager, as solid-demo-app does on 1.9.
 import { SdfTextRenderer, WebGlCoreRenderer } from '@solidtv/renderer/webgl';
 import {

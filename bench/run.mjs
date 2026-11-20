@@ -3,7 +3,7 @@
 // drives one fresh Chromium per run with CDP CPU throttling. Methodology and
 // the meaning of every number: docs/perf/README.md.
 //
-//   node bench/run.mjs [--arms A,C] [--scenarios id,...] [--runs 3]
+//   node bench/run.mjs [--arms A,B,C] [--scenarios id,...] [--runs 3]
 //     [--modes time,alloc,profile,count] [--throttle 6] [--skip-build]
 //     [--quick] [--out dir] [--gpu metal|swiftshader|default] [--no-chunks]
 //     [--flex new|old] [--alloc-interval 1] [--profile-interval 50]
@@ -35,7 +35,7 @@ const require = createRequire(import.meta.url);
 
 const { values: args } = parseArgs({
   options: {
-    arms: { type: 'string', default: 'A,C' },
+    arms: { type: 'string', default: 'A,B,C' },
     scenarios: { type: 'string' },
     runs: { type: 'string', default: '3' },
     modes: { type: 'string', default: 'time,alloc,profile,count' },
@@ -249,11 +249,14 @@ function armSource(arm) {
   if (arm === 'A') {
     return { solid: PINS.solidA, renderer: `npm ${PINS.rendererA}` };
   }
-  const dirty =
-    (git(solidRoot, 'status', '--porcelain', '--', 'src') ?? '') !== '';
+  if (arm === 'B') {
+    return { solid: PINS.solidB, renderer: PINS.rendererB };
+  }
+  const dirty = (dir, paths) =>
+    (git(dir, 'status', '--porcelain', '--', ...paths) ?? '') !== '';
   return {
-    solid: `${git(solidRoot, 'rev-parse', '--short', 'HEAD')}${dirty ? '+dirty' : ''}`,
-    renderer: `installed ${ARMS.C.rendererVersion}`,
+    solid: `${git(solidRoot, 'rev-parse', '--short', 'HEAD')}${dirty(solidRoot, ['src']) ? '+dirty' : ''}`,
+    renderer: `${git(ARMS.C.renderer, 'rev-parse', '--short', 'HEAD')}${dirty(ARMS.C.renderer, ['src']) ? '+dirty' : ''}`,
   };
 }
 
@@ -500,7 +503,7 @@ let failures = 0;
 for (const mode of modes) {
   for (const scenario of scenarios) {
     for (let run = 1; run <= runs; run++) {
-      // Arms interleaved within a run set: A, C, A, C, ...
+      // Arms interleaved within a run set: A, B, C, A, B, C, ...
       for (const arm of arms) {
         const r = await runOnce({ origin, arm, scenario, mode, run });
         const file = join(

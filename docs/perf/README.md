@@ -1,12 +1,12 @@
 # Performance measurement: methodology
 
-How `npm run bench` measures the CPU cost of SolidTV on its two benchmark
+How `npm run bench` measures the CPU cost of SolidTV on its three benchmark
 arms, and what each number means.
 
 ## Running it
 
 ```sh
-npm run bench                                   # every scenario, arms A,C, 3 runs, all modes
+npm run bench                                   # every scenario, arms A,B,C, 3 runs, all modes
 npm run bench -- --scenarios thumbnail-focus --runs 5 --modes time
 npm run bench -- --scenarios smoke --runs 1 --quick   # harness smoke test
 node bench/run.mjs --summarize docs/perf/results/<date>   # rebuild summary.md only
@@ -15,7 +15,7 @@ node bench/harness/inclusive.mjs docs/perf/results/<date> # inclusive time (need
 
 | Option               | Default                    | Meaning                                                                                                                                                              |
 | -------------------- | -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--arms`             | `A,C`                      | Arms to run, interleaved within each run set (A, C, A, C, …)                                                                                                         |
+| `--arms`             | `A,B,C`                    | Arms to run, interleaved within each run set (A, B, C, A, B, C, …)                                                                                                   |
 | `--scenarios`        | every scenario but `smoke` | Scenario ids (`bench/src/scenarios`)                                                                                                                                 |
 | `--runs`             | 3                          | Page loads per scenario, arm and mode                                                                                                                                |
 | `--modes`            | `time,alloc,profile,count` | Measurement modes; each is its own page load                                                                                                                         |
@@ -49,30 +49,34 @@ Run the measured series on a quiet machine: the summary records the
 
 ## Arms and builds
 
-| Arm | Solid                      | Renderer                                                       |
-| --- | -------------------------- | -------------------------------------------------------------- |
-| A   | 1.6.4 (`71c170f`)          | npm 1.9.3                                                      |
-| C   | this working tree (`src/`) | the installed `@solidtv/renderer` (`node_modules`), its `dist` |
+| Arm | Solid                                    | Renderer                                                                                        |
+| --- | ---------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| A   | 1.6.4 (`71c170f`)                        | npm 1.9.3                                                                                       |
+| B   | 1.6.4 + renderer v2 lockstep (`f1c8ab0`) | v2 `faf4b9f`                                                                                    |
+| C   | this working tree (`src/`)               | the installed `@solidtv/renderer` (`node_modules`: the `../renderer-v2-solid` link), its `dist` |
 
-`bench/prepare-arms.mjs` prepares arm A under `bench/.arms` (a `git archive`
-of the pinned commit, and `npm pack` of the pinned renderer); arm C is the
-working tree and whatever `node_modules/@solidtv/renderer` resolves to (its
-version is read from its `package.json` and recorded in each result).
-`bench/vite.config.ts` builds one arm (`BENCH_ARM=A|C`): Solid compiled from
-the arm's source, the renderer from its `dist`, terser without mangling,
-`chrome64` target, as the demo app's modern bundle. The renderer bootstrap
-(engines, shader registration) is `bench/src/arm-v1.ts`, picked by the
-renderer's major version. The build uses the arms' real paths: the bundler's
-module ids are real paths, so through a symlinked `bench/.arms` nothing would
-match a chunk or the flex hook. The runner rebuilds every arm it runs unless
+`bench/prepare-arms.mjs` prepares arms A and B under `bench/.arms` (a `git
+archive` of each pinned commit; `npm pack` of A's renderer, and B's renderer
+archived from `../renderer-v2-solid` and built); arm C is the working tree and
+whatever `node_modules/@solidtv/renderer` resolves to (on this branch the
+`../renderer-v2-solid` link, whose `dist` it rebuilds; its major is read from
+its `package.json`). `bench/vite.config.ts` builds one arm (`BENCH_ARM=A|B|C`):
+Solid compiled from the arm's source, the renderer from its `dist`, terser
+without mangling, `chrome64` target, as the demo app's modern bundle. The
+renderer bootstrap (engines, shader registration) is `bench/src/arm-v1.ts`
+(arm A) or `bench/src/arm-v2.ts` (arms B and C), picked by the renderer's
+major version. The build uses the arms' real paths: the bundler's module ids
+are real paths, so through a symlinked `bench/.arms` nothing would match a
+chunk or the flex hook. The runner rebuilds every arm it runs unless
 `--skip-build`, and records each arm's source (`source` in each JSON; C is
 marked `+dirty` when `src/` has uncommitted changes).
 
-While `src/` is unchanged from 1.6.4, **A and C run the same Solid code**, so
-A/C (the ratios in the summary) is the in-session noise floor, plus whatever
-differs between the two renderer versions (the summary lists each arm's
-Solid and renderer; today's lockfile installs 1.9.0). After a change to `src/`,
-A/C is the change's effect (above 1: C is faster or allocates less).
+The summary's ratios are A/B (shipping 1.6.4 on renderer 1.9.3 over the
+lockstep port on renderer v2) and B/C (the lockstep port over the working
+tree, both on renderer v2; above 1: C is faster or allocates less). The
+summary lists each arm's Solid and renderer: B/C is the in-session noise
+floor only when they match (C at `f1c8ab0` on renderer `faf4b9f`: **B and C
+are then the same code**).
 
 **Flex.** solid-demo-app sets `VITE_USE_NEW_FLEX=true`, so apps run
 `src/core/flexLayout.ts`. Every arm is built that way by default (the define
@@ -119,6 +123,9 @@ below).
   warns when it is coarser than 20 µs.
 - `--disable-background-timer-throttling`, `--disable-renderer-backgrounding`
   and `--disable-backgrounding-occluded-windows` keep headless timers honest.
+- Headless Chromium can run `requestAnimationFrame` at 120 Hz (it does on an
+  M4 Pro). Renderer v2 caps at its target frame rate, so every other callback
+  is then an undrawn tick (counted as `undrawnCpu`, a few µs).
 
 ### CPU throttling is a duty cycle
 
@@ -164,7 +171,7 @@ warmup and after the measured ops; the summary flags a run whose last two
 snapshots differ, and a scenario whose final state differs between arms) and
 `opKind(i)` (a label per op; the summary adds one row per kind, so an
 alternating create/destroy workload is not reported as one bimodal number).
-Scenarios use only the public `@solidtv/solid` API both arms share, never the
+Scenarios use only the public `@solidtv/solid` API every arm shares, never the
 renderer directly.
 
 The scenarios (`bench/src/scenarios`): `nav` (Row/Column presses with every
@@ -178,9 +185,9 @@ checks the harness.
 
 `bench/harness/probe.mjs` is injected before the app's first script. It wraps
 `requestAnimationFrame` (each callback timed with `performance.now()` into
-preallocated typed arrays; a callback that ran `gl.clear` drew a frame: the
-renderer clears once per drawn frame) and listens for the renderer's `idle`
-event. For each op:
+preallocated typed arrays; a callback that ran `gl.clear` drew a frame, and
+both renderer majors clear once per drawn frame) and listens for the
+renderer's `idle` event (both majors emit it). For each op:
 
 1. **Alignment.** The op starts in a task right after a rendering step (a rAF,
    then a `MessageChannel` message), so the next frame is a full vsync away.
@@ -195,14 +202,18 @@ event. For each op:
    record).
 4. **`frame`.** The CPU time (callback duration) of the first drawn renderer
    frame after the op: the frame that shows the result. It includes what the
-   framework does inside the frame (Solid's flex on a text's `loaded` event).
-   `total` = handler + tail + frame: keydown dispatch to the end of the
-   renderer frame that shows the result.
+   framework does inside the frame (Solid's flex on a text's `loaded` event
+   in arms A and B; in arm C a text in a flex container is measured in the
+   tail, so only an autosize node's or an animated text's `loaded` relays out
+   here; and on renderer v2 the `idle` listeners, which v2 emits inside the
+   last drawn frame). `total` = handler + tail + frame: keydown dispatch to the
+   end of the renderer frame that shows the result.
 5. **Frames until idle.** Every later callback until the renderer's `idle`
    event: `frames` (drawn), `animCpu` (drawn frames after the first:
-   transitions), `undrawnCpu` (renderer callbacks that drew nothing: the
-   renderer's idle polls), `otherRaf` (callbacks that are not the
-   renderer's). `cpu` = handler + tail + all of those. `settle` = wall time
+   transitions), `undrawnCpu` (renderer callbacks that drew nothing: v1's
+   idle polls, v2's capped ticks and upload-only frames), `otherRaf`
+   (callbacks that are not the renderer's). `cpu` = handler + tail + all of
+   those. `settle` = wall time
    from the op's start to the end of its last drawn frame. `frameDelay` = from
    the tail's end to the first frame's start.
 6. **Idle.** The op is over at the renderer's `idle` event followed by 50 ms
@@ -266,41 +277,38 @@ out-of-memory probe), which shows up as `getError [native] (renderer)`.
 
 Built separately (`BENCH_INSTRUMENT=1` into `dist/<arm>-count`). Per op:
 
-| Count                    | Hook                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
-| ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| flex passes              | Build time: the default export of the arm's `src/core/flex.ts` and `flexLayout.ts` is wrapped (`bench/vite.config.ts`, `countFlexPasses`); one call is one container laid out. `n/a` if the hook did not install (the build warns).                                                                                                                                                                                                                                                                                                                                           |
-| node writes              | Runtime: every configurable setter on the renderer node prototypes (from `renderer.root`, and every node `createNode`/`createTextNode` returns) is wrapped. Only **app writes** count: a setter call made while renderer code is on the stack is skipped (a renderer frame's callback, `createNode`/`createTextNode`/`createShader`/`animate`, another setter, a non-node emitter's dispatch such as a texture's), while the app's listeners the renderer calls (`loaded` and other node events, the renderer's `idle`) run as app code. Per-prop counts in `topWrites.node`. |
-| shader writes            | Runtime: each shader node's `props` (the node's own `definedProps`: one non-enumerable accessor per prop) is swapped for a counting forwarder, at `createShader` and for existing nodes. App writes only, as above.                                                                                                                                                                                                                                                                                                                                                           |
-| in frames                | The app writes (both kinds) made during a renderer frame: Solid's work in listeners the frame calls, such as flex on a text's `loaded`. The renderer steps animations through its setters; that does not count.                                                                                                                                                                                                                                                                                                                                                               |
-| created, creation props  | Nodes created through `createNode`/`createTextNode`, and the keys with a defined value in the props bag passed to them (the renderer applies the bag in its constructor; never counted as writes).                                                                                                                                                                                                                                                                                                                                                                            |
-| animations               | App calls of `animate`/`animateProp` on node prototypes.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| walks per drawn frame    | Iterations of `Stage.drawFrame`'s update loop (counted through reads of `stage.reprocessFrame`).                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
-| loaded (emitted / heard) | `emit('loaded', …)` on nodes, text when the payload's `type` is `'text'`: every emit, and the ones a listener hears (listeners are in `eventListeners`). Renderer 1.x emits on every text layout and texture load whether or not anything listens.                                                                                                                                                                                                                                                                                                                            |
-| text layout calls and ms | `stage.textRenderers.sdf.renderText` (cache lookup and layout), timed in the instrumented build.                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
-| layout cache hit rate    | `renderText` returning a layout object it returned before (a hit) or a new one (a miss); layouts made before the counters were installed count as a miss on first sight, which the warmup absorbs.                                                                                                                                                                                                                                                                                                                                                                            |
-| frames to final layout   | The index (1 = the first drawn frame, 0 = during the handler or tail) of the last renderer frame in which a flex pass, a text layout or a text `loaded` happened; `ms to final layout` is from the op's start to that frame's end (instrumented timing).                                                                                                                                                                                                                                                                                                                      |
+| Count                    | Hook                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| flex passes              | Build time: the default export of the arm's `src/core/flex.ts` and `flexLayout.ts` is wrapped (`bench/vite.config.ts`, `countFlexPasses`); one call is one container laid out. `n/a` if the hook did not install (the build warns).                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| node writes              | Runtime: every configurable setter on the renderer node prototypes (from `renderer.root`, and every node `createNode`/`createTextNode` returns) is wrapped. Only **app writes** count: a setter call made while renderer code is on the stack is skipped (a renderer frame's callback, `createNode`/`createTextNode`/`createShader`/`animate`, another setter, a non-node emitter's dispatch such as a texture's), while the app's listeners the renderer calls (`loaded` and other node events, the renderer's `idle`) run as app code. v2's `Node.insertBefore` (since `dc09e5e`; the second way, beside the `parent` setter, to attach a child) counts as a write too. Per-prop counts in `topWrites.node`. |
+| shader writes            | Runtime: each shader node's `props` (v1: the node's own `definedProps`, one non-enumerable accessor per prop; v2: a facade with non-configurable prototype accessors) is swapped for a counting forwarder, at `createShader` and for existing nodes. App writes only, as above.                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| in frames                | The app writes (both kinds) made during a renderer frame: Solid's work in listeners the frame calls, such as flex on text `loaded` (arms A and B; arm C measures a text in a flex container in the tail). Renderer v1 steps animations through its setters, v2 writes its arrays; neither counts.                                                                                                                                                                                                                                                                                                                                                                                                              |
+| created, creation props  | Nodes created through `createNode`/`createTextNode`, and the keys with a defined value in the props bag passed to them. Renderer v2 applies the bag through its public setters, v1 in its constructor; both are counted here, the same way, and never as writes.                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| animations               | App calls of `animate`/`animateProp` on node prototypes.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| walks per drawn frame    | v2: `renderer.scene.run` (one `ScenePass.run` per walk; `RendererCore.update` walks up to 3 times). v1: iterations of `Stage.drawFrame`'s update loop (counted through reads of `stage.reprocessFrame`).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| loaded (emitted / heard) | `emit('loaded', …)` on nodes, text when the payload's `type` is `'text'`: every emit, and the ones a listener hears (both majors keep listeners in `eventListeners`). v1 emits on every text layout and texture load whether or not anything listens; v2 queues the event only for a node with a listener, so its two numbers are equal.                                                                                                                                                                                                                                                                                                                                                                       |
+| text layout calls and ms | v2: `renderer.textNodes.lay` (every layout, from a walk's visit or from `TextNode.measure()`: a cache lookup, and the layout on a miss; the renderer's `407b973` and later), else `renderer.textNodes.layoutText` (every walk visit of a text node with `DIRTY_LAYOUT`, which in `faf4b9f` lays out inline: arm B). v1: `stage.textRenderers.sdf.renderText` (cache lookup and layout). Timed in the instrumented build; `layoutText`'s time includes the visit's block placement, `lay`'s does not.                                                                                                                                                                                                           |
+| layout cache hit rate    | v2: `renderer.textNodes.cache.get` hits over lookups (the hook forwards its arguments whatever the signature: a key string in `faf4b9f`, a font record id and the text props since `87633b8`). v1: `renderText` returning a layout object it returned before (a hit) or a new one (a miss); layouts made before the counters were installed count as a miss on first sight, which the warmup absorbs.                                                                                                                                                                                                                                                                                                          |
+| frames to final layout   | The index (1 = the first drawn frame, 0 = during the handler or tail) of the last renderer frame in which a flex pass, a text layout or a text `loaded` happened; `ms to final layout` is from the op's start to that frame's end (instrumented timing).                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
 
 Hooks. Every one is looked up by name at runtime (the flex wrap at build
-time) and the page reports what it found (`hooks` in the count JSON):
+time) and the page reports what it found (`hooks` in the count JSON). A
+renderer is not a fixed target: arm C follows `../renderer-v2-solid`, which
+renamed and restructured the text path between `faf4b9f` and `6392ce4`.
 
-| Hook (`hooks.<key>`)                    | Feeds                                            | Renderer 1.x                                 |
-| --------------------------------------- | ------------------------------------------------ | -------------------------------------------- |
-| `flexHooks` (build time)                | flex passes, frames to final layout              | default export of `flex.ts`, `flexLayout.ts` |
-| `nodeAccessors`                         | node writes, in frames                           | node prototype setters                       |
-| shader `props` swap (`shaderUnwrapped`) | shader writes                                    | `definedProps` accessors                     |
-| `createHook`                            | created, creation props                          | `createNode`, `createTextNode`               |
-| `animateHooks`                          | animations                                       | `animate`, `animateProp`                     |
-| `walkHook`                              | walks, walks/drawn frame                         | `Stage.drawFrame` loop iterations            |
-| `drawHook`                              | drawn frames, walks/drawn frame                  | `gl.clear`                                   |
-| `loadedHook`                            | loaded (emitted / heard), frames to final layout | `emit` on the node prototype chain           |
-| `textHook`                              | text layout calls and ms, frames to final layout | `SdfTextRenderer.renderText`                 |
-| `cacheHook`                             | layout cache hit rate                            | `renderText` layout identity                 |
-| `loopHook`                              | (errors only, below)                             | `stage.options.handleLoopError`              |
-
-The probe also carries the hooks for `@solidtv/renderer` 2.x (`ScenePass.run`,
-`TextNodes.lay`, `LayoutCache.get`, `insertBefore`, `settings.handleLoopError`),
-each labelled "v2" in `probe.mjs`: they install only when the renderer has
-those names, so on 1.x they never run.
+| Hook (`hooks.<key>`)                    | Feeds                                            | A: v1 1.9.3                                  | B: v2 `faf4b9f`            | C: v2 `6392ce4` and later |
+| --------------------------------------- | ------------------------------------------------ | -------------------------------------------- | -------------------------- | ------------------------- |
+| `flexHooks` (build time)                | flex passes, frames to final layout              | default export of `flex.ts`, `flexLayout.ts` | same                       | same                      |
+| `nodeAccessors`                         | node writes, in frames                           | node prototype setters                       | same                       | same, and `insertBefore`  |
+| shader `props` swap (`shaderUnwrapped`) | shader writes                                    | `definedProps` accessors                     | prototype facade           | same                      |
+| `createHook`                            | created, creation props                          | `createNode`, `createTextNode`               | same                       | same                      |
+| `animateHooks`                          | animations                                       | `animate`, `animateProp`                     | same                       | same                      |
+| `walkHook`                              | walks, walks/drawn frame                         | `Stage.drawFrame` loop iterations            | `ScenePass.run`            | same                      |
+| `drawHook`                              | drawn frames, walks/drawn frame                  | `gl.clear`                                   | same                       | same                      |
+| `loadedHook`                            | loaded (emitted / heard), frames to final layout | `emit` on the node prototype chain           | same                       | same                      |
+| `textHook`                              | text layout calls and ms, frames to final layout | `SdfTextRenderer.renderText`                 | `TextNodes.layoutText`     | `TextNodes.lay`           |
+| `cacheHook`                             | layout cache hit rate                            | `renderText` layout identity                 | `LayoutCache.get`          | `LayoutCache.get`         |
+| `loopHook`                              | (errors only, below)                             | `stage.options.handleLoopError`              | `settings.handleLoopError` | same                      |
 
 A count whose hook found nothing is **`n/a`, never 0**: the hook stays `null`
 in the page (for node writes, animations and shader writes: no setter or
@@ -308,28 +316,29 @@ method wrapped, or a shader whose `props` could not be swapped), and
 `countStats` (`bench/harness/analyze.mjs`) reports what it feeds as `n/a`.
 A `n/a` in a cell means the hook needs updating for that renderer: look for
 its renamed function and add it next to the others in `installCounters`
-(`bench/harness/probe.mjs`). Frames to final layout is `n/a` unless the flex,
-text and `loaded` hooks are all there, since it reads their sum.
+(`bench/harness/probe.mjs`); prefer a small opt-in probe hook in the
+renderer's source over guessing. Frames to final layout is `n/a` unless the
+flex, text and `loaded` hooks are all there, since it reads their sum.
 
 A hook that **throws** is an error, not a zero. Each hook forwards every
 argument it is called with, and an exception that passes through one is
 counted per hook (`hooks.errors`: name, times, first stack), logged once with
 `console.error` and added to the run's `errors`; so is a hook whose install
 threw (`<hook> (install)`). The run is kept as JSON, left out of the summary
-and the runner exits 1. The renderer's frame loop swallows what a frame or a
-listener it calls throws and hands it to `handleLoopError`, a no-op by
-default (`stage.options.handleLoopError`, a copy of the setting made when the
-Stage is built, so the setting itself is not read again): the frame is not
-drawn and is tried again, which reads as zero drawn frames and zero counts.
-So the probe also counts what reaches it (`renderer frame loop`). An
-exception is charged once, to the innermost hook that saw it.
+and the runner exits 1. Both renderers' frame loops swallow what a frame or a
+listener it calls throws and hand it to `handleLoopError`, a no-op by default
+(v2: `settings.handleLoopError`; v1 1.9.3: `stage.options.handleLoopError`, a
+copy of the setting made when the Stage is built, so the setting itself is not
+read again): the frame is not drawn and is tried again, which reads as zero
+drawn frames and zero counts. So the probe also counts what reaches it
+(`renderer frame loop`). An exception is charged once, to the innermost hook
+that saw it.
 
 ## Noise
 
-- **In-session control:** while `src/` is unchanged, A and C are the same
-  Solid code; their ratio in the summary is the noise floor of that series
-  (with the renderer-version caveat above). An effect smaller than that
-  spread is not a result.
+- **In-session control:** when B and C are the same code (above), their
+  ratio in the summary is the noise floor of that series. An effect smaller
+  than that spread is not a result.
 - **Runs:** a "faster" claim needs n ≥ 3 runs that beat the noise floor. Use
   more runs (`--runs 5`) for effects near it.
 - **Throttling** adds up to ±0.43 ms per op (above); means over 60 ops reduce
@@ -362,3 +371,17 @@ exception is charged once, to the innermost hook that saw it.
 
 This harness is the in-browser, per-scenario measurement on a desktop CPU
 under throttling; it is not a substitute for measuring on a device.
+
+## The demo app and micro-benchmarks
+
+`bench/demo` runs solid-demo-app (its 1.7 port, `../solid-demo-app-1.7`) per
+arm; the demo's own `#/benchmark` and the on-device method are in its
+`BENCHMARKING.md`.
+
+| Script                           | What it does                                                                                                                |
+| -------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| `bench/demo/run-demo.mjs`        | Builds the demo per arm into `dist-bench/<arm>` and runs its `#/benchmark` under CDP throttling                             |
+| `bench/demo/route-times.mjs`     | Times each demo route from the hash change to the page settling, per arm                                                    |
+| `bench/demo/check-routes.mjs`    | Opens every route of a demo build and reports console errors, page errors and failed requests                               |
+| `bench/demo/bundle-copies.mjs`   | Checks from a build's sourcemaps that it bundles one copy each of `solid-js` and `@solidtv/renderer`                        |
+| `bench/micro/accessors.test.tsx` | ElementNode's forwarded-prop accessors on real renderer v2 handles (`npx vitest run --config=bench/micro/vitest.config.ts`) |

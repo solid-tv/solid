@@ -477,13 +477,13 @@ export function writeSummary(dir) {
   L.push('## Ratios (medians over runs)');
   L.push('');
   L.push(
-    "A/C: arm A's value over arm C's (above 1: C is faster or allocates less). The arms' Solid and renderer are listed above: when they are the same code, A/C is the in-session noise floor.",
+    "A/B: shipping 1.6.4 on renderer 1.9.3 over the lockstep port on renderer v2. B/C: the lockstep port over the working tree, both on renderer v2 (above 1: C is faster or allocates less). The arms' Solid and renderer are listed above: when B and C are the same code, B/C is the in-session noise floor.",
   );
   L.push('');
   L.push(
-    '| scenario | A/C total | A/C handler | A/C frame | A/C bytes/op | A/C writes/op |',
+    '| scenario | A/B total | B/C total | A/B handler | B/C handler | A/B frame | B/C frame | A/B bytes/op | B/C bytes/op | A/B writes/op | B/C writes/op |',
   );
-  L.push('| --- | --- | --- | --- | --- | --- |');
+  L.push('| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |');
   for (const s of scenarios) {
     const arms = by.get(s);
     const tm = (a, f) =>
@@ -497,7 +497,7 @@ export function writeSummary(dir) {
     const wr = (a) =>
       arms.has(a) ? median(arms.get(a).count.map((r) => r.stats.writes)) : null;
     L.push(
-      `| ${s} | ${ratio(tm('A', 'total'), tm('C', 'total'))} | ${ratio(tm('A', 'handler'), tm('C', 'handler'))} | ${ratio(tm('A', 'frame'), tm('C', 'frame'))} | ${ratio(al('A'), al('C'))} | ${ratio(wr('A'), wr('C'))} |`,
+      `| ${s} | ${ratio(tm('A', 'total'), tm('B', 'total'))} | ${ratio(tm('B', 'total'), tm('C', 'total'))} | ${ratio(tm('A', 'handler'), tm('B', 'handler'))} | ${ratio(tm('B', 'handler'), tm('C', 'handler'))} | ${ratio(tm('A', 'frame'), tm('B', 'frame'))} | ${ratio(tm('B', 'frame'), tm('C', 'frame'))} | ${ratio(al('A'), al('B'))} | ${ratio(al('B'), al('C'))} | ${ratio(wr('A'), wr('B'))} | ${ratio(wr('B'), wr('C'))} |`,
     );
   }
   L.push('');
