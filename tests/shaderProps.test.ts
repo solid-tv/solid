@@ -69,8 +69,10 @@ v.describe('border and shadow shader props', () => {
     v.expect(Object.keys(bagOf(node))).toEqual(['border', 'border-w']);
   });
 
+  // A border or shadow object is parsed once and cached by identity (design
+  // 3.3.1): changing it in place is not seen. A new object is.
   v.test(
-    'an object changed in place and written again writes its new values',
+    'an object changed in place and written again keeps its first values; a new object writes',
     () => {
       const node = new ElementNode('view');
       const border = { color: 0xff0000ff, width: 2 };
@@ -78,6 +80,10 @@ v.describe('border and shadow shader props', () => {
       border.color = 0x00ff00ff;
       border.width = 7;
       node.border = border;
+      v.expect(bagOf(node)['border-color']).toBe(0xff0000ff);
+      v.expect(bagOf(node)['border-w']).toBe(2);
+
+      node.border = { ...border };
       v.expect(bagOf(node)['border-color']).toBe(0x00ff00ff);
       v.expect(bagOf(node)['border-w']).toBe(7);
     },
