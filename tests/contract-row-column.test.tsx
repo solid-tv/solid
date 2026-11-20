@@ -898,6 +898,89 @@ v.describe('Row and Column: transitions and throttleInput', () => {
   );
 
   v.it(
+    'the merged transition is one object per direction and base `transition`, not one per press (1.7)',
+    async () => {
+      let row!: lng.ElementNode;
+      const [base, setBase] = s.createSignal<lng.NodeProps['transition']>();
+      dispose = await mount(() => (
+        <view width={1920} height={1080}>
+          <Row ref={row} autofocus transition={base()}>
+            {items(6)}
+          </Row>
+        </view>
+      ));
+      await press('ArrowRight');
+      const right = row.transition;
+      await press('ArrowRight');
+      v.expect(row.transition).toBe(right);
+      await press('ArrowLeft');
+      const left = row.transition;
+      v.expect(left).not.toBe(right);
+      await press('ArrowLeft', 'ArrowRight');
+      v.expect(row.transition).toBe(right);
+
+      // A new base transition from the app gives new merged objects, again
+      // one per direction.
+      setBase({ alpha: true });
+      await press('ArrowRight');
+      const right2 = row.transition;
+      v.expect(right2).toEqual({
+        x: { duration: 180, easing: 'cubic-bezier(0.2, 0, 0, 1)' },
+        alpha: true,
+      });
+      await press('ArrowRight');
+      v.expect(row.transition).toBe(right2);
+    },
+  );
+
+  v.it(
+    'Rows without a `transition` do not share a merged transition object (1.7)',
+    async () => {
+      let r0!: lng.ElementNode;
+      let r1!: lng.ElementNode;
+      dispose = await mount(() => (
+        <view width={1920} height={1080}>
+          <Column autofocus scroll="none">
+            <Row ref={r0}>{items(3)}</Row>
+            <Row ref={r1}>{items(3)}</Row>
+          </Column>
+        </view>
+      ));
+      await press('ArrowRight', 'ArrowDown', 'ArrowRight');
+      v.expect(r0.transition).toEqual(r1.transition);
+      v.expect(r0.transition).not.toBe(r1.transition);
+    },
+  );
+
+  v.it(
+    'Rows given the same `transition` object do not share a merged transition object (1.7)',
+    async () => {
+      let r0!: lng.ElementNode;
+      let r1!: lng.ElementNode;
+      const shared = { alpha: true };
+      dispose = await mount(() => (
+        <view width={1920} height={1080}>
+          <Column autofocus scroll="none">
+            <Row ref={r0} transition={shared}>
+              {items(3)}
+            </Row>
+            <Row ref={r1} transition={shared}>
+              {items(3)}
+            </Row>
+          </Column>
+        </view>
+      ));
+      await press('ArrowRight', 'ArrowDown', 'ArrowRight');
+      v.expect(r0.transition).toEqual({
+        x: { duration: 180, easing: 'cubic-bezier(0.2, 0, 0, 1)' },
+        alpha: true,
+      });
+      v.expect(r0.transition).toEqual(r1.transition);
+      v.expect(r0.transition).not.toBe(r1.transition);
+    },
+  );
+
+  v.it(
     'throttleInput on a Row: the same key within the window is dropped; another key is not',
     async () => {
       let now = 1000;
