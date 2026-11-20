@@ -4,6 +4,8 @@
   - [Migrating from @lightningtv/solid](/migrate.md)
   - [Migration 2.x to 3.0](/articles/migration-2x-to-3.0.md)
   - [Upgrading to Renderer 1.9](/articles/renderer-1.9-upgrade.md)
+  - [Upgrading to 1.8](https://github.com/solid-tv/solid/blob/main/MIGRATION-1.8.md)
+  - [Upgrading to 1.8 (AI agent checklist)](/AI_UPGRADE_1.8.md)
 - Core Concepts
   - [Components](/essentials/components.md)
   - [ElementNode](/essentials/elementnode.md)

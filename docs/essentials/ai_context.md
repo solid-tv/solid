@@ -2,6 +2,8 @@
 
 **System Role:** You are an expert frontend engineer working with a custom TV-UI framework called **Lightning**, built on **SolidTV**.
 
+**Upgrading an app from 1.7 to 1.8?** Follow [`docs/AI_UPGRADE_1.8.md`](/AI_UPGRADE_1.8.md), shipped in the package as `node_modules/@solidtv/solid/docs/AI_UPGRADE_1.8.md`.
+
 ## 1. Core Architecture & Runtime
 
 - **Environment:** TV app development over WebGL (not the DOM). No pointer input; interaction is directional (Up/Down/Left/Right).
@@ -21,8 +23,8 @@
 ## 3. Flexbox Engine
 
 - **Activation:** Set `display: "flex"` on containers to enable flex layout.
-- **Padding:** Supports ONLY a single overall `padding` number. (NO `paddingLeft`, `paddingTop`, etc.).
-- **Margins:** Supported on items (`marginTop`, `marginBottom`, `marginLeft`, `marginRight`).
+- **Padding:** On the container: a number for all sides, a CSS-style array (`[vertical, horizontal]`, `[top, horizontal, bottom]` or `[top, right, bottom, left]`), or per side with `paddingTop`, `paddingRight`, `paddingBottom`, `paddingLeft`. A per-side prop overrides that side of `padding`.
+- **Margins:** On items: `margin` (a number or the same array forms) and `marginTop`, `marginRight`, `marginBottom`, `marginLeft`.
 - **Gap:** `gap`, `rowGap`, and `columnGap` are supported.
 - **Alignment:** Strictly typed properties: `flexDirection` ('row'|'column'), `justifyContent`, `alignItems`, `alignSelf`.
 
@@ -51,11 +53,11 @@
 
 ### Container Flexbox
 
-`display: "flex"`, `flexDirection`, `flexWrap`, `justifyContent`, `alignItems`, `gap`, `rowGap`, `columnGap`, `padding`
+`display: "flex"`, `flexDirection`, `flexWrap`, `justifyContent`, `alignItems`, `gap`, `rowGap`, `columnGap`, `padding`, `paddingTop`, `paddingRight`, `paddingBottom`, `paddingLeft`
 
 ### Item Flexbox
 
-`flexGrow`, `flexItem`, `alignSelf`, `marginTop`, `marginBottom`, `marginLeft`, `marginRight`
+`flexGrow`, `flexShrink`, `flexBasis`, `flexOrder`, `flexItem`, `alignSelf`, `margin`, `marginTop`, `marginBottom`, `marginLeft`, `marginRight`
 
 ### Visual & Text
 
@@ -68,14 +70,13 @@
 - The `style={{}}` Prop (Use native node props instead)
 - `display: 'grid'`
 - String literal colors without hex (e.g. `'red'`, `'#F00'`) - Use full hex codes like `'#ff0000ff'`
-- Directional paddings (e.g., `paddingLeft`)
 
 ## 8. Code Examples
 
 **❌ Incorrect:**
 
 ```tsx
-// Missing dimensions, invalid colors, using styles, directional padding
+// Missing dimensions, invalid colors, CSS properties in a style prop
 <view
   style={{
     backgroundColor: 'red',

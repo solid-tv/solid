@@ -70,5 +70,5 @@ The `@solidtv/source` custom import condition resolves to source `.ts` files ins
 - Colors must be 8-char hex strings (e.g., `"#ff0000ff"`). No named colors.
 - Use `color` not `background`. Use object structures for `border`/`shadow`.
 - No `style={{}}`, no CSS classes, no DOM elements.
-- Flex: `display: "flex"` activates it. Only single `padding` number (no `paddingLeft` etc.). Margins, gap, alignItems, justifyContent all supported.
+- Flex: `display: "flex"` activates it. `padding` takes a number, a CSS-style array, or per-side `paddingTop`/`paddingRight`/`paddingBottom`/`paddingLeft`. Margins (number, array or per side), gap, alignItems, justifyContent, flexGrow, flexShrink and flexBasis all supported.
 - Focus: `onFocusChanged`, `onFocus`, `onBlur`, `onEnter`, `onUp`/`onDown`/`onLeft`/`onRight`. One item should have `autofocus`. `Row`/`Column` manage child focus automatically.

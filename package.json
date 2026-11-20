@@ -130,7 +130,9 @@
     "LICENSE",
     "NOTICE",
     "README.md",
-    "docs/AI_CODING_GUIDELINES.md"
+    "MIGRATION-1.8.md",
+    "docs/AI_CODING_GUIDELINES.md",
+    "docs/AI_UPGRADE_1.8.md"
   ],
   "packageManager": "pnpm@10.33.4",
   "publishConfig": {
