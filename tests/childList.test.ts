@@ -46,8 +46,8 @@ v.describe('child list', () => {
     v.expect(ids(parent)).toEqual(['d', 'b', 'c', 'a']);
     parent.insertChild(a, b); // backward
     v.expect(ids(parent)).toEqual(['d', 'a', 'b', 'c']);
-    parent.insertChild(b, b); // before itself: appended
-    v.expect(ids(parent)).toEqual(['d', 'a', 'c', 'b']);
+    parent.insertChild(b, b); // before itself: stays in place (B19)
+    v.expect(ids(parent)).toEqual(['d', 'a', 'b', 'c']);
   });
 
   v.test('moving a child from another parent', () => {

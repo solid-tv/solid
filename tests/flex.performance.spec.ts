@@ -1,5 +1,5 @@
 import { ElementNode } from '../src/core/elementNode.ts';
-import calculateFlex from '../src/core/flex.ts';
+import calculateFlex from '../src/core/flexLayout.ts';
 import {
   describe,
   it,

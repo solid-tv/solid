@@ -1145,7 +1145,16 @@ function updateDOMTextSize(node: DOMText, emitLoaded = true): void {
       break;
   }
 
-  if (emitLoaded && (!node.loaded || dimensionsChanged)) {
+  // Against the size last emitted, not the size before this measure: a
+  // `measure()` (Solid, before its layout) takes the new size without
+  // emitting, and `loaded` listeners must still hear it.
+  if (
+    emitLoaded &&
+    (!node.loaded ||
+      dimensionsChanged ||
+      node.w !== node.loadedW ||
+      node.h !== node.loadedH)
+  ) {
     const payload: lng.NodeTextLoadedPayload = {
       type: 'text',
       dimensions: {
@@ -1153,8 +1162,40 @@ function updateDOMTextSize(node: DOMText, emitLoaded = true): void {
         h: node.h,
       },
     };
+    node.loadedW = node.w;
+    node.loadedH = node.h;
     node.emit('loaded', payload);
     node.loaded = true;
+  }
+}
+
+/**
+ * Whether the text's font is loaded, as `document.fonts.check` says (a
+ * family no font face names counts as loaded: a system font). Without a
+ * FontFaceSet, or for a font string it cannot parse, it is taken as loaded.
+ */
+function isFontLoaded(node: DOMText): boolean {
+  if (typeof document === 'undefined') {
+    return true;
+  }
+  const fonts = document.fonts as FontFaceSet | undefined;
+  if (
+    fonts === undefined ||
+    fonts === null ||
+    typeof fonts.check !== 'function'
+  ) {
+    return true;
+  }
+  let font = node.font;
+  if (font === undefined) {
+    const props = node.props;
+    font = `${props.fontStyle} ${props.fontWeight} ${props.fontSize}px "${props.fontFamily}"`;
+    node.font = font;
+  }
+  try {
+    return fonts.check(font);
+  } catch {
+    return true;
   }
 }
 
@@ -1428,6 +1469,59 @@ export class DOMNode extends EventEmitter implements IRendererNode {
     this.boundsDirty = true;
     this.markChildrenBoundsDirty();
     updateNodeParent(this);
+  }
+
+  /**
+   * Renderer v2's `Node.insertBefore`: makes `child` a child of this node,
+   * before `before` (`null`, or a node that is not a child, appends); a child
+   * of this node moves, and one placed before itself stays. A destroyed
+   * parent or child does nothing; a destroyed `before` appends. The div order
+   * is the paint order among equal z-index, as v2's sibling order is its
+   * draw order.
+   */
+  insertBefore(child: IRendererNode, before: IRendererNode | null): void {
+    if (
+      !(child instanceof DOMNode) ||
+      child === before ||
+      !elMap.has(this) ||
+      !elMap.has(child)
+    ) {
+      return;
+    }
+    const anchor =
+      before instanceof DOMNode &&
+      before.props.parent === this &&
+      elMap.has(before)
+        ? before
+        : null;
+
+    // A new parent: adds it to this node's children and appends its div.
+    child.parent = this;
+
+    const children = this.children;
+    children.delete(child);
+    if (anchor === null) {
+      children.add(child);
+      this.div.appendChild(child.div);
+    } else {
+      // A Set keeps insertion order: add the child at the end, then move the
+      // anchor and everything after it behind the child (no array: stop at
+      // the last one before the child, as re-added entries come after it).
+      let last: DOMNode | undefined;
+      for (const c of children) last = c;
+      children.add(child);
+      let moving = false;
+      for (const c of children) {
+        if (c === anchor) moving = true;
+        if (moving) {
+          children.delete(c);
+          children.add(c);
+        }
+        if (c === last) break;
+      }
+      this.div.insertBefore(child.div, anchor.div);
+    }
+    this.markChildrenBoundsDirty();
   }
 
   public markChildrenBoundsDirty() {
@@ -1883,6 +1977,11 @@ export class DOMNode extends EventEmitter implements IRendererNode {
 
 class DOMText extends DOMNode {
   public loaded = false;
+  /** The size `loaded` last told (updateDOMTextSize). */
+  public loadedW = 0;
+  public loadedH = 0;
+  /** Its CSS font, for document.fonts.check; undefined once a font prop changes. */
+  public font: string | undefined = undefined;
 
   constructor(
     stage: IRendererStage,
@@ -1902,6 +2001,21 @@ class DOMText extends DOMNode {
     super.destroy();
   }
 
+  /**
+   * Renderer v2's `TextNode.measure()`: sizes the text now, synchronously
+   * (`getBoundingClientRect`), when its font is loaded, and returns true.
+   * While it is not (document.fonts.check), returns false and measures
+   * nothing: the async measurement emits `loaded` once it is. False for a
+   * destroyed node too.
+   */
+  measure(): boolean {
+    if (!elMap.has(this) || !isFontLoaded(this)) {
+      return false;
+    }
+    updateDOMTextSize(this, false);
+    return true;
+  }
+
   get text() {
     return this.props.text;
   }
@@ -1917,6 +2031,7 @@ class DOMText extends DOMNode {
   set fontFamily(v) {
     if (this.props.fontFamily === v) return;
     this.props.fontFamily = v;
+    this.font = undefined;
     updateNodeStyles(this);
     scheduleUpdateDOMTextMeasurement(this);
   }
@@ -1926,6 +2041,7 @@ class DOMText extends DOMNode {
   set fontSize(v) {
     if (this.props.fontSize === v) return;
     this.props.fontSize = v;
+    this.font = undefined;
     updateNodeStyles(this);
     scheduleUpdateDOMTextMeasurement(this);
   }
@@ -1935,6 +2051,7 @@ class DOMText extends DOMNode {
   set fontStyle(v) {
     if (this.props.fontStyle === v) return;
     this.props.fontStyle = v;
+    this.font = undefined;
     updateNodeStyles(this);
     scheduleUpdateDOMTextMeasurement(this);
   }
@@ -1944,6 +2061,7 @@ class DOMText extends DOMNode {
   set fontWeight(v) {
     if (this.props.fontWeight === v) return;
     this.props.fontWeight = v;
+    this.font = undefined;
     updateNodeStyles(this);
     scheduleUpdateDOMTextMeasurement(this);
   }

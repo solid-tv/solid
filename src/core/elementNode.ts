@@ -16,12 +16,7 @@ import {
   type DollarString,
 } from './intrinsicTypes.js';
 import States, { type NodeStates } from './states.js';
-import calculateFlexOld from './flex.js';
-import calculateFlexNew from './flexLayout.js';
-
-const calculateFlex = import.meta.env?.VITE_USE_NEW_FLEX
-  ? calculateFlexNew
-  : calculateFlexOld;
+import calculateFlex, { getArrayValue } from './flexLayout.js';
 import {
   log,
   isArray,
@@ -53,6 +48,7 @@ import {
   FocusNode,
 } from './focusManager.js';
 import { initClickInspector } from './clickInspector.js';
+import { onFontLoaded } from './fontLoaded.js';
 
 import {
   IRendererNode,
@@ -65,25 +61,65 @@ import {
 
 // Unified post-mutation scheduler.
 //
-// Three phases run in one microtask (or one renderer-tick callback):
+// Three phases run in one microtask (or, for a `loaded` handler, in the
+// renderer frame between its walks: schedulePostMutationInFrame):
 //   1. delete-flush — destroy nodes that were removed and not re-inserted
-//   2. layout       — recompute flex layout for any dirty subtree
+//   2. layout       — measure the texts written since the last run (and
+//                     those that waited for a font), then recompute flex
+//                     layout for any dirty subtree
 //   3. focus        — resolve forwardFocus on deferred elements, then apply
 //
 // Order matters: layout reads the rendered tree (so destroyed nodes must be
 // gone), and focus reads the laid-out tree.
 let postMutationQueued = false;
+let postMutationInFrame = false;
 let nextActiveElement: ElementNode | null = null;
 let deferredFocusElement: ElementNode | null = null;
-const layoutQueue = new Set<ElementNode>();
-const elementDeleteQueue: ElementNode[] = [];
+// Entries past elementDeleteCount are undefined; the array keeps its
+// capacity between runs.
+const elementDeleteQueue: Array<ElementNode | undefined> = [];
+let elementDeleteCount = 0;
+
+// The layout queue: containers bucketed by depth (the root's children are at
+// depth 1), laid out deepest first, so a container runs after every queued
+// container inside it. A node is in at most one bucket entry that counts
+// (`_layoutQueued`); updateLayout() clears it, so a node laid out directly is
+// skipped when its entry comes up. Buckets keep their capacity: no allocation
+// per run once the tree's depth has been seen.
+const layoutBuckets: Array<Array<ElementNode | undefined>> = [];
+const layoutBucketSize: number[] = [];
+let layoutMaxDepth = -1; // deepest bucket that may hold a node
+let layoutSweepDepth = -1; // bucket the layout phase is on, -1 outside it
+
+// Text measurement (design 3.4): a `<text>` whose parent lays out is sized by
+// the renderer's synchronous `measure()` before the parent's flex, not by the
+// walk and its `loaded` event. A write to a prop its layout reads queues it
+// here (`TextMeasure.due`); the layout phase measures the queue and queues
+// the parent of a text whose size, as flex reads it, changed. Entries past
+// textMeasureCount are undefined; the array keeps its capacity.
+const textMeasureQueue: Array<ElementNode | undefined> = [];
+let textMeasureCount = 0;
+// Texts whose font's description was missing when measured (`waiting`):
+// each hears `loaded` once (the walk lays it out when the font arrives), and
+// loadFonts() tells when a font has loaded, for those no walk visits. Both
+// set fontWaitingDue; the layout phase then measures them.
+const fontWaiting: ElementNode[] = [];
+let fontWaitingDue = false;
+// Length at which the list is next swept of texts that no longer wait
+// (destroyed: nothing else takes them off while their font never loads).
+// Never while measureFontWaiting walks it (`measuringFontWaiting`).
+let fontWaitingSweepAt = 64;
+let measuringFontWaiting = false;
+// Re-measures in one layout phase before the rest waits for its next change:
+// a text whose size flex writes (flexGrow, flexShrink, minWidth) settles in
+// one or two, so more means a layout that does not converge.
+const MAX_TEXT_SWEEPS = 16;
 
 export function enqueueDelete(node: ElementNode, n: number): void {
   if (node._queueDelete === undefined) {
     node._queueDelete = n;
-    if (elementDeleteQueue.push(node) === 1) {
-      schedulePostMutation();
-    }
+    elementDeleteQueue[elementDeleteCount++] = node;
+    schedulePostMutation();
   } else {
     node._queueDelete += n;
   }
@@ -92,35 +128,50 @@ export function enqueueDelete(node: ElementNode, n: number): void {
 function schedulePostMutation() {
   if (postMutationQueued) return;
   postMutationQueued = true;
-  if ('reprocessUpdates' in renderer.stage && renderer.stage.reprocessUpdates) {
-    renderer.stage.reprocessUpdates(runPostMutation);
-  }
   queueMicrotask(runPostMutation);
+}
+
+/**
+ * Also runs the post-mutation pass inside the renderer's current or next
+ * frame, after its walk and before the draw, so what it writes is drawn in
+ * that frame. For handlers the renderer calls between its walks (`loaded`).
+ */
+function schedulePostMutationInFrame(): void {
+  schedulePostMutation();
+  if (postMutationInFrame) return;
+  const stage = renderer.stage;
+  if ('reprocessUpdates' in stage && stage.reprocessUpdates) {
+    postMutationInFrame = true;
+    stage.reprocessUpdates(runPostMutation);
+  }
 }
 
 function runPostMutation() {
   postMutationQueued = false;
+  postMutationInFrame = false;
 
-  // Phase 1: delete-flush
-  if (elementDeleteQueue.length > 0) {
-    for (const el of elementDeleteQueue) {
-      if ((el._queueDelete ?? 0) < 0) {
+  // Phase 1: delete-flush (the count is read every time: a destroy can
+  // queue more). An entry is cleared before its destroy, so one whose
+  // onDestroy threw is not retried and the next run carries on after it.
+  if (elementDeleteCount > 0) {
+    for (let i = 0; i < elementDeleteCount; i++) {
+      const el = elementDeleteQueue[i];
+      elementDeleteQueue[i] = undefined;
+      if (el === undefined) continue;
+      const queued = el._queueDelete ?? 0;
+      el._queueDelete = undefined;
+      if (queued < 0) {
         el.destroy();
       }
-      el._queueDelete = undefined;
     }
-    elementDeleteQueue.length = 0;
+    elementDeleteCount = 0;
   }
 
   // Phase 2: layout
-  while (layoutQueue.size > 0) {
-    const queue = [...layoutQueue];
-    layoutQueue.clear();
-    for (let i = queue.length - 1; i >= 0; i--) {
-      const node = queue[i] as ElementNode;
-      node.updateLayout();
-    }
+  if (fontWaitingDue === true) {
+    measureFontWaiting();
   }
+  runLayoutQueue();
 
   // Phase 3: focus.  setFocus() may have evaluated forwardFocus pre-render
   // (when no children existed yet); deferredFocusElement re-runs setFocus
@@ -136,27 +187,240 @@ function runPostMutation() {
   }
 }
 
-function addToLayoutQueue(node: ElementNode) {
-  layoutQueue.add(node);
-  schedulePostMutation();
+function enqueueLayout(node: ElementNode): void {
+  if (node._layoutQueued === true) return;
+  node._layoutQueued = true;
+  // The depth in its tree: a removed node's tree ends at it.
+  let depth = 0;
+  for (
+    let n: ElementNode = node, p = n.parent;
+    n._detached !== true && p !== undefined && p !== null;
+    n = p, p = n.parent
+  ) {
+    depth++;
+  }
+  while (layoutBuckets.length <= depth) {
+    layoutBuckets.push([]);
+    layoutBucketSize.push(0);
+  }
+  const size = layoutBucketSize[depth]!;
+  layoutBuckets[depth]![size] = node;
+  layoutBucketSize[depth] = size + 1;
+  // During a sweep, a node at the bucket being run or shallower is reached
+  // by that sweep; a deeper one needs another.
+  if (depth > layoutMaxDepth && depth > layoutSweepDepth) {
+    layoutMaxDepth = depth;
+  }
 }
 
 /**
- * Removes the first `item` from `arr` in place, as `splice(index, 1)` did,
- * without the array of removed items splice returns. Returns its index, or
- * -1 when it is not there.
+ * Queue `node`'s layout (flex and `onLayout`) for the post-mutation pass.
+ * Within one pass, containers run deepest first, each at most once unless a
+ * child's size changed after its run.
  */
-function removeItem<T>(arr: T[], item: T): number {
-  const index = arr.indexOf(item);
-  if (index > -1) {
-    const last = arr.length - 1;
-    for (let i = index; i < last; i++) {
-      arr[i] = arr[i + 1]!;
-    }
-    arr.pop();
-  }
-  return index;
+function queueLayout(node: ElementNode): void {
+  enqueueLayout(node);
+  schedulePostMutation();
 }
+
+function runLayoutQueue(): void {
+  measureQueuedTexts();
+  // Start from the deepest bucket there is, so entries a run that threw left
+  // behind are not stranded.
+  layoutMaxDepth = layoutBuckets.length - 1;
+  let textSweeps = 0;
+  while (layoutMaxDepth >= 0) {
+    let depth = layoutMaxDepth;
+    layoutMaxDepth = -1;
+    for (; depth >= 0; depth--) {
+      layoutSweepDepth = depth;
+      const bucket = layoutBuckets[depth]!;
+      // Read the size every time: a run can queue more at this depth.
+      for (let i = 0; i < layoutBucketSize[depth]!; i++) {
+        const node = bucket[i];
+        bucket[i] = undefined;
+        if (node !== undefined && node._layoutQueued === true) {
+          node.updateLayout();
+        }
+      }
+      layoutBucketSize[depth] = 0;
+    }
+    layoutSweepDepth = -1;
+    // Texts the sweep wrote (flex sizing a text, an onLayout): measured now,
+    // so the container of one that resized runs again in another sweep.
+    if (textMeasureCount > 0 && textSweeps < MAX_TEXT_SWEEPS) {
+      textSweeps++;
+      measureQueuedTexts();
+    }
+  }
+  if (textMeasureCount > 0) {
+    // Not converging: drop the rest (each is measured again at its next
+    // change), or the run its writes scheduled would start over.
+    for (let i = 0; i < textMeasureCount; i++) {
+      const t = textMeasureQueue[i];
+      textMeasureQueue[i] = undefined;
+      if (t !== undefined) {
+        t._text!.due = false;
+      }
+    }
+    textMeasureCount = 0;
+    if (isDev) {
+      console.warn(
+        '[solid] Text sizes did not settle in ' +
+          MAX_TEXT_SWEEPS +
+          ' layout passes (a layout that changes the size of a text it lays out); the rest waits for its next change.',
+      );
+    }
+  }
+}
+
+/**
+ * Measures the texts written since the last call (`_textLayoutDirty`) and
+ * queues the parent of each whose size, as flex reads it, changed. A text
+ * the parent's updateLayout() measured already is skipped.
+ */
+function measureQueuedTexts(): void {
+  for (let i = 0; i < textMeasureCount; i++) {
+    const t = textMeasureQueue[i];
+    textMeasureQueue[i] = undefined;
+    // Cleared by a run that threw part way (the count was not reset).
+    if (t === undefined) {
+      continue;
+    }
+    const m = t._text!;
+    if (m.due !== true) {
+      continue;
+    }
+    const parent = t._parent;
+    if (parent === undefined || parent._requiresLayout !== true) {
+      // Moved out, or the parent stopped laying out: nothing to size.
+      m.due = false;
+      m.w = NaN;
+      continue;
+    }
+    if (t._measureText() === true) {
+      enqueueLayout(parent);
+    }
+  }
+  textMeasureCount = 0;
+}
+
+/**
+ * A text that waited for its font heard `loaded`: the walk laid it out, as
+ * the font's description arrived. Shared by every waiting text (no closure
+ * per text); the layout phase, in this frame, measures them all.
+ */
+function fontWaitHeard(): void {
+  fontWaitingDue = true;
+  schedulePostMutationInFrame();
+}
+
+/**
+ * Measures the texts that waited for a font (`_waitForFont`): one whose font
+ * is there now stops waiting and, if its size changed, queues its parent; one
+ * whose font is still missing waits again.
+ */
+function measureFontWaiting(): void {
+  fontWaitingDue = false;
+  const n = fontWaiting.length;
+  // A text whose font is still missing is appended again (_waitForFont),
+  // which must not sweep the list under this loop.
+  measuringFontWaiting = true;
+  try {
+    for (let i = 0; i < n; i++) {
+      const t = fontWaiting[i]!;
+      const m = t._text!;
+      if (m.waiting !== true) {
+        continue; // measured meanwhile
+      }
+      // Off first, so a measure() now queues no `loaded` for it.
+      (t.lng as IRendererTextNode).off('loaded', fontWaitHeard);
+      m.waiting = false;
+      if (t.destroyed === true) {
+        continue;
+      }
+      const parent = t._parent;
+      if (parent === undefined || parent._requiresLayout !== true) {
+        m.w = NaN;
+        continue;
+      }
+      // Waits again (appended past n) while the font is still missing.
+      if (t._measureText() === true) {
+        enqueueLayout(parent);
+      }
+    }
+  } finally {
+    measuringFontWaiting = false;
+  }
+  // Keep the entries appended meanwhile, without allocating.
+  const length = fontWaiting.length;
+  for (let i = n; i < length; i++) {
+    fontWaiting[i - n] = fontWaiting[i]!;
+  }
+  fontWaiting.length = length - n;
+}
+
+/** Drops the texts that no longer wait for a font (destroyed ones). */
+function sweepFontWaiting(): void {
+  let kept = 0;
+  for (let i = 0; i < fontWaiting.length; i++) {
+    const t = fontWaiting[i]!;
+    if (t._text!.waiting === true && t.destroyed !== true) {
+      fontWaiting[kept++] = t;
+    }
+  }
+  fontWaiting.length = kept;
+  fontWaitingSweepAt = kept * 2 > 64 ? kept * 2 : 64;
+}
+
+/** The props a text's layout reads that an animation can change. */
+function animatesTextLayout(props: Partial<AnimateProps>): boolean {
+  return (
+    'fontSize' in props ||
+    'lineHeight' in props ||
+    'letterSpacing' in props ||
+    'maxWidth' in props ||
+    'maxHeight' in props ||
+    'maxLines' in props ||
+    'w' in props ||
+    'h' in props
+  );
+}
+
+/**
+ * What Solid knows of a `<text>` it measures (`ElementNode._text`), made the
+ * first time: only texts in a container that lays out have one. Its sizes
+ * start as doubles, so storing a measured size allocates nothing.
+ */
+class TextMeasure {
+  /** A prop its layout reads was written since it was last measured; queued. */
+  due: boolean;
+  /** Its font was missing when measured (`_waitForFont`). */
+  waiting: boolean;
+  /** Width and height, as flex reads them, when last measured; NaN before. */
+  w: number;
+  h: number;
+  /**
+   * Hears every layout (`_listenTextLoaded`): a text Solid animated a layout
+   * prop of, and every measured text in DOM builds. For its lifetime.
+   */
+  listening: boolean;
+
+  constructor() {
+    this.due = false;
+    this.waiting = false;
+    this.w = NaN;
+    this.h = NaN;
+    this.listening = false;
+  }
+}
+
+onFontLoaded(() => {
+  if (fontWaiting.length > 0) {
+    fontWaitingDue = true;
+    schedulePostMutation();
+  }
+});
 
 // Text-default template, built once on first use.  Config.fontSettings is
 // expected to be set at app startup and not change afterwards.
@@ -311,89 +575,6 @@ export function convertToShader(
   ) as IRendererShader;
 }
 
-function getPropertyAlias(name: string) {
-  if (name === 'w') return 'width';
-  if (name === 'h') return 'height';
-  return name;
-}
-
-const LightningRendererNumberProps = [
-  'alpha',
-  'color',
-  'colorTop',
-  'colorRight',
-  'colorLeft',
-  'colorBottom',
-  'colorTl',
-  'colorTr',
-  'colorBl',
-  'colorBr',
-  'h',
-  'fontSize',
-  'lineHeight',
-  'mount',
-  'mountX',
-  'mountY',
-  'pivot',
-  'pivotX',
-  'pivotY',
-  'rotation',
-  'scale',
-  'scaleX',
-  'scaleY',
-  'w',
-  'worldX',
-  'worldY',
-  'x',
-  'y',
-  'zIndex',
-  'zIndexLocked',
-];
-
-const LightningRendererNonAnimatingProps = [
-  'absX',
-  'absY',
-  'atlasGroup',
-  'autosize',
-  'clipping',
-  'contain',
-  'componentName',
-  'componentLocation',
-  'data',
-  'destroyed',
-  'forceLoad',
-  'fontStretch',
-  'fontStyle',
-  'group',
-  'ignoreParentAlpha',
-  'imageType',
-  'letterSpacing',
-  'maxHeight',
-  'maxLines',
-  'maxWidth',
-  'offsetY',
-  'overflowSuffix',
-  'placeholderColor',
-  'preventCleanup',
-  'scrollable',
-  'scrollY',
-  'srcHeight',
-  'srcWidth',
-  'srcX',
-  'srcY',
-  'strictBounds',
-  'text',
-  'textAlign',
-  'textBaseline',
-  'textOverflow',
-  'texture',
-  'textureOptions',
-  'textRendererOverride',
-  'verticalAlign',
-  'wordBreak',
-  'wordWrap',
-];
-
 declare global {
   interface HTMLElement {
     /** Assigned for development, to quickly get ElementNode from selected HTMLElement */
@@ -429,6 +610,23 @@ export interface ElementNode extends RendererNode, FocusNode {
   _animationSettings?: AnimationSettings;
   _autofocus?: any;
   _containsFlexGrow?: boolean | null;
+  /** @internal flexGrow record (B8): the size before the last growth. */
+  _flexBase?: number;
+  /** @internal flexGrow record (B8): the size the last growth wrote. */
+  _flexGrown?: number;
+  /** @internal the last x, y, width, height flex wrote with a transition */
+  _flexX?: number;
+  _flexY?: number;
+  _flexW?: number;
+  _flexH?: number;
+  /** @internal in the layout queue (queueLayout) */
+  _layoutQueued: boolean;
+  /**
+   * @internal a `<text>` in a container that lays out: what Solid's text
+   * measurement knows of it (`_textLayoutDirty`, `_measureText`); undefined
+   * until it is first queued or measured
+   */
+  _text: TextMeasure | undefined;
   _hasRenderedChildren?: boolean;
   _effects?: Record<string, any>;
   /** The props of a shader convertToShader made, kept to swap its type. */
@@ -441,6 +639,14 @@ export interface ElementNode extends RendererNode, FocusNode {
   _rendererProps?: any;
   _states?: States;
   _style?: Styles;
+  /** @internal text-only props written to an element that is not a `<text>` (B20) */
+  _textProps?: Record<string, unknown>;
+  /**
+   * @internal removed from its parent's children and not inserted since. Its
+   * `parent` link stays (1.6: keys and events still bubble through it), but
+   * it does not lay out that parent.
+   */
+  _detached: boolean;
   _theme?: Styles;
   _lastAnyKeyPressTime?: number;
   _type: 'element' | 'textNode';
@@ -502,12 +708,10 @@ export interface ElementNode extends RendererNode, FocusNode {
   /**
    * Defines the ability for a flex item to shrink if necessary.
    * Defaults to 0 since existing legacy implementations did not shrink layout boxes.
-   * Only available in NEW flex layout.
    */
   flexShrink?: number;
   /**
    * Defines the default size of an element before the remaining space is distributed.
-   * Only available in NEW flex layout.
    */
   flexBasis?: number | string;
   /**
@@ -871,7 +1075,6 @@ export interface ElementNode extends RendererNode, FocusNode {
   /**
    * The individual padding on each side of an element, acting as an override to the `padding` array property.
    * `paddingTop`, `paddingRight`, `paddingBottom`, `paddingLeft`.
-   * Only in the new flex engine.
    *
    * @see https://solid-tv.github.io/solid/#/flow/layout?id=flex
    */
@@ -920,6 +1123,12 @@ export class ElementNode {
     this._calcWidth = undefined;
     this._calcHeight = undefined;
     this._containsFlexGrow = undefined;
+    this._flexBase = undefined;
+    this._flexGrown = undefined;
+    this._flexX = undefined;
+    this._flexY = undefined;
+    this._flexW = undefined;
+    this._flexH = undefined;
     this._hasRenderedChildren = undefined;
     this._effects = undefined;
     this._shaderProps = undefined;
@@ -937,6 +1146,10 @@ export class ElementNode {
     this._onLayout = undefined;
     this._requiresLayout = false;
     this._focusGen = 0;
+    this._layoutQueued = false;
+    this._textProps = undefined;
+    this._detached = false;
+    this._text = undefined;
   }
 
   get effects(): StyleEffects | undefined {
@@ -1062,9 +1275,14 @@ export class ElementNode {
 
   /**
    * The renderer's family name from `fontFamily` and `fontWeight`, resolved
-   * in one place so either JSX order gives the same name (B17).
+   * in one place so either JSX order gives the same name (B17). Only a
+   * `<text>` has a font: another element keeps both on the ElementNode and
+   * writes nothing to its renderer node (B20).
    */
   _writeFontFamily() {
+    if (this._type !== NodeType.TextNode) {
+      return;
+    }
     const weight = this._fontWeight as number | string | undefined;
     if (weight === undefined) {
       // No family of its own: before render, undefined lets render's font
@@ -1074,62 +1292,117 @@ export class ElementNode {
       const family = this._fontFamily;
       (this.lng as ElementNode).fontFamily =
         family === undefined && this.rendered ? _fontFamilyWithWeight : family;
-      return;
+    } else {
+      const alias = Config.fontWeightAlias;
+      const aliased =
+        alias !== undefined && alias !== null
+          ? (alias[weight] as number | string | undefined)
+          : undefined;
+      (this.lng as ElementNode).fontFamily =
+        `${this._fontFamily || Config.fontSettings?.fontFamily}${aliased ?? weight}`;
     }
-    const alias = Config.fontWeightAlias;
-    const aliased =
-      alias !== undefined && alias !== null
-        ? (alias[weight] as number | string | undefined)
-        : undefined;
-    (this.lng as ElementNode).fontFamily =
-      `${this._fontFamily || Config.fontSettings?.fontFamily}${aliased ?? weight}`;
+    this._textLayoutDirty();
   }
 
   insertChild(
     node: ElementNode | ElementText | TextNode,
     beforeNode?: ElementNode | ElementText | TextNode | null,
   ) {
-    // always remove nodes if they have a parent - for back swap of node
-    // this will then put the node at the end of the array when re-added
-    if (node.parent) {
-      node.parent.removeChild(node);
-
-      // We're inserting a node thats been rendered into a node that hasn't been
-      if (!this.rendered) {
-        this._hasRenderedChildren = true;
+    const children = this.children;
+    const prevParent = node.parent;
+    // Removed earlier (its parent link stays, as in 1.6): it is in no child
+    // list, so there is nothing to take it out of.
+    const detached = isElementNode(node) && node._detached;
+    // The renderer node of a rendered element is placed among its siblings
+    // in `children` order (B19: renderer v2 draws siblings in that order).
+    // The renderer keeps siblings sorted by zIndex: when the anchor's zIndex
+    // is not the child's, it takes the nearest sorted place instead, so
+    // among equal-zIndex siblings its order can then differ from `children`.
+    const drawn = this.rendered && isElementNode(node) && node.rendered;
+    // A move within this node: the renderer sibling it was drawn before, so
+    // a move that leaves it there costs the renderer nothing.
+    let drawnBefore: ElementNode | null = null;
+    // Before itself: it stays where it is (DOM semantics). Solid's swap of
+    // adjacent items asks for this (insertNode(parent, y, nextSibling(x))).
+    if (beforeNode === node) {
+      beforeNode =
+        prevParent === this && !detached
+          ? children[lastIndexOf(children, node) + 1]
+          : undefined;
+    }
+    // A node in a parent (this one too) is taken out first, then inserted
+    // before `beforeNode`, or appended.
+    if (prevParent !== undefined && !detached) {
+      if (drawn && prevParent === this) {
+        drawnBefore = nextDrawn(children, lastIndexOf(children, node) + 1);
       }
+      prevParent.removeChild(node);
+    }
+    // In a child list again (removeChild above marked it detached).
+    if (isElementNode(node)) {
+      node._detached = false;
     }
 
-    node.parent = this;
-
-    if (beforeNode) {
-      // SolidJS can move nodes around in the children array.
-      // We need to insert following DOM insertBefore which moves elements.
-      const children = this.children;
-      removeItem(children, node as ElementNode);
-      const index = children.indexOf(beforeNode as ElementNode);
-      if (index > -1) {
-        // In front of beforeNode, the rest moved up one: splice(index, 0,
-        // node) without its argument list and result array.
-        for (let i = children.length; i > index; i--) {
-          children[i] = children[i - 1]!;
-        }
-        children[index] = node as ElementNode;
-        return;
-      }
+    // We're inserting a node thats been rendered into a node that hasn't been
+    if (!this.rendered && isElementNode(node) && node.rendered) {
+      this._hasRenderedChildren = true;
     }
 
-    this.children.push(node as ElementNode);
+    // DOM insertBefore semantics: an anchor that is not a child appends.
+    let index =
+      beforeNode !== undefined && beforeNode !== null
+        ? lastIndexOf(children, beforeNode)
+        : -1;
+    if (index === -1) {
+      index = children.length;
+      children.push(node as ElementNode);
+    } else {
+      insertAt(children, index, node as ElementNode);
+    }
+
+    if (!drawn) {
+      node.parent = this;
+      return;
+    }
+    // insertBefore reparents the renderer node too, so the parent setter's
+    // renderer write is skipped.
+    (node as ElementNode)._parent = this;
+    const next = nextDrawn(children, index + 1);
+    if (prevParent !== this || detached || next !== drawnBefore) {
+      (this.lng as INode).insertBefore(
+        (node as ElementNode).lng as INode,
+        next === null ? null : (next.lng as INode),
+      );
+    }
+  }
+
+  /**
+   * After `render()` made `node`'s renderer node (it appends), move it before
+   * the renderer node of its next rendered sibling (B19). solidOpts calls it
+   * for a node inserted before an anchor.
+   */
+  _drawInOrder(node: ElementNode) {
+    const children = this.children;
+    const next = nextDrawn(children, lastIndexOf(children, node) + 1);
+    if (next !== null) {
+      (this.lng as INode).insertBefore(node.lng as INode, next.lng as INode);
+    }
   }
 
   removeChild(node: ElementNode | ElementText | TextNode) {
-    if (removeItem(this.children, node as ElementNode) > -1) {
-      if (isElementNode(node) && node.onRemove) {
-        node.onRemove.call(node, node);
+    const children = this.children;
+    const index = lastIndexOf(children, node);
+    if (index > -1) {
+      removeAt(children, index);
+      if (isElementNode(node)) {
+        node._detached = true;
+        if (node.onRemove) {
+          node.onRemove.call(node, node);
+        }
       }
 
       if (this.requiresLayout()) {
-        addToLayoutQueue(this);
+        queueLayout(this);
       }
     }
   }
@@ -1157,45 +1430,66 @@ export class ElementNode {
       : shaderProps;
   }
 
-  _sendToLightningAnimatable(name: string, value: number) {
-    if (
-      this.rendered &&
-      this.transition &&
-      Config.animationsEnabled &&
-      (this.transition === true ||
-        this.transition[name] ||
-        this.transition[getPropertyAlias(name)])
-    ) {
-      const animationSettings =
-        this.transition === true || this.transition[name] === true
-          ? undefined
-          : this.transition[name] ||
-            (this.transition[getPropertyAlias(name)] as
-              | undefined
-              | AnimationSettings);
-
-      // If the renderer doesn't support animateProp,
-      // keep backwards compatible with LightningRenderer
-      if (!('animateProp' in this.lng)) {
-        const animationController = this.animate(
-          { [name]: value },
-          animationSettings,
-        );
-        this._fireAnimationEvents(name, value, animationSettings);
-        return animationController.start();
+  /**
+   * The transition path of an animatable prop's setter, which calls it only
+   * when the node has a `transition`. Returns true when the write became an
+   * animation; false when the setter stores the value itself (the common
+   * case is a direct store in the setter, under its own name).
+   */
+  _sendToLightningAnimatable(name: string, value: number): boolean {
+    const transition = this.transition;
+    if (!this.rendered || !transition || !Config.animationsEnabled) {
+      return false;
+    }
+    let animationSettings: AnimationSettings | undefined;
+    if (transition !== true) {
+      const own = transition[name];
+      // The transition may name w/h as width/height. Written inline: a
+      // single-use helper here is what terser inlines as an IIFE (a closure
+      // per call) under its default compress options.
+      const setting =
+        own ||
+        (name === 'w'
+          ? transition.width
+          : name === 'h'
+            ? transition.height
+            : undefined);
+      if (!setting) {
+        return false;
       }
-
-      const result = (this.lng as INode).animateProp(
-        name,
-        value,
-        animationSettings || this.animationSettings || {},
-      );
-      this._fireAnimationEvents(name, value, animationSettings);
-      return result;
+      animationSettings =
+        own === true ? undefined : (setting as AnimationSettings | undefined);
     }
 
-    (this.lng[name as keyof (IRendererNode | INode)] as number | string) =
-      value;
+    // If the renderer doesn't support animateProp,
+    // keep backwards compatible with LightningRenderer
+    if (!('animateProp' in this.lng)) {
+      const animationController = this.animate(
+        { [name]: value },
+        animationSettings,
+      );
+      this._fireAnimationEvents(name, value, animationSettings);
+      animationController.start();
+      return true;
+    }
+
+    (this.lng as INode).animateProp(
+      name,
+      value,
+      animationSettings || this.animationSettings || {},
+    );
+    // A text's layout prop: its container follows the animated sizes.
+    if (
+      this._type === NodeType.TextNode &&
+      (name === 'fontSize' ||
+        name === 'lineHeight' ||
+        name === 'w' ||
+        name === 'h')
+    ) {
+      this._textLayoutAnimated();
+    }
+    this._fireAnimationEvents(name, value, animationSettings);
+    return true;
   }
 
   _fireAnimationEvents(
@@ -1223,10 +1517,16 @@ export class ElementNode {
       if (isDev) console.log('NOT RENDERED! CANNOT ANIMATE');
       return { start: () => {} } as IAnimationController;
     }
-    return (this.lng as IRendererNode).animate(
+    const controller = (this.lng as IRendererNode).animate(
       props,
       animationSettings || this.animationSettings || {},
     );
+    if (this._type === NodeType.TextNode && animatesTextLayout(props)) {
+      // Started now or later, again or not at all: the text hears its
+      // layouts from now on (`_listenTextLoaded`).
+      this._textLayoutAnimated();
+    }
+    return controller;
   }
 
   chain(props: Partial<AnimateProps>, animationSettings?: AnimationSettings) {
@@ -1305,10 +1605,218 @@ export class ElementNode {
   }
 
   _layoutOnLoad() {
+    // An autosize node takes its size from its texture: the size the
+    // parent's last layout saw, so a load that leaves it unchanged needs no
+    // layout; a new one queues the parent and runs the pass in the frame.
+    // (A text in a layout parent is measured instead: _measureText.)
+    let width = this.width;
+    let height = this.height;
     (this.lng as IRendererNode).on('loaded', () => {
-      schedulePostMutation();
-      this.parent!.updateLayout();
+      const w = this.width;
+      const h = this.height;
+      if (w === width && h === height) return;
+      width = w;
+      height = h;
+      const parent = this.parent;
+      if (parent !== undefined && parent !== null && !this._detached) {
+        enqueueLayout(parent);
+        schedulePostMutationInFrame();
+      }
     });
+  }
+
+  /**
+   * @internal A prop the text layout reads was written on this element:
+   * `text`, `fontFamily`/`fontWeight`, `fontSize`, `lineHeight`,
+   * `letterSpacing`, `maxWidth`/`width`, `maxHeight`/`height`, `maxLines`,
+   * `wordBreak`, `overflowSuffix`. A rendered `<text>` whose parent lays out
+   * is measured again in the post-mutation pass, and its parent laid out if
+   * its size changed. Anything else returns at once.
+   */
+  _textLayoutDirty(): void {
+    if (this._type !== NodeType.TextNode || this.rendered !== true) {
+      return;
+    }
+    let m = this._text;
+    if (m !== undefined && m.due === true) {
+      return;
+    }
+    const parent = this._parent;
+    if (parent === undefined || parent._requiresLayout !== true) {
+      // No layout reads it: a parent that lays it out later measures it
+      // first (updateLayout), as one it never measured.
+      if (m !== undefined) {
+        m.w = NaN;
+      }
+      return;
+    }
+    if (m === undefined) {
+      m = new TextMeasure();
+      this._text = m;
+    }
+    m.due = true;
+    textMeasureQueue[textMeasureCount++] = this;
+    schedulePostMutation();
+  }
+
+  /**
+   * @internal Size this rendered `<text>` for its parent's layout now, with
+   * the renderer's synchronous `measure()` (renderer v2 lays it out into its
+   * layout cache, and the walk reuses that layout). Returns whether its
+   * width or height, as flex reads them (`maxWidth || w`, `maxHeight || h`),
+   * changed since the last call. A text with both max sizes is that large to
+   * flex whatever its layout: the walk lays it out. While its font is
+   * missing it waits (`_waitForFont`).
+   */
+  _measureText(): boolean {
+    let m = this._text;
+    if (m === undefined) {
+      m = new TextMeasure();
+      this._text = m;
+    }
+    m.due = false;
+    const lng = this.lng as IRendererTextNode;
+    const maxWidth = lng.maxWidth;
+    const maxHeight = lng.maxHeight;
+    if (!(maxWidth > 0 && maxHeight > 0)) {
+      if (lng.measure() === true) {
+        if (m.waiting === true) {
+          // The font arrived: stop listening (the list entry goes at the
+          // next measureFontWaiting).
+          m.waiting = false;
+          lng.off('loaded', fontWaitHeard);
+          fontWaitingDue = true;
+        }
+      } else if (lng.destroyed === true) {
+        return false; // in a subtree destroyed since it was written
+      } else if (m.waiting === false) {
+        this._waitForFont(m);
+      }
+    }
+    const w = maxWidth || lng.w;
+    const h = maxHeight || lng.h;
+    if (w === m.w && h === m.h) {
+      return false;
+    }
+    m.w = w;
+    m.h = h;
+    return true;
+  }
+
+  /**
+   * @internal Development only, on `loaded`: a layout Solid did not ask for
+   * (the walk's) changed the size of a text Solid measures, so its parent's
+   * flex has the old one. A prop the layout reads was written on the
+   * renderer node (`el.lng`) rather than on the element, or animated there.
+   */
+  _warnUnmeasuredLayout(): void {
+    const m = this._text;
+    if (
+      m === undefined ||
+      m.due === true ||
+      m.waiting === true ||
+      m.listening === true ||
+      m.w !== m.w ||
+      this._parent === undefined ||
+      this._parent._requiresLayout !== true
+    ) {
+      return;
+    }
+    const lng = this.lng as IRendererTextNode;
+    if ((lng.maxWidth || lng.w) !== m.w || (lng.maxHeight || lng.h) !== m.h) {
+      console.warn(
+        '[solid] A text in a flex container was laid out at a size Solid did not measure: a prop its layout reads was written, or animated, on its renderer node (el.lng) instead of on the element. Its container keeps the old size.',
+        this,
+      );
+    }
+  }
+
+  /**
+   * @internal `measure()` found no font description: hear `loaded` once,
+   * when the walk lays the text out (the renderer wakes the nodes it
+   * visited), and wait for loadFonts() to say a font loaded (for one no walk
+   * visits). Either way measureFontWaiting measures it again.
+   */
+  _waitForFont(m: TextMeasure): void {
+    m.waiting = true;
+    (this.lng as IRendererTextNode).on('loaded', fontWaitHeard);
+    if (
+      measuringFontWaiting === false &&
+      fontWaiting.length >= fontWaitingSweepAt
+    ) {
+      sweepFontWaiting();
+    }
+    fontWaiting.push(this);
+  }
+
+  /**
+   * @internal Solid animated a prop this text's layout reads
+   * (`_sendToLightningAnimatable`, `animate()`): from now on, for the text's
+   * lifetime, each layout the walk makes of an animated value lays its
+   * container out again in that frame, as 1.6's `loaded` listener did.
+   * Lifetime, not the animation's: Solid does not see a controller started
+   * later, or again (`animate()` returns it to the app).
+   */
+  _textLayoutAnimated(): void {
+    if (this.rendered !== true) {
+      return;
+    }
+    const parent = this._parent;
+    if (parent === undefined || parent._requiresLayout !== true) {
+      return;
+    }
+    this._listenTextLoaded();
+  }
+
+  /**
+   * @internal Hear every layout of this text: one whose size, as flex reads
+   * it, Solid did not measure lays the container out in that frame. One
+   * closure per text, made once and kept for its lifetime, on its renderer
+   * node only (nothing else holds it, so it goes with the node). A layout
+   * Solid measured changes nothing, and asks for no second walk.
+   */
+  _listenTextLoaded(): void {
+    let m = this._text;
+    if (m === undefined) {
+      m = new TextMeasure();
+      this._text = m;
+    }
+    if (m.listening === true) {
+      return;
+    }
+    m.listening = true;
+    (this.lng as IRendererTextNode).on('loaded', () => {
+      if (this._textSizeChanged() === true) {
+        enqueueLayout(this._parent!);
+        schedulePostMutationInFrame();
+      }
+    });
+  }
+
+  /**
+   * @internal After a layout Solid did not make (the walk's, of an animated
+   * value; the DOM renderer's late re-measure): whether this text's size, as
+   * flex reads it, changed since Solid last saw it. If so, it is recorded
+   * and the caller lays the parent out. False while a measure is due.
+   */
+  _textSizeChanged(): boolean {
+    const m = this._text;
+    if (m === undefined || m.due === true || m.waiting === true) {
+      return false;
+    }
+    const parent = this._parent;
+    if (parent === undefined || parent._requiresLayout !== true) {
+      return false;
+    }
+    const lng = this.lng as IRendererTextNode;
+    const w = lng.maxWidth || lng.w;
+    const h = lng.maxHeight || lng.h;
+    if (w === m.w && h === m.h) {
+      return false;
+    }
+    m.w = w;
+    m.h = h;
+    return true;
   }
 
   getText(this: ElementText) {
@@ -1539,33 +2047,66 @@ export class ElementNode {
   }
 
   updateLayout() {
-    if (this.hasChildren) {
-      if (isDev) log('Layout: ', this);
+    this._layoutQueued = false;
+    const children = this.children;
+    const numChildren = children.length;
+    if (numChildren === 0) return;
+    if (isDev) log('Layout: ', this);
 
-      if (this.display === 'flex' && this.flexGrow && this.width === 0) {
-        return;
+    const isFlex = this._display === 'flex';
+    if (isFlex && this.flexGrow && this.width === 0) {
+      return;
+    }
+
+    // Texts written since Solid last measured them (a direct updateLayout()
+    // before the post-mutation pass), or never measured (this container lays
+    // out only now): sized before the pass reads them.
+    for (let i = 0; i < numChildren; i++) {
+      const c = children[i] as ElementNode;
+      if (c._type === NodeType.TextNode && c.rendered === true) {
+        const m = c._text;
+        if (m === undefined || m.due === true || m.w !== m.w) {
+          c._measureText();
+        }
       }
+    }
 
-      const flexChanged = this.display === 'flex' && calculateFlex(this);
-      layoutQueue.delete(this);
-      const onLayoutChanged =
-        isFunction(this.onLayout) && this.onLayout.call(this, this);
+    let flexChanged = isFlex && calculateFlex(this);
 
-      if ((flexChanged || onLayoutChanged) && this.parent) {
-        addToLayoutQueue(this.parent);
-      }
-
-      if (this._containsFlexGrow === true) {
-        // Need to reprocess children
-        this.children.forEach((c) => {
-          if (c.display === 'flex' && isElementNode(c)) {
-            // calculating directly to prevent infinite loops recalculating parents
-            calculateFlex(c);
-            isFunction(c.onLayout) && c.onLayout.call(c, c);
-            addToLayoutQueue(this);
+    if (isFlex && this._containsFlexGrow === true) {
+      // This pass changed its children's sizes: lay out the flex ones again,
+      // directly, so they do not queue this container back through their
+      // own size. If one of them resized, lay this container out once more.
+      let childResized = false;
+      for (let i = 0; i < numChildren; i++) {
+        const c = children[i]!;
+        if (isElementNode(c) && c._display === 'flex') {
+          if (calculateFlex(c)) childResized = true;
+          const childOnLayout = c._onLayout;
+          if (childOnLayout !== undefined && isFunction(childOnLayout)) {
+            childOnLayout.call(c, c);
           }
-        });
+        }
       }
+      if (childResized && calculateFlex(this)) {
+        flexChanged = true;
+      }
+      this._containsFlexGrow = null;
+    }
+
+    // One onLayout, after the final layout (the children's included).
+    const onLayout = this._onLayout;
+    const onLayoutChanged =
+      onLayout !== undefined &&
+      isFunction(onLayout) &&
+      onLayout.call(this, this);
+
+    // A container whose size changed queues its parent (one with nothing to
+    // lay out would do nothing).
+    // A removed container keeps its parent link but not its place.
+    const parent = this._detached ? undefined : this.parent;
+    if ((flexChanged || onLayoutChanged) && parent && parent._requiresLayout) {
+      queueLayout(parent);
     }
   }
 
@@ -1688,7 +2229,7 @@ export class ElementNode {
     }
 
     if (parent.requiresLayout()) {
-      layoutQueue.add(parent);
+      queueLayout(parent);
     }
 
     if (this.rendered) {
@@ -1774,17 +2315,27 @@ export class ElementNode {
           textProps.maxLines = textProps.maxLines ?? 99;
         }
 
+        // B11: margins live on the ElementNode, not in the renderer props;
+        // resolved as flex resolves them (a side, else the margin array).
         if (!textProps.maxWidth) {
           textProps.maxWidth =
-            parentWidth - textProps.x! - (textProps.marginRight || 0);
+            parentWidth -
+            textProps.x! -
+            (node.marginRight || getArrayValue(node.margin, 1));
         }
 
         if (textProps.contain === 'both' && !textProps.maxHeight) {
           textProps.maxHeight =
-            parentHeight - textProps.y! - (textProps.marginBottom || 0);
-        } else if (textProps.maxLines === 1) {
+            parentHeight -
+            textProps.y! -
+            (node.marginBottom || getArrayValue(node.margin, 2));
+        } else if (textProps.maxLines === 1 && !textProps.maxHeight) {
+          // B12: a lineHeight at or below 3 multiplies the font size.
+          const lineHeight = textProps.lineHeight;
           textProps.maxHeight =
-            textProps.maxHeight || textProps.lineHeight || textProps.fontSize;
+            lineHeight && lineHeight <= 3 && textProps.fontSize
+              ? lineHeight * textProps.fontSize
+              : lineHeight || textProps.fontSize;
         }
         // textProps.w = textProps.h = 0;
       }
@@ -1803,11 +2354,9 @@ export class ElementNode {
         props as Partial<ITextNodeProps> & Partial<IRendererTextNodeProps>,
       ) as IRendererTextNode;
 
-      if (parent.requiresLayout()) {
-        if (!textProps.maxWidth || !textProps.maxHeight) {
-          node._layoutOnLoad();
-        }
-      }
+      // A text in a layout parent is queued to be measured below, once its
+      // listeners are on (an `onEvent.loaded` hears the layout measure()
+      // makes).
     } else {
       // If its not an image or texture apply some defaults
       if (!props.texture) {
@@ -1872,16 +2421,6 @@ export class ElementNode {
       node.lng = renderer.createNode(
         props as Partial<INodeProps> & Partial<IRendererNodeProps>,
       );
-
-      if (node._hasRenderedChildren) {
-        node._hasRenderedChildren = false;
-
-        for (const child of node.children) {
-          if (isElementNode(child) && isINode(child.lng)) {
-            child.lng.parent = node.lng as INode;
-          }
-        }
-      }
     }
 
     node.rendered = true;
@@ -1909,6 +2448,24 @@ export class ElementNode {
       }
     }
 
+    if (node._type === NodeType.TextNode && parent._requiresLayout === true) {
+      // Its parent's flex reads its size: it is measured in the post-mutation
+      // pass, before the parent's layout (queued above) and before the frame,
+      // instead of waiting for the walk's `loaded`. Not here: a write later
+      // in this tick would lay it out twice (and `loaded` twice).
+      if (isDomRendererActive()) {
+        // The DOM renderer measures again when a web font loads after the
+        // text was measured (its size then was the fallback font's): lay the
+        // container out at that size, as before 1.7.
+        node._listenTextLoaded();
+      } else if (isDev) {
+        (node.lng as IRendererTextNode).on('loaded', () =>
+          node._warnUnmeasuredLayout(),
+        );
+      }
+      node._textLayoutDirty();
+    }
+
     // L3 Inspector adds div to the lng object
     const div: HTMLElement | undefined = (node.lng as IRendererNode)?.div;
     if (isDev && div) {
@@ -1920,12 +2477,19 @@ export class ElementNode {
 
     if (node._type === NodeType.Element) {
       // only element nodes will have children that need rendering
+      // Children rendered before this node (moved in) are reparented here,
+      // in children order with the new ones (B19: v2 draws in that order).
+      const reparent = node._hasRenderedChildren === true;
+      node._hasRenderedChildren = false;
       const numChildren = node.children.length;
       for (let i = 0; i < numChildren; i++) {
         const c = node.children[i];
         if (isDev) assertTruthy(c, 'Child is undefined');
         // Text elements sneak in from Solid creating tracked nodes
         if (isElementNode(c)) {
+          if (reparent && isINode(c.lng)) {
+            c.lng.parent = node.lng as INode;
+          }
           c.render();
         }
       }
@@ -1940,27 +2504,743 @@ export class ElementNode {
   }
 }
 
-for (const key of LightningRendererNumberProps) {
-  Object.defineProperty(ElementNode.prototype, key, {
-    get(): number {
-      return this.lng[key];
-    },
-    set(this: ElementNode, v: number) {
-      this._sendToLightningAnimatable(key, v);
-    },
-  });
+/**
+ * The index of `item` in `list`, scanning from the end: Solid appends and
+ * removes at the tail most often. The first item is checked first, for
+ * Solid's cleanChildren, which removes the first child until none is left.
+ */
+function lastIndexOf<T>(list: T[], item: T): number {
+  if (list[0] === item) {
+    return 0;
+  }
+  let i = list.length - 1;
+  while (i > 0 && list[i] !== item) {
+    i--;
+  }
+  return i === 0 ? -1 : i;
 }
 
-for (const key of LightningRendererNonAnimatingProps) {
-  Object.defineProperty(ElementNode.prototype, key, {
-    get(): unknown {
-      return this.lng[key];
-    },
-    set(v: unknown) {
-      this.lng[key] = v;
-    },
-  });
+/** Removes `list[index]` without allocating (`splice` returns an array). */
+function removeAt<T>(list: T[], index: number): void {
+  if (index === 0) {
+    list.shift();
+    return;
+  }
+  const last = list.length - 1;
+  for (let i = index; i < last; i++) {
+    list[i] = list[i + 1]!;
+  }
+  list.pop();
 }
+
+/** Inserts `item` at `index` without allocating. */
+function insertAt<T>(list: T[], index: number, item: T): void {
+  let i = list.length;
+  list.push(item);
+  for (; i > index; i--) {
+    list[i] = list[i - 1]!;
+  }
+  list[index] = item;
+}
+
+/** The first rendered element in `children` from `from` on: the renderer sibling to draw before. */
+function nextDrawn(
+  children: ElementNode['children'],
+  from: number,
+): ElementNode | null {
+  for (let i = from; i < children.length; i++) {
+    const c = children[i];
+    if (c instanceof ElementNode && c.rendered) {
+      return c;
+    }
+  }
+  return null;
+}
+
+// Props forwarded to the renderer node, one accessor per prop (design
+// 3.6.6): every getter and setter below loads or stores one constant name,
+// so each has its own inline cache. A shared `this.lng[key]` body made from
+// a loop sees every name at one site: a megamorphic keyed access, and into
+// renderer v2's prototype accessors a call V8 does not inline (the double
+// it returns is boxed). Written out rather than made with `new Function`,
+// which a TV app's CSP may forbid.
+//
+// `lng` is the props bag before render and the renderer node after it. An
+// animatable setter stores directly unless the node has a `transition`,
+// then `_sendToLightningAnimatable` may animate instead.
+type Forwarding = Pick<
+  ElementNode,
+  'transition' | '_sendToLightningAnimatable' | '_type' | '_textLayoutDirty'
+> & { lng: Record<string, unknown> };
+
+const NO_TEXT_PROPS: Readonly<Record<string, unknown>> = Object.freeze({});
+
+/**
+ * Where a text-only prop is written: a `<text>`'s renderer node (its props
+ * bag before render); on any other element, the ElementNode's `_textProps`.
+ * A renderer v2 handle takes no field it does not know (it would become a
+ * field of its own) and a view draws no text (B20).
+ */
+function textPropsFor(node: ElementNode): Record<string, unknown> {
+  if (node._type === NodeType.TextNode) {
+    return node.lng as Record<string, unknown>;
+  }
+  let own = node._textProps;
+  if (own === undefined) {
+    own = {};
+    node._textProps = own;
+  }
+  return own;
+}
+
+/** Where a text-only prop is read (textPropsFor), without allocating. */
+function textPropsOf(node: ElementNode): Readonly<Record<string, unknown>> {
+  if (node._type === NodeType.TextNode) {
+    return node.lng as Record<string, unknown>;
+  }
+  const own = node._textProps;
+  return own === undefined ? NO_TEXT_PROPS : own;
+}
+
+/** The setter of a read-only forwarded prop: the write is ignored. */
+function ignoreWrite(_v: unknown) {}
+
+Object.defineProperties(ElementNode.prototype, {
+  // Animatable
+  alpha: {
+    get(this: Forwarding) {
+      return this.lng.alpha;
+    },
+    set(this: Forwarding, v: number) {
+      if (
+        this.transition === undefined ||
+        !this._sendToLightningAnimatable('alpha', v)
+      ) {
+        this.lng.alpha = v;
+      }
+    },
+  },
+  color: {
+    get(this: Forwarding) {
+      return this.lng.color;
+    },
+    set(this: Forwarding, v: number) {
+      if (
+        this.transition === undefined ||
+        !this._sendToLightningAnimatable('color', v)
+      ) {
+        this.lng.color = v;
+      }
+    },
+  },
+  colorTop: {
+    get(this: Forwarding) {
+      return this.lng.colorTop;
+    },
+    set(this: Forwarding, v: number) {
+      if (
+        this.transition === undefined ||
+        !this._sendToLightningAnimatable('colorTop', v)
+      ) {
+        this.lng.colorTop = v;
+      }
+    },
+  },
+  colorRight: {
+    get(this: Forwarding) {
+      return this.lng.colorRight;
+    },
+    set(this: Forwarding, v: number) {
+      if (
+        this.transition === undefined ||
+        !this._sendToLightningAnimatable('colorRight', v)
+      ) {
+        this.lng.colorRight = v;
+      }
+    },
+  },
+  colorLeft: {
+    get(this: Forwarding) {
+      return this.lng.colorLeft;
+    },
+    set(this: Forwarding, v: number) {
+      if (
+        this.transition === undefined ||
+        !this._sendToLightningAnimatable('colorLeft', v)
+      ) {
+        this.lng.colorLeft = v;
+      }
+    },
+  },
+  colorBottom: {
+    get(this: Forwarding) {
+      return this.lng.colorBottom;
+    },
+    set(this: Forwarding, v: number) {
+      if (
+        this.transition === undefined ||
+        !this._sendToLightningAnimatable('colorBottom', v)
+      ) {
+        this.lng.colorBottom = v;
+      }
+    },
+  },
+  colorTl: {
+    get(this: Forwarding) {
+      return this.lng.colorTl;
+    },
+    set(this: Forwarding, v: number) {
+      if (
+        this.transition === undefined ||
+        !this._sendToLightningAnimatable('colorTl', v)
+      ) {
+        this.lng.colorTl = v;
+      }
+    },
+  },
+  colorTr: {
+    get(this: Forwarding) {
+      return this.lng.colorTr;
+    },
+    set(this: Forwarding, v: number) {
+      if (
+        this.transition === undefined ||
+        !this._sendToLightningAnimatable('colorTr', v)
+      ) {
+        this.lng.colorTr = v;
+      }
+    },
+  },
+  colorBl: {
+    get(this: Forwarding) {
+      return this.lng.colorBl;
+    },
+    set(this: Forwarding, v: number) {
+      if (
+        this.transition === undefined ||
+        !this._sendToLightningAnimatable('colorBl', v)
+      ) {
+        this.lng.colorBl = v;
+      }
+    },
+  },
+  colorBr: {
+    get(this: Forwarding) {
+      return this.lng.colorBr;
+    },
+    set(this: Forwarding, v: number) {
+      if (
+        this.transition === undefined ||
+        !this._sendToLightningAnimatable('colorBr', v)
+      ) {
+        this.lng.colorBr = v;
+      }
+    },
+  },
+  h: {
+    get(this: Forwarding) {
+      return this.lng.h;
+    },
+    set(this: Forwarding, v: number) {
+      if (
+        this.transition === undefined ||
+        !this._sendToLightningAnimatable('h', v)
+      ) {
+        this.lng.h = v;
+      }
+      // On a text, the max height (renderer v2), which its layout reads.
+      if (this._type === NodeType.TextNode) {
+        this._textLayoutDirty();
+      }
+    },
+  },
+  mount: {
+    get(this: Forwarding) {
+      return this.lng.mount;
+    },
+    set(this: Forwarding, v: number) {
+      if (
+        this.transition === undefined ||
+        !this._sendToLightningAnimatable('mount', v)
+      ) {
+        this.lng.mount = v;
+      }
+    },
+  },
+  mountX: {
+    get(this: Forwarding) {
+      return this.lng.mountX;
+    },
+    set(this: Forwarding, v: number) {
+      if (
+        this.transition === undefined ||
+        !this._sendToLightningAnimatable('mountX', v)
+      ) {
+        this.lng.mountX = v;
+      }
+    },
+  },
+  mountY: {
+    get(this: Forwarding) {
+      return this.lng.mountY;
+    },
+    set(this: Forwarding, v: number) {
+      if (
+        this.transition === undefined ||
+        !this._sendToLightningAnimatable('mountY', v)
+      ) {
+        this.lng.mountY = v;
+      }
+    },
+  },
+  pivot: {
+    get(this: Forwarding) {
+      return this.lng.pivot;
+    },
+    set(this: Forwarding, v: number) {
+      if (
+        this.transition === undefined ||
+        !this._sendToLightningAnimatable('pivot', v)
+      ) {
+        this.lng.pivot = v;
+      }
+    },
+  },
+  pivotX: {
+    get(this: Forwarding) {
+      return this.lng.pivotX;
+    },
+    set(this: Forwarding, v: number) {
+      if (
+        this.transition === undefined ||
+        !this._sendToLightningAnimatable('pivotX', v)
+      ) {
+        this.lng.pivotX = v;
+      }
+    },
+  },
+  pivotY: {
+    get(this: Forwarding) {
+      return this.lng.pivotY;
+    },
+    set(this: Forwarding, v: number) {
+      if (
+        this.transition === undefined ||
+        !this._sendToLightningAnimatable('pivotY', v)
+      ) {
+        this.lng.pivotY = v;
+      }
+    },
+  },
+  rotation: {
+    get(this: Forwarding) {
+      return this.lng.rotation;
+    },
+    set(this: Forwarding, v: number) {
+      if (
+        this.transition === undefined ||
+        !this._sendToLightningAnimatable('rotation', v)
+      ) {
+        this.lng.rotation = v;
+      }
+    },
+  },
+  scale: {
+    get(this: Forwarding) {
+      return this.lng.scale;
+    },
+    set(this: Forwarding, v: number) {
+      if (
+        this.transition === undefined ||
+        !this._sendToLightningAnimatable('scale', v)
+      ) {
+        this.lng.scale = v;
+      }
+    },
+  },
+  scaleX: {
+    get(this: Forwarding) {
+      return this.lng.scaleX;
+    },
+    set(this: Forwarding, v: number) {
+      if (
+        this.transition === undefined ||
+        !this._sendToLightningAnimatable('scaleX', v)
+      ) {
+        this.lng.scaleX = v;
+      }
+    },
+  },
+  scaleY: {
+    get(this: Forwarding) {
+      return this.lng.scaleY;
+    },
+    set(this: Forwarding, v: number) {
+      if (
+        this.transition === undefined ||
+        !this._sendToLightningAnimatable('scaleY', v)
+      ) {
+        this.lng.scaleY = v;
+      }
+    },
+  },
+  w: {
+    get(this: Forwarding) {
+      return this.lng.w;
+    },
+    set(this: Forwarding, v: number) {
+      if (
+        this.transition === undefined ||
+        !this._sendToLightningAnimatable('w', v)
+      ) {
+        this.lng.w = v;
+      }
+      // On a text, the max width (renderer v2), which its layout reads.
+      if (this._type === NodeType.TextNode) {
+        this._textLayoutDirty();
+      }
+    },
+  },
+  x: {
+    get(this: Forwarding) {
+      return this.lng.x;
+    },
+    set(this: Forwarding, v: number) {
+      if (
+        this.transition === undefined ||
+        !this._sendToLightningAnimatable('x', v)
+      ) {
+        this.lng.x = v;
+      }
+    },
+  },
+  y: {
+    get(this: Forwarding) {
+      return this.lng.y;
+    },
+    set(this: Forwarding, v: number) {
+      if (
+        this.transition === undefined ||
+        !this._sendToLightningAnimatable('y', v)
+      ) {
+        this.lng.y = v;
+      }
+    },
+  },
+  zIndex: {
+    get(this: Forwarding) {
+      return this.lng.zIndex;
+    },
+    set(this: Forwarding, v: number) {
+      if (
+        this.transition === undefined ||
+        !this._sendToLightningAnimatable('zIndex', v)
+      ) {
+        this.lng.zIndex = v;
+      }
+    },
+  },
+  // Animatable, text only
+  fontSize: {
+    get(this: ElementNode) {
+      return textPropsOf(this).fontSize;
+    },
+    set(this: ElementNode, v: number) {
+      if (
+        this._type !== NodeType.TextNode ||
+        this.transition === undefined ||
+        !this._sendToLightningAnimatable('fontSize', v)
+      ) {
+        textPropsFor(this).fontSize = v;
+      }
+      this._textLayoutDirty();
+    },
+  },
+  lineHeight: {
+    get(this: ElementNode) {
+      return textPropsOf(this).lineHeight;
+    },
+    set(this: ElementNode, v: number) {
+      if (
+        this._type !== NodeType.TextNode ||
+        this.transition === undefined ||
+        !this._sendToLightningAnimatable('lineHeight', v)
+      ) {
+        textPropsFor(this).lineHeight = v;
+      }
+      this._textLayoutDirty();
+    },
+  },
+  // Not animated
+  atlasGroup: {
+    get(this: Forwarding) {
+      return this.lng.atlasGroup;
+    },
+    set(this: Forwarding, v: unknown) {
+      this.lng.atlasGroup = v;
+    },
+  },
+  autosize: {
+    get(this: Forwarding) {
+      return this.lng.autosize;
+    },
+    set(this: Forwarding, v: unknown) {
+      this.lng.autosize = v;
+    },
+  },
+  clipping: {
+    get(this: Forwarding) {
+      return this.lng.clipping;
+    },
+    set(this: Forwarding, v: unknown) {
+      this.lng.clipping = v;
+    },
+  },
+  componentName: {
+    get(this: Forwarding) {
+      return this.lng.componentName;
+    },
+    set(this: Forwarding, v: unknown) {
+      this.lng.componentName = v;
+    },
+  },
+  componentLocation: {
+    get(this: Forwarding) {
+      return this.lng.componentLocation;
+    },
+    set(this: Forwarding, v: unknown) {
+      this.lng.componentLocation = v;
+    },
+  },
+  data: {
+    get(this: Forwarding) {
+      return this.lng.data;
+    },
+    set(this: Forwarding, v: unknown) {
+      this.lng.data = v;
+    },
+  },
+  ignoreParentAlpha: {
+    get(this: Forwarding) {
+      return this.lng.ignoreParentAlpha;
+    },
+    set(this: Forwarding, v: unknown) {
+      this.lng.ignoreParentAlpha = v;
+    },
+  },
+  imageType: {
+    get(this: Forwarding) {
+      return this.lng.imageType;
+    },
+    set(this: Forwarding, v: unknown) {
+      this.lng.imageType = v;
+    },
+  },
+  placeholderColor: {
+    get(this: Forwarding) {
+      return this.lng.placeholderColor;
+    },
+    set(this: Forwarding, v: unknown) {
+      this.lng.placeholderColor = v;
+    },
+  },
+  srcHeight: {
+    get(this: Forwarding) {
+      return this.lng.srcHeight;
+    },
+    set(this: Forwarding, v: unknown) {
+      this.lng.srcHeight = v;
+    },
+  },
+  srcWidth: {
+    get(this: Forwarding) {
+      return this.lng.srcWidth;
+    },
+    set(this: Forwarding, v: unknown) {
+      this.lng.srcWidth = v;
+    },
+  },
+  srcX: {
+    get(this: Forwarding) {
+      return this.lng.srcX;
+    },
+    set(this: Forwarding, v: unknown) {
+      this.lng.srcX = v;
+    },
+  },
+  srcY: {
+    get(this: Forwarding) {
+      return this.lng.srcY;
+    },
+    set(this: Forwarding, v: unknown) {
+      this.lng.srcY = v;
+    },
+  },
+  texture: {
+    get(this: Forwarding) {
+      return this.lng.texture;
+    },
+    set(this: Forwarding, v: unknown) {
+      this.lng.texture = v;
+    },
+  },
+  textureOptions: {
+    get(this: Forwarding) {
+      return this.lng.textureOptions;
+    },
+    set(this: Forwarding, v: unknown) {
+      this.lng.textureOptions = v;
+    },
+  },
+  // Not animated, text only
+  contain: {
+    get(this: ElementNode) {
+      return textPropsOf(this).contain;
+    },
+    set(this: ElementNode, v: unknown) {
+      textPropsFor(this).contain = v;
+      // The DOM renderer sizes a text by it (renderer v2 only moves the
+      // block: the measure finds nothing to lay out).
+      this._textLayoutDirty();
+    },
+  },
+  forceLoad: {
+    get(this: ElementNode) {
+      return textPropsOf(this).forceLoad;
+    },
+    set(this: ElementNode, v: unknown) {
+      textPropsFor(this).forceLoad = v;
+    },
+  },
+  fontStyle: {
+    get(this: ElementNode) {
+      return textPropsOf(this).fontStyle;
+    },
+    set(this: ElementNode, v: unknown) {
+      textPropsFor(this).fontStyle = v;
+    },
+  },
+  letterSpacing: {
+    get(this: ElementNode) {
+      return textPropsOf(this).letterSpacing;
+    },
+    set(this: ElementNode, v: unknown) {
+      textPropsFor(this).letterSpacing = v;
+      this._textLayoutDirty();
+    },
+  },
+  maxHeight: {
+    get(this: ElementNode) {
+      return textPropsOf(this).maxHeight;
+    },
+    set(this: ElementNode, v: unknown) {
+      textPropsFor(this).maxHeight = v;
+      this._textLayoutDirty();
+    },
+  },
+  maxLines: {
+    get(this: ElementNode) {
+      return textPropsOf(this).maxLines;
+    },
+    set(this: ElementNode, v: unknown) {
+      textPropsFor(this).maxLines = v;
+      this._textLayoutDirty();
+    },
+  },
+  maxWidth: {
+    get(this: ElementNode) {
+      return textPropsOf(this).maxWidth;
+    },
+    set(this: ElementNode, v: unknown) {
+      textPropsFor(this).maxWidth = v;
+      this._textLayoutDirty();
+    },
+  },
+  offsetY: {
+    get(this: ElementNode) {
+      return textPropsOf(this).offsetY;
+    },
+    set(this: ElementNode, v: unknown) {
+      textPropsFor(this).offsetY = v;
+    },
+  },
+  overflowSuffix: {
+    get(this: ElementNode) {
+      return textPropsOf(this).overflowSuffix;
+    },
+    set(this: ElementNode, v: unknown) {
+      textPropsFor(this).overflowSuffix = v;
+      this._textLayoutDirty();
+    },
+  },
+  text: {
+    get(this: ElementNode) {
+      return textPropsOf(this).text;
+    },
+    set(this: ElementNode, v: unknown) {
+      textPropsFor(this).text = v;
+      this._textLayoutDirty();
+    },
+  },
+  textAlign: {
+    get(this: ElementNode) {
+      return textPropsOf(this).textAlign;
+    },
+    set(this: ElementNode, v: unknown) {
+      textPropsFor(this).textAlign = v;
+    },
+  },
+  verticalAlign: {
+    get(this: ElementNode) {
+      return textPropsOf(this).verticalAlign;
+    },
+    set(this: ElementNode, v: unknown) {
+      textPropsFor(this).verticalAlign = v;
+    },
+  },
+  wordBreak: {
+    get(this: ElementNode) {
+      return textPropsOf(this).wordBreak;
+    },
+    set(this: ElementNode, v: unknown) {
+      textPropsFor(this).wordBreak = v;
+      this._textLayoutDirty();
+    },
+  },
+  // Read-only on the renderer node: a write would throw there (B20)
+  absX: {
+    get(this: Forwarding) {
+      return this.lng.absX;
+    },
+    set: ignoreWrite,
+  },
+  absY: {
+    get(this: Forwarding) {
+      return this.lng.absY;
+    },
+    set: ignoreWrite,
+  },
+  destroyed: {
+    get(this: Forwarding) {
+      return this.lng.destroyed;
+    },
+    set: ignoreWrite,
+  },
+});
+
+// The DOM renderer draws fontStretch; a rendered WebGL text node has no such
+// prop, and a @solidtv/renderer 2.0 node would take it as a field of its own.
+// Before render the value waits in the props bag, which the renderer's
+// createTextNode ignores.
+Object.defineProperty(ElementNode.prototype, 'fontStretch', {
+  get(this: ElementNode): unknown {
+    return (this.lng as unknown as Record<string, unknown>).fontStretch;
+  },
+  set(this: ElementNode, v: unknown) {
+    if (this.rendered && !isDomRendererActive()) return;
+    (this.lng as unknown as Record<string, unknown>).fontStretch = v;
+  },
+});
 
 export function createRawShaderAccessor<T>(key: keyof StyleEffects) {
   return {

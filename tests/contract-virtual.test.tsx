@@ -481,11 +481,17 @@ v.describe('VirtualRow: window and scroll modes', () => {
       const settle = async () => {
         for (let i = 0; i < 4; i++) await flush();
       };
+      const jsdomFrame = globalThis.requestAnimationFrame;
       v.vi.stubGlobal(
         'requestAnimationFrame',
         (cb: (time: number) => void) =>
           setTimeout(() => cb(performance.now() + 1e6), 0),
       );
+      // Animations of earlier tests (on by default) can leave the DOM
+      // renderer's loop waiting on a jsdom frame, up to ~16 ms away, and the
+      // loop requests no other frame meanwhile. Let that frame run: its
+      // next request goes to the stub.
+      await new Promise<void>((resolve) => jsdomFrame(() => resolve()));
       lng.Config.animationsEnabled = true;
       try {
         // Focused item's screen x (row x + its x) at mount, then after Right

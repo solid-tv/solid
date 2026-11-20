@@ -1,5 +1,4 @@
 import {
-  assertTruthy,
   isElementText,
   ElementNode,
   TextNode,
@@ -21,8 +20,10 @@ export default {
     log('Replace Text: ', node, value);
     node.text = value;
     const parent = node.parent;
-    assertTruthy(parent);
-    parent.text = parent.getText();
+    // A text node never inserted has no parent.
+    if (parent !== undefined) {
+      parent.text = parent.getText();
+    }
   },
   setProperty(node: ElementNode, name: string, value: any): void {
     node[name] = value;
@@ -35,7 +36,12 @@ export default {
 
     if (node instanceof ElementNode) {
       if (node.parent!.rendered) {
+        const wasRendered = node.rendered;
         node.render(true);
+        // render() appended the new renderer node: place it (B19).
+        if (!wasRendered && anchor && node.rendered) {
+          parent._drawInOrder(node);
+        }
       }
       if (prevParent !== undefined) {
         enqueueDelete(node, 1);
@@ -67,11 +73,20 @@ export default {
     return node.children[0];
   },
   getNextSibling(node: SolidNode): SolidNode | undefined {
-    const children = (node.parent!.children || []) as SolidNode[];
-    const index = children.indexOf(node) + 1;
-    if (index < children.length) {
-      return children[index];
+    const parent = node.parent;
+    // A removed node keeps its parent link, but has no sibling there.
+    if (
+      parent === undefined ||
+      (node instanceof ElementNode && node._detached)
+    ) {
+      return undefined;
     }
-    return undefined;
+    // From the end: Solid asks for the sibling after a list's last item.
+    const children = parent.children as SolidNode[];
+    let i = children.length - 1;
+    while (i >= 0 && children[i] !== node) {
+      i--;
+    }
+    return i >= 0 ? children[i + 1] : undefined;
   },
 } satisfies SolidRendererOptions;

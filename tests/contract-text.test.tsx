@@ -6,8 +6,11 @@
  * (getBoundingClientRect). Tests that need real sizes install
  * `mockTextMeasure()`: 10px per character, 20px per line, for text divs only.
  * The DOM renderer measures a text once when it is created (synchronously)
- * and again after `document.fonts.ready`, when it emits `loaded`.
- * Real-WebGL text-in-flex is covered elsewhere.
+ * and again after `document.fonts.ready`, when it emits `loaded`. From 1.7
+ * Solid also measures a text in a flex container itself (`measure()`, which
+ * the DOM renderer answers synchronously while `document.fonts.check` says
+ * its font is loaded) before laying the container out.
+ * Real-WebGL text-in-flex is covered elsewhere (tests/webgl/flex-text).
  */
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import * as s from 'solid-js';
@@ -47,6 +50,12 @@ const raw = (el: lng.ElementNode) => el.lng as RendererTextNode;
 afterEach(() => {
   vi.restoreAllMocks();
 });
+
+// The DOM renderer re-measures a changed text in a microtask and emits
+// `loaded`; the handler queues the flex pass for the post-mutation microtask
+// after that (design 3.4.4), which `waitForUpdate` (a few microtasks) can
+// miss. A macrotask is after both.
+const nextTask = () => new Promise<void>((r) => setTimeout(r, 0));
 
 describe('contract: text children concatenated from several JSX expressions', () => {
   it('static text and several expressions concatenate into el.text and el.lng.text', () => {
@@ -132,24 +141,10 @@ describe('contract: text props reach the renderer node (el.lng)', () => {
     dispose();
   });
 
-  it('contain "width" without a width: maxWidth = parent width - x (marginRight is ignored today)', () => {
-    let t!: lng.ElementNode;
-    const dispose = renderer.render(() => (
-      <view width={800} height={600}>
-        <text ref={t} contain="width" x={100} marginRight={40}>
-          B
-        </text>
-      </view>
-    ));
-    expect(raw(t).maxWidth).toBe(700);
-    expect(raw(t).maxLines).toBe(99);
-    dispose();
-  });
-
-  // BUG: src/core/elementNode.ts:1612 (and :1617 for marginBottom) reads
-  // marginRight from the renderer props bag, where it is never stored (margins
-  // live on the ElementNode), so the subtraction is always 0.
-  it.skip('BUG: contain "width" without a width subtracts marginRight from maxWidth', () => {
+  // B11: before the fix marginRight was read from the renderer props bag,
+  // where it is never stored (margins live on the ElementNode), so the
+  // subtraction was always 0 (maxWidth 700).
+  it('contain "width" without a width: maxWidth = parent width - x - marginRight', () => {
     let t!: lng.ElementNode;
     const dispose = renderer.render(() => (
       <view width={800} height={600}>
@@ -159,6 +154,44 @@ describe('contract: text props reach the renderer node (el.lng)', () => {
       </view>
     ));
     expect(raw(t).maxWidth).toBe(660);
+    expect(raw(t).maxLines).toBe(99);
+    dispose();
+  });
+
+  // B11: the margin array counts as in flex ([top, right, bottom, left]).
+  it('contain "both" without a size: the margin array counts too', () => {
+    let t!: lng.ElementNode;
+    const dispose = renderer.render(() => (
+      <view width={800} height={600}>
+        <text ref={t} contain="both" x={100} y={50} margin={[0, 40, 30, 0]}>
+          B
+        </text>
+      </view>
+    ));
+    expect(raw(t).maxWidth).toBe(660);
+    expect(raw(t).maxHeight).toBe(520);
+    dispose();
+  });
+
+  // B11: as above for marginBottom (maxHeight was 550).
+  it('contain "both" without a size: maxHeight = parent height - y - marginBottom', () => {
+    let t!: lng.ElementNode;
+    const dispose = renderer.render(() => (
+      <view width={800} height={600}>
+        <text
+          ref={t}
+          contain="both"
+          x={100}
+          y={50}
+          marginRight={40}
+          marginBottom={30}
+        >
+          B
+        </text>
+      </view>
+    ));
+    expect(raw(t).maxWidth).toBe(660);
+    expect(raw(t).maxHeight).toBe(520);
     dispose();
   });
 
@@ -224,6 +257,30 @@ describe('contract: text props reach the renderer node (el.lng)', () => {
     expect(raw(withLineHeight).maxHeight).toBe(40);
     expect(withLineHeight.height).toBe(40);
     expect(raw(withFontSize).maxHeight).toBe(30);
+    dispose();
+  });
+
+  // B12: a lineHeight at or below 3 is a multiplier of the font size (as the
+  // renderer reads it). Before the fix maxHeight was the bare multiplier
+  // (1.2 px), so the text was 1.2 px high in flex.
+  it('maxLines={1} with contain and a multiplier lineHeight: maxHeight = lineHeight * fontSize', () => {
+    let t!: lng.ElementNode;
+    const dispose = renderer.render(() => (
+      <view width={800} height={600}>
+        <text
+          ref={t}
+          contain="width"
+          width={300}
+          maxLines={1}
+          lineHeight={1.2}
+          fontSize={30}
+        >
+          E
+        </text>
+      </view>
+    ));
+    expect(raw(t).maxHeight).toBe(36);
+    expect(t.height).toBe(36);
     dispose();
   });
 
@@ -475,7 +532,7 @@ describe('contract: font defaults from Config.fontSettings', () => {
 });
 
 describe('contract: autosize', () => {
-  it('autosize reaches the renderer node; a loaded event on an autosize flex child relays out its parent synchronously', async () => {
+  it('autosize reaches the renderer node; a loaded event on an autosize flex child relays out its parent', async () => {
     let count = 0;
     let row!: lng.ElementNode;
     let auto!: lng.ElementNode;
@@ -499,6 +556,12 @@ describe('contract: autosize', () => {
       type: 'texture',
       dimensions: { w: 120, h: 50 },
     });
+    // Design 3.4.4: the loaded handler queues the parent for the
+    // post-mutation pass (in the renderer frame, between its walks) instead of
+    // laying it out synchronously, so several loads in a frame cost one pass.
+    // Until 1.7 the count was 2 right after emit.
+    expect(count).toBe(1);
+    await waitForUpdate();
     expect(count).toBe(2);
     expect(last.x).toBe(140);
     expect(row.width).toBe(190);
@@ -528,6 +591,8 @@ describe('contract: text in a flex container (DOM renderer)', () => {
       </view>
     ));
     await waitForUpdate();
+    // The DOM renderer re-measures on a timer once fonts are loaded.
+    await nextTask();
     expect(t.width).toBe(0);
     expect(t.height).toBe(0);
     expect(raw(t).loaded).toBe(true);
@@ -567,6 +632,7 @@ describe('contract: text in a flex container (DOM renderer)', () => {
     expect(t.width).toBe(5 * CHAR_W);
     expect(t.height).toBe(LINE_H);
     await waitForUpdate();
+    await nextTask(); // the DOM renderer's re-measure timer
     expect(t.x).toBe(60);
     expect(last.x).toBe(120);
     expect(row.width).toBe(170);
@@ -574,13 +640,26 @@ describe('contract: text in a flex container (DOM renderer)', () => {
     expect(loaded).toEqual([
       [t, t, { type: 'text', dimensions: { w: 50, h: 20 } }],
     ]);
-    // The loaded handler runs the first flex pass and takes the container off
-    // the layout queue, so onLayout fires once.
+    // The loaded handler queues the container, which render() already queued:
+    // one flex pass, so onLayout fires once.
     expect(count).toBe(1);
     dispose();
   });
 
-  it('flex waits for the text size: nothing is placed until the text is measured, then loaded relays out', async () => {
+  // 1.7 (stream T): Solid measures a flex text itself; it waits for
+  // `loaded` (once) only while the text's font is not loaded, which the DOM
+  // renderer reads from document.fonts.check. Until 1.7 every flex text
+  // waited for `loaded`, the font loaded or not.
+  it('flex waits for the text size: nothing is placed until the font loads and the text is measured, then loaded relays out', async () => {
+    const fontSet = document.fonts as unknown as {
+      check: (font: string) => boolean;
+    };
+    const savedCheck = fontSet.check;
+    const checked: string[] = [];
+    fontSet.check = (font: string) => {
+      checked.push(font);
+      return false;
+    };
     const spy = mockTextMeasure();
     // Hold the font-ready measurement and report 0 x 0 until then.
     spy.mockImplementation(
@@ -597,10 +676,14 @@ describe('contract: text in a flex container (DOM renderer)', () => {
           toJSON() {},
         }) as DOMRect,
     );
-    const fonts = document.fonts as unknown as { ready: Promise<unknown> };
+    const fonts = document.fonts as unknown as {
+      ready: Promise<unknown>;
+      status: string;
+    };
     const savedReady = fonts.ready;
     let fontsReady!: () => void;
     fonts.ready = new Promise<void>((r) => (fontsReady = r));
+    fonts.status = 'loading';
     let dispose = () => {};
     try {
       let count = 0;
@@ -619,10 +702,18 @@ describe('contract: text in a flex container (DOM renderer)', () => {
       expect(row.width).toBe(0);
       expect(count).toBe(1);
 
+      // The text's font, as CSS reads it.
+      expect(checked[0]).toBe(
+        `normal normal ${lng.Config.fontSettings.fontSize}px "${lng.Config.fontSettings.fontFamily}"`,
+      );
+
       spy.mockRestore();
       mockTextMeasure();
+      fontSet.check = savedCheck;
+      fonts.status = 'loaded';
       fontsReady();
       await waitForUpdate();
+      await nextTask();
       expect(raw(t).loaded).toBe(true);
       expect(t.width).toBe(50);
       expect(last.x).toBe(60);
@@ -630,6 +721,8 @@ describe('contract: text in a flex container (DOM renderer)', () => {
       expect(row.height).toBe(50);
       expect(count).toBe(2);
     } finally {
+      fontSet.check = savedCheck;
+      fonts.status = 'loaded';
       fontsReady();
       fonts.ready = savedReady;
       await waitForUpdate();
@@ -658,6 +751,7 @@ describe('contract: text in a flex container (DOM renderer)', () => {
     expect(t.text).toBe('Hello world');
     expect(last.x).toBe(60); // stale until the renderer re-measures
     await waitForUpdate();
+    await nextTask();
     expect(t.width).toBe(110);
     expect(last.x).toBe(120);
     expect(row.width).toBe(170);
@@ -750,7 +844,7 @@ describe('contract: text in a flex container (DOM renderer)', () => {
     dispose();
   });
 
-  it('flexGrow next to a text (docs example): the grow item takes the rest; it never shrinks back when the text grows', async () => {
+  it('flexGrow next to a text (docs example): the grow item takes the rest and follows the text size', async () => {
     mockTextMeasure();
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const [label, setLabel] = s.createSignal('Flex Grow');
@@ -769,42 +863,327 @@ describe('contract: text in a flex container (DOM renderer)', () => {
     expect(grow.width).toBe(490);
     expect(row.width).toBe(600);
 
-    // Today the grown width is the item's base on the next pass, so it keeps
-    // 490 and the row overflows (200 + 490 = 690 > 600).
+    // B8: the grow item shrinks to 600 - 180 - 20 = 400. Before the fix the
+    // grown width was the item's base on the next pass, so it kept 490 and
+    // the row overflowed (200 + 490 = 690 > 600).
     setLabel('Flex Grow Longer!!');
     await waitForUpdate();
+    await nextTask();
     expect(t.width).toBe(180);
     expect(grow.x).toBe(200);
-    expect(grow.width).toBe(490);
+    expect(grow.width).toBe(400);
 
     // A shorter text lets it grow again.
     setLabel('Flex');
     await waitForUpdate();
+    await nextTask();
     expect(grow.x).toBe(60);
     expect(grow.width).toBe(540);
     expect(warn).not.toHaveBeenCalled();
     dispose();
   });
+});
 
-  // BUG: flexGrow should be computed from the item's own size each pass, so
-  // the grow item shrinks to 600 - 180 - 20 = 400 when the text grows.
-  // flex.ts:146 / flexLayout.ts:199 add the free space to the current
-  // (already grown) width.
-  it.skip('BUG: a flexGrow item shrinks back when a text sibling grows', async () => {
+/**
+ * A text size from the text and its font props, as the renderers' layouts
+ * read them: `fontSize / 2` per character plus `letterSpacing` (twice that
+ * in a family named 'Wide'), and a line of `lineHeight || fontSize`, wrapped
+ * at `maxWidth` (contain="width").
+ */
+function mockFontMeasure() {
+  return vi
+    .spyOn(Element.prototype, 'getBoundingClientRect')
+    .mockImplementation(function (this: Element) {
+      const props = (
+        this as unknown as { _node?: { props?: Record<string, unknown> } }
+      )._node?.props;
+      const text = props?.text;
+      let width = 0;
+      let height = 0;
+      if (typeof text === 'string' && props !== undefined) {
+        const size = props.fontSize as number;
+        const wide = props.fontFamily === 'Wide' ? 2 : 1;
+        const char = (size / 2) * wide + (props.letterSpacing as number);
+        const line = (props.lineHeight as number) || size;
+        width = text.length * char;
+        height = line;
+        const max = props.maxWidth as number;
+        if (props.contain === 'width' && max > 0 && width > max) {
+          height = Math.ceil(width / max) * line;
+          width = max;
+        }
+      }
+      return {
+        x: 0,
+        y: 0,
+        top: 0,
+        left: 0,
+        right: width,
+        bottom: height,
+        width,
+        height,
+        toJSON() {},
+      } as DOMRect;
+    });
+}
+
+/** After the post-mutation microtask that a write queued (nothing else). */
+const microtask = () => Promise.resolve();
+
+describe('contract: Solid measures text before flex (1.7, stream T)', () => {
+  it('a text change is measured and laid out in the post-mutation microtask, once', async () => {
     mockTextMeasure();
-    const [label, setLabel] = s.createSignal('Flex Grow');
-    let grow!: lng.ElementNode;
+    const [label, setLabel] = s.createSignal('Hello');
+    let count = 0;
+    let t!: lng.ElementNode;
+    let last!: lng.ElementNode;
     const dispose = renderer.render(() => (
-      <view width={600} display="flex" gap={20} height={42}>
-        <text>{label()}</text>
-        <view ref={grow} flexGrow={1} height={4} />
+      <view display="flex" gap={10} onLayout={() => void count++}>
+        <text ref={t}>{label()}</text>
+        <view ref={last} width={50} height={50} />
       </view>
     ));
-    await waitForUpdate();
-    setLabel('Flex Grow Longer!!');
-    await waitForUpdate();
-    expect(grow.x).toBe(200);
-    expect(grow.width).toBe(400);
+    await nextTask();
+    expect(last.x).toBe(60);
+    count = 0;
+
+    setLabel('Hello world');
+    expect(last.x).toBe(60); // not synchronously
+    await microtask();
+    // Until 1.7: after the DOM renderer's own re-measure (a timer) and its
+    // `loaded`.
+    expect(t.width).toBe(110);
+    expect(last.x).toBe(120);
+    expect(count).toBe(1);
+    await nextTask();
+    expect(count).toBe(1);
+    dispose();
+  });
+
+  it('updateLayout() right after a text change measures the text first', () => {
+    mockTextMeasure();
+    const [label, setLabel] = s.createSignal('Hello');
+    let row!: lng.ElementNode;
+    let last!: lng.ElementNode;
+    const dispose = renderer.render(() => (
+      <view ref={row} display="flex" gap={10}>
+        <text>{label()}</text>
+        <view ref={last} width={50} height={50} />
+      </view>
+    ));
+    row.updateLayout();
+    expect(last.x).toBe(60);
+
+    setLabel('Hello world');
+    row.updateLayout();
+    expect(last.x).toBe(120);
+    dispose();
+  });
+
+  it('a text change that keeps the measured size lays nothing out', async () => {
+    mockTextMeasure();
+    const [label, setLabel] = s.createSignal('Hello');
+    let count = 0;
+    let last!: lng.ElementNode;
+    const dispose = renderer.render(() => (
+      <view display="flex" gap={10} onLayout={() => void count++}>
+        <text>{label()}</text>
+        <view ref={last} width={50} height={50} />
+      </view>
+    ));
+    await nextTask();
+    count = 0;
+
+    setLabel('World'); // 5 characters, as before
+    await nextTask();
+    expect(count).toBe(0);
+    expect(last.x).toBe(60);
+    dispose();
+  });
+
+  it('every font prop the text layout reads lays the container out again: fontSize, lineHeight, letterSpacing, fontFamily, fontWeight', async () => {
+    mockFontMeasure();
+    const [size, setSize] = s.createSignal(20);
+    const [lineHeight, setLineHeight] = s.createSignal(0);
+    const [spacing, setSpacing] = s.createSignal(0);
+    const [family, setFamily] = s.createSignal('Narrow');
+    let count = 0;
+    let row!: lng.ElementNode;
+    let t!: lng.ElementNode;
+    let last!: lng.ElementNode;
+    const dispose = renderer.render(() => (
+      <view ref={row} display="flex" gap={10} onLayout={() => void count++}>
+        <text
+          ref={t}
+          fontSize={size()}
+          lineHeight={lineHeight()}
+          letterSpacing={spacing()}
+          fontFamily={family()}
+        >
+          Hello
+        </text>
+        <view ref={last} width={50} height={10} />
+      </view>
+    ));
+    await nextTask();
+    expect(last.x).toBe(60); // 5 * 10 + 10
+    expect(row.height).toBe(20);
+
+    const step = async (change: () => void, x: number, height: number) => {
+      count = 0;
+      change();
+      await microtask();
+      expect([last.x, row.height, count]).toEqual([x, height, 1]);
+    };
+    await step(() => setSize(40), 110, 40); // 5 * 20 + 10
+    await step(() => setLineHeight(50), 110, 50);
+    await step(() => setSpacing(2), 120, 50); // 5 * 22 + 10
+    await step(() => setFamily('Wide'), 220, 50); // 5 * 42 + 10
+    // fontWeight renames the family ('Wide700'): no longer wide.
+    await step(() => (t.fontWeight = 'bold'), 120, 50);
+    dispose();
+  });
+
+  it('a maxWidth change on a contained text lays the container out again', async () => {
+    mockFontMeasure();
+    const [width, setWidth] = s.createSignal(300);
+    let count = 0;
+    let row!: lng.ElementNode;
+    let last!: lng.ElementNode;
+    const dispose = renderer.render(() => (
+      <view
+        ref={row}
+        display="flex"
+        flexDirection="column"
+        onLayout={() => void count++}
+      >
+        <text contain="width" maxWidth={width()} fontSize={20}>
+          Hello world, twice
+        </text>
+        <view ref={last} width={50} height={10} />
+      </view>
+    ));
+    await nextTask();
+    expect(last.y).toBe(20); // 18 * 10 = 180: one line of 20
+    count = 0;
+
+    setWidth(100); // two lines
+    await microtask();
+    expect(last.y).toBe(40);
+    expect(count).toBe(1);
+    dispose();
+  });
+
+  it('a new text in a flex container is measured once, in the post-mutation pass, with the writes of its tick; text in a plain view is not measured by Solid', async () => {
+    let first!: lng.ElementNode;
+    const d1 = renderer.render(() => <text ref={first}>a</text>);
+    const proto = Object.getPrototypeOf(first.lng) as { measure(): boolean };
+    d1();
+    const measure = vi.spyOn(proto, 'measure');
+
+    const [label, setLabel] = s.createSignal('Hello');
+    let inFlex!: lng.ElementNode;
+    const d2 = renderer.render(() => (
+      <view display="flex">
+        <text ref={inFlex}>{label()}</text>
+      </view>
+    ));
+    setLabel('Hello again');
+    expect(measure).not.toHaveBeenCalled();
+    await microtask();
+    expect(measure).toHaveBeenCalledTimes(1);
+    expect(measure.mock.contexts[0]).toBe(inFlex.lng);
+    d2();
+
+    measure.mockClear();
+    const d3 = renderer.render(() => (
+      <view>
+        <text>Hello</text>
+      </view>
+    ));
+    await nextTask();
+    expect(measure).not.toHaveBeenCalled();
+    d3();
+  });
+
+  it('an onEvent.loaded on a flex text hears every new size, after Solid measured it first', async () => {
+    mockTextMeasure();
+    const [label, setLabel] = s.createSignal('Hello');
+    const heard: unknown[] = [];
+    let last!: lng.ElementNode;
+    const dispose = renderer.render(() => (
+      <view display="flex" gap={10}>
+        <text
+          onEvent={{
+            loaded(_el, payload) {
+              heard.push((payload as { dimensions: unknown }).dimensions);
+            },
+          }}
+        >
+          {label()}
+        </text>
+        <view ref={last} width={50} height={50} />
+      </view>
+    ));
+    await nextTask();
+    expect(heard).toEqual([{ w: 50, h: 20 }]);
+
+    setLabel('Hello world');
+    await microtask();
+    expect(last.x).toBe(120); // Solid measured and laid out first
+    await nextTask(); // the DOM renderer's re-measure timer
+    expect(heard).toEqual([
+      { w: 50, h: 20 },
+      { w: 110, h: 20 },
+    ]);
+    dispose();
+  });
+
+  it('a loaded at a size Solid did not measure (a web font that loaded after the text was measured) lays the container out again', async () => {
+    mockTextMeasure();
+    let count = 0;
+    let t!: lng.ElementNode;
+    let last!: lng.ElementNode;
+    const dispose = renderer.render(() => (
+      <view display="flex" gap={10} onLayout={() => void count++}>
+        <text ref={t}>Hello</text>
+        <view ref={last} width={50} height={50} />
+      </view>
+    ));
+    await nextTask();
+    expect(last.x).toBe(60);
+    count = 0;
+
+    // The face arrived: the DOM renderer measured the text again.
+    t.lng.w = 80;
+    (t.lng as unknown as lng.IEventEmitter).emit('loaded', {
+      type: 'text',
+      dimensions: { w: 80, h: 20 },
+    });
+    await nextTask();
+    expect(last.x).toBe(90);
+    expect(count).toBe(1);
+    dispose();
+  });
+
+  it('a contain change lays the container out again (the DOM renderer sizes the text by it)', async () => {
+    mockFontMeasure();
+    const [contain, setContain] = s.createSignal<'none' | 'width'>('none');
+    let last!: lng.ElementNode;
+    const dispose = renderer.render(() => (
+      <view display="flex" flexDirection="column">
+        <text contain={contain()} maxWidth={100} fontSize={20}>
+          Hello world, twice
+        </text>
+        <view ref={last} width={50} height={10} />
+      </view>
+    ));
+    await nextTask();
+    expect(last.y).toBe(20); // one line of 180
+
+    setContain('width'); // two lines of 100
+    await microtask();
+    expect(last.y).toBe(40);
     dispose();
   });
 });
