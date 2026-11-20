@@ -29,13 +29,10 @@ Before calling the Render function, you can set rendererOptions.
 
 ```jsx
 import { render, Config } from '@solidtv/solid';
-import { WebGlCoreRenderer, SdfTextRenderer } from '@solidtv/renderer/webgl';
 import { Inspector } from '@solidtv/renderer/inspector';
 
 Config.rendererOptions = {
   fpsUpdateInterval: logFps ? 1000 : 0,
-  fontEngines: [SdfTextRenderer],
-  renderEngine: WebGlCoreRenderer,
   inspector: Inspector,
   // textureMemory: {
   //   criticalThreshold: 80e6,
@@ -47,6 +44,33 @@ Config.rendererOptions = {
 };
 render(() => <text>Hello World</text>);
 ```
+
+`@solidtv/renderer` 2.0 draws with WebGL and SDF text only, so there is no render engine or font engine to pick and no `@solidtv/renderer/webgl` entry to import. The renderer needs two things from the app before it draws: an SDF font for every font family it names, and each shader type registered under the name it is used by.
+
+```jsx
+import { createRenderer, loadFonts } from '@solidtv/solid';
+import { Rounded, RoundedWithBorder } from '@solidtv/renderer/shaders';
+
+const { renderer, render } = createRenderer();
+
+// A web font (.ttf, fontUrl) does not draw on the WebGL renderer: convert it
+// to an MSDF or SSDF atlas and load that, for every family the app uses.
+loadFonts([
+  {
+    type: 'msdf',
+    fontFamily: 'Roboto',
+    atlasDataUrl: '/fonts/Roboto-Regular.msdf.json',
+    atlasUrl: '/fonts/Roboto-Regular.msdf.png',
+  },
+]);
+
+renderer.registerShaderType('rounded', Rounded);
+renderer.registerShaderType('roundedWithBorder', RoundedWithBorder);
+
+render(() => <text>Hello World</text>);
+```
+
+See [Text](/essentials/text.md) for more on fonts, and the renderer's `docs/upgrade-1.x-to-2.0.md` for everything renderer 2.0 changed. When you build for production, read [Building for TVs](/deploy/build.md): a terser setting there removes most of the renderer's per-frame allocations.
 
 For the latest renderer options read the official [renderer documentation](https://www.solid-tv.github.io/solid//api/renderer/interfaces/Renderer.RendererMainSettings.html)
 
@@ -98,21 +122,15 @@ For the latest renderer options read the official [renderer documentation](https
   Optional. Allows inspection of the state of Nodes in the renderer, replicating the node state.
   Type: `typeof Inspector | false`.
 
-- **renderEngine**
-  Defines the rendering engine (WebGL or Canvas). WebGL is more performant, while Canvas is more broadly supported.
-  Type: `typeof CanvasCoreRenderer | typeof WebGlCoreRenderer`.
-
 - **quadBufferSize**
   Specifies the quad buffer size in bytes.
   Default: `1048576` (16384 quads x 64 bytes — the most a Uint16 index buffer can address). Was `1310720` before renderer 1.8.
 
-- **fontEngines**
-  Defines font engines for text rendering (CanvasTextRenderer for Canvas, SdfTextRenderer for WebGL). Enables tree shaking for unused engines.
-  Default: `[]`. Type: `(typeof SdfTextRenderer | typeof CanvasTextRenderer)[]`.
-
 #### Removed renderer settings
 
 - **renderOnlyInViewport**: removed in renderer 1.8. Its `true` behavior is now unconditional — the renderer always draws only what is in view.
+- **renderEngine** and **fontEngines**: removed in renderer 2.0. WebGL and SDF text are the only engines. Solid drops them from the options before it creates the renderer and logs one `console.warn` for each in every build (not only in development), so an app that still sets them keeps working; delete them.
+- **`renderer.stage.shManager`**: removed in renderer 2.0 (`renderer.registerShaderType(name, type)` replaces `renderer.stage.shManager.registerShaderType(name, type)`). Solid keeps `stage.shManager` working on the WebGL renderer and logs one `console.warn` the first time it is read; change the call.
 
 ### Additional Solid-Specific Configurations
 
@@ -141,7 +159,7 @@ Besides `rendererOptions`, the `Config` object exposes several properties specif
   The property key used to identify the focused state styling.
   - _Default_: `'$focus'`
 - **domRendererEnabled**: `boolean` (Default: `false`)
-  Whether the DOM renderer should be used instead of the SolidTV Canvas renderer.
+  Whether the DOM renderer should be used instead of the SolidTV WebGL renderer.
 - **simpleAnimationsEnabled**: `boolean`
   Allows simple CSS-like transition properties without full engine overhead.
 - **throttleInput**: `number`
