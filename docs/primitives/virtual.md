@@ -42,7 +42,7 @@ import { VirtualRow, VirtualColumn } from './primitives/Virtual';
 - **onEndReached** (`() => void`): Callback triggered when selection moves near the end of the list Requires `onEndReachedThreshold` to be set.
 - **onEndReachedThreshold** (`number`): Number from end of items when `onEndReached` will be called (default: `undefined`).
 - **debugInfo** (`boolean`): Logs internal slice recalculations and bounds shifts to console.
-- **factorScale** (`boolean`): If `true`, scrolling calculations will take item focus scale into account.
+- **factorScale** (`boolean`): **Deprecated; it has no effect since 1.7.** A window shift always moves the row or column by the unscaled slot (item size plus gap), the distance flex moves the items, so a focused item with a `$focus` scale keeps its screen position without it. Remove the prop.
 - **uniformSize** (`boolean`): If `true` (default), assumes all items are uniform size to calculate scrolling, improving performance.
 - **children** (`(item: Accessor<T>, index: Accessor<number>) => JSX.Element`): Function that renders each item.
 - **selected** (`number`): Initial selected index.

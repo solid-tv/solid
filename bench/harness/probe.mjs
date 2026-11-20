@@ -29,8 +29,8 @@
 // never lands in the op's frames; its handler is timed as `keyup`, and the
 // probe waits for idle again before the next op.
 //
-// v1 and v2 below are @solidtv/renderer 1.x and 2.x. The arms here run 1.x;
-// the 2.x hooks are kept for that renderer and never install on 1.x.
+// v1 and v2 below are @solidtv/renderer 1.x and 2.x. Arm A runs 1.x, arms B
+// and C 2.x; a hook for one major never installs on the other.
 export function pageProbe(opts) {
   const counting = opts.mode === 'count';
   const perf = window.performance;

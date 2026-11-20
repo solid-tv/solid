@@ -1,4 +1,4 @@
-// Builds the benchmark app for one arm: BENCH_ARM=A|C (default C).
+// Builds the benchmark app for one arm: BENCH_ARM=A|B|C (default C).
 //
 // Every arm compiles its Solid from source (the `src/` of the arm's tree) and
 // consumes its renderer through the renderer's built `dist`, as apps do. The
@@ -42,8 +42,7 @@ if (!(arm in ARMS)) {
 }
 const { rendererMajor } = ARMS[arm];
 // The renderer bootstrap (engines, shader registration) for the arm's
-// renderer major: src/arm-v1.ts. Renderer 1.x is the only one this branch's
-// Solid runs on.
+// renderer major: src/arm-v1.ts (arm A) or src/arm-v2.ts (arms B and C).
 const armInit = resolve(here, `src/arm-v${rendererMajor}.ts`);
 if (!existsSync(armInit)) {
   throw new Error(
@@ -97,7 +96,7 @@ const solidAliases: Alias[] = [
  * Count mode only: wraps the default export of the arm's flex layout modules
  * so that each call (one flex pass over one container) counts. It matches
  * `export default function (` in src/core/flex.ts and flexLayout.ts, as in
- * both arms. A module without it is left alone with a warning, as is a
+ * every arm. A module without it is left alone with a warning, as is a
  * build in which neither module was transformed (a path that matches no
  * module id), and the runner reports flex passes as n/a (`flexHooks` stays 0).
  */
