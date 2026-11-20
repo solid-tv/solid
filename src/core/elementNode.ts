@@ -1284,7 +1284,8 @@ export class ElementNode {
    * Swap a shader convertToShader made when its border width moves to or
    * from 0. For an animated write, `change` holds what animates: a border
    * it adds is swapped in before the animation reads its start values, one
-   * it removes stays until the animation stops.
+   * it removes stays until the animation stops. A type the app did not
+   * register (createShader returns null) keeps the current shader.
    */
   _syncShaderType(change?: Record<string, unknown>) {
     const props = this._shaderProps;
@@ -1294,11 +1295,10 @@ export class ElementNode {
     if (hasBorderWidth(props, change)) next |= BORDER_FEATURE;
     else if (change !== undefined) next |= features & BORDER_FEATURE;
     if (next === features) return;
+    const shader = renderer.createShader(ROUNDED_SHADER_TYPES[next]!, props);
+    if (!shader) return;
     this._shaderFeatures = next;
-    this.lng.shader = renderer.createShader(
-      ROUNDED_SHADER_TYPES[next]!,
-      props,
-    ) as IRendererShader;
+    this.lng.shader = shader as IRendererShader;
   }
 
   set effects(v: StyleEffects) {
