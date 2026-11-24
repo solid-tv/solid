@@ -263,6 +263,124 @@ v.describe('Grid', () => {
   });
 
   v.it(
+    'scroll="edge" in a clipping parent: y moves only when focus leaves the rows that fit; looping jumps to show the last row',
+    async () => {
+      let grid!: lng.ElementNode;
+      // (200 - 20 + 10) / 60: 3 rows fit.
+      dispose = await mount(() => (
+        <view y={100} width={1920} height={200} clipping>
+          <Grid
+            ref={grid}
+            autofocus
+            looping
+            scroll="edge"
+            y={20}
+            items={tenItems}
+            columns={3}
+            itemWidth={100}
+            itemHeight={50}
+            itemOffset={10}
+          >
+            {Cell}
+          </Grid>
+        </view>
+      ));
+      const seen = await walk(
+        [
+          'ArrowDown',
+          'ArrowDown',
+          'ArrowDown', // row 3 does not fit: one row up
+          'ArrowUp',
+          'ArrowUp',
+          'ArrowUp', // row 0 is above the first row shown
+          'ArrowUp', // loops to g9
+          'ArrowDown', // loops to g0
+        ],
+        () => [focusedId(), grid.y],
+      );
+      v.expect(seen).toEqual([
+        ['g3', 20],
+        ['g6', 20],
+        ['g9', -40],
+        ['g6', -40],
+        ['g3', -40],
+        ['g0', 20],
+        ['g9', -40],
+        ['g0', 20],
+      ]);
+    },
+  );
+
+  v.it(
+    'scroll="edge" with no clipping parent: the rows that fit above the screen bottom (1080)',
+    async () => {
+      let grid!: lng.ElementNode;
+      // (1080 - 960 + 10) / 60: 2 rows fit.
+      dispose = await mount(() => (
+        <view y={960} width={1920} height={1080}>
+          <Grid
+            ref={grid}
+            autofocus
+            scroll="edge"
+            items={tenItems}
+            columns={3}
+            itemWidth={100}
+            itemHeight={50}
+            itemOffset={10}
+          >
+            {Cell}
+          </Grid>
+        </view>
+      ));
+      const seen = await walk(
+        ['ArrowDown', 'ArrowDown', 'ArrowDown', 'ArrowUp', 'ArrowUp', 'ArrowUp'],
+        () => [focusedId(), grid.y],
+      );
+      v.expect(seen).toEqual([
+        ['g3', 0],
+        ['g6', -60],
+        ['g9', -120],
+        ['g6', -120],
+        ['g3', -60],
+        ['g0', 0],
+      ]);
+    },
+  );
+
+  v.it(
+    'scroll="edge": selected scrolls just enough to show the selected row',
+    async () => {
+      let grid!: lng.ElementNode;
+      const [sel, setSel] = s.createSignal(9);
+      dispose = await mount(() => (
+        <view y={100} width={1920} height={200} clipping>
+          <Grid
+            ref={grid}
+            autofocus
+            scroll="edge"
+            selected={sel()}
+            y={20}
+            items={tenItems}
+            columns={3}
+            itemWidth={100}
+            itemHeight={50}
+            itemOffset={10}
+          >
+            {Cell}
+          </Grid>
+        </view>
+      ));
+      v.expect([focusedId(), grid.y]).toEqual(['g9', -40]);
+      setSel(4);
+      await flush();
+      v.expect([focusedId(), grid.y]).toEqual(['g4', -40]);
+      setSel(1);
+      await flush();
+      v.expect([focusedId(), grid.y]).toEqual(['g1', 20]);
+    },
+  );
+
+  v.it(
     'onSelectedChanged is called as (idx, grid, elm) with this = grid; once on mount',
     async () => {
       let grid!: lng.ElementNode;
