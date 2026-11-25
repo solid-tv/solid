@@ -574,3 +574,148 @@ v.describe('synthetic keyboard events (legacy KeyboardEvent constructors)', () =
     dispose();
   });
 });
+
+v.describe('useMouse respectClipping', () => {
+  const renderOverflow = (
+    parentClipping: boolean,
+    respectClipping: boolean | undefined,
+  ) => {
+    let app!: lng.ElementNode;
+    let child!: lng.ElementNode;
+    const dispose = renderer.render(() => {
+      const root = (
+        <view ref={app} width={1920} height={1080}>
+          <view
+            x={100}
+            y={100}
+            width={200}
+            height={200}
+            clipping={parentClipping}
+          >
+            {/* child spans 400–500 absolute: entirely outside its parent */}
+            <view
+              ref={child}
+              x={300}
+              y={300}
+              width={100}
+              height={100}
+              onFocus={() => {}}
+            />
+          </view>
+        </view>
+      );
+      useMouse(app, 5, { respectClipping });
+      return root;
+    });
+    return { dispose, child: () => child };
+  };
+
+  v.test('default: a child outside its parent is not hit', async () => {
+    const { dispose, child } = renderOverflow(false, undefined);
+    await wait(20);
+    dispatchMouseMove(450, 450);
+    await wait(80);
+    v.assert.notEqual(lng.activeElement(), child());
+    dispose();
+  });
+
+  v.test('on: a child outside a non-clipping parent is hit', async () => {
+    const { dispose, child } = renderOverflow(false, true);
+    await wait(20);
+    dispatchMouseMove(450, 450);
+    await wait(80);
+    v.assert.equal(lng.activeElement(), child());
+    dispose();
+  });
+
+  v.test('on: a clipping parent still blocks children outside it', async () => {
+    const { dispose, child } = renderOverflow(true, true);
+    await wait(20);
+    dispatchMouseMove(450, 450);
+    await wait(80);
+    v.assert.notEqual(lng.activeElement(), child());
+    dispose();
+  });
+
+  v.test('on: hover and click reach a child outside its parent', async () => {
+    let app!: lng.ElementNode;
+    let btn!: lng.ElementNode;
+    const onClick = v.vi.fn();
+
+    const dispose = renderer.render(() => {
+      const root = (
+        <view ref={app} width={1920} height={1080}>
+          <view x={0} y={0} width={100} height={100}>
+            <view
+              ref={btn}
+              x={150}
+              y={150}
+              width={200}
+              height={100}
+              $hover={{ color: 0x00ff00ff }}
+              onMouseClick={onClick}
+            />
+          </view>
+        </view>
+      );
+      useMouse(app, 5, {
+        customStates: { hoverState: '$hover', pressedState: '$pressed' },
+        respectClipping: true,
+      });
+      return root;
+    });
+
+    await wait(20);
+    dispatchMouseMove(200, 200);
+    await wait(80);
+    v.assert.ok(btn.states.has('$hover'), 'btn receives hover');
+
+    dispatchClick(200, 200);
+    v.assert.equal(onClick.mock.calls.length, 1, 'click reaches btn');
+    dispose();
+  });
+
+  v.test(
+    'on: a higher-z sibling overflow wins over a lower sibling',
+    async () => {
+      let app!: lng.ElementNode;
+      let low!: lng.ElementNode;
+      let overflow!: lng.ElementNode;
+
+      const dispose = renderer.render(() => {
+        const root = (
+          <view ref={app} width={1920} height={1080}>
+            <view
+              ref={low}
+              x={300}
+              y={300}
+              width={200}
+              height={200}
+              zIndex={1}
+              onFocus={() => {}}
+            />
+            {/* misses the pointer itself; its child overflows onto low */}
+            <view x={0} y={0} width={100} height={100} zIndex={5}>
+              <view
+                ref={overflow}
+                x={350}
+                y={350}
+                width={100}
+                height={100}
+                onFocus={() => {}}
+              />
+            </view>
+          </view>
+        );
+        useMouse(app, 5, { respectClipping: true });
+        return root;
+      });
+
+      await wait(20);
+      dispatchMouseMove(400, 400);
+      await wait(80);
+      v.assert.equal(lng.activeElement(), overflow);
+      dispose();
+    },
+  );
+});
