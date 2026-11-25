@@ -38,6 +38,16 @@ You can configure `useMouse` to apply custom states to elements when they are ho
 
 To use this, pass the `customStates` option to `useMouse`.
 
+### Elements Outside Their Parent (`respectClipping`)
+
+By default, the hit test stops at any element the pointer is not over, so a child drawn outside its parent's bounds (a parent without `clipping`) cannot be hovered or clicked. Pass `respectClipping: true` to hit-test those children too:
+
+```jsx
+useMouse(undefined, 100, { respectClipping: true });
+```
+
+With it on, a subtree is cut off only where an element has `clipping` set, which matches what is drawn on screen. Among overlapping elements, higher `zIndex` wins, then the later sibling. The tradeoff: most elements don't clip, so each pointer move searches most of the tree instead of one path down it. Check pointer responsiveness on target hardware with your largest pages.
+
 ### Click Handling
 
 When an element is clicked, `useMouse` handles the interaction as follows:

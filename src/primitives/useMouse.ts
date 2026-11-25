@@ -21,9 +21,16 @@ interface MouseStateOptions {
   pressedState: CustomState;
 }
 
-type UseMouseOptions =
-  | { customStates: MouseStateOptions }
-  | { customStates: undefined };
+interface UseMouseOptions {
+  customStates?: MouseStateOptions;
+  /**
+   * Hit-test children that draw outside their parent's bounds. A subtree is
+   * cut off only where a node has `clipping` set; otherwise the search keeps
+   * descending even when the pointer misses the node itself. Off by default:
+   * the default search stops at any node the pointer misses.
+   */
+  respectClipping?: boolean;
+}
 
 export function addCustomStateToElement(
   element: RenderableNode,
@@ -133,8 +140,9 @@ function findElementWithCustomState<TApp extends ElementNode>(
   x: number,
   y: number,
   customState: CustomState,
+  respectClipping: boolean,
 ): ElementNode | undefined {
-  const path = getChildrenByPosition(myApp, x, y);
+  const path = getChildrenByPosition(myApp, x, y, respectClipping);
   let element: ElementNode | undefined;
   for (let i = path.length - 1; i >= 0; i--) {
     if (hasCustomState(path[i]!, customState)) {
@@ -235,6 +243,7 @@ function handleElementClick(
 
 function createHandleClick<TApp extends ElementNode>(
   myApp: TApp,
+  respectClipping: boolean,
   customStates?: MouseStateOptions,
   pressedElementRef?: { current: ElementNode | null },
 ) {
@@ -245,6 +254,7 @@ function createHandleClick<TApp extends ElementNode>(
           e.clientX,
           e.clientY,
           customStates.hoverState,
+          respectClipping,
         )
       : findElementByActiveElement(e);
 
@@ -258,6 +268,7 @@ function createHandleClick<TApp extends ElementNode>(
 
 function createHandleMouseDown<TApp extends ElementNode>(
   myApp: TApp,
+  respectClipping: boolean,
   customStates?: MouseStateOptions,
   pressedElementRef?: { current: ElementNode | null },
 ) {
@@ -271,6 +282,7 @@ function createHandleMouseDown<TApp extends ElementNode>(
       e.clientX,
       e.clientY,
       customStates.hoverState,
+      respectClipping,
     );
 
     if (!pressedElement) {
@@ -318,15 +330,63 @@ function isNodeAtPosition(
   );
 }
 
+// Depth-first search for the topmost hit, used when `respectClipping` is on.
+// Descends through nodes the pointer misses unless they clip; pushes only
+// nodes the pointer is over onto `path` (ancestors first). Returns whether
+// anything in this subtree was hit.
+function collectHitPath(
+  node: ElementNode | ElementText | TextNode,
+  px: number,
+  py: number,
+  path: ElementNode[],
+): boolean {
+  if (!isElementNode(node) || node.alpha === 0 || node.skipFocus) {
+    return false;
+  }
+
+  const hit = testCollision(
+    px,
+    py,
+    (node.lng.absX as number) || 0,
+    (node.lng.absY as number) || 0,
+    node.width || 0,
+    node.height || 0,
+  );
+  if (!hit && node.clipping) return false;
+  if (hit) path.push(node);
+
+  // Topmost first: higher zIndex, then later sibling (as in the default
+  // search). Index tiebreak, since old webOS engines have no stable sort.
+  const children = node.children;
+  const order: number[] = [];
+  for (let i = children.length - 1; i >= 0; i--) order.push(i);
+  order.sort(
+    (a, b) =>
+      ((children[b] as ElementNode).zIndex ?? -1) -
+        ((children[a] as ElementNode).zIndex ?? -1) || b - a,
+  );
+  for (const i of order) {
+    if (collectHitPath(children[i]!, px, py, path)) return true;
+  }
+
+  return hit;
+}
+
 function getChildrenByPosition<TElement extends ElementNode = ElementNode>(
   node: TElement,
   x: number,
   y: number,
+  respectClipping = false,
 ): TElement[] {
   const result: TElement[] = [];
   const precision = Config.rendererOptions?.deviceLogicalPixelRatio || 1;
   const px = x / precision;
   const py = y / precision;
+
+  if (respectClipping) {
+    collectHitPath(node, px, py, result);
+    return result;
+  }
 
   let current: ElementNode | ElementText | TextNode | undefined = node;
   while (current && isNodeAtPosition(current, px, py)) {
@@ -360,9 +420,16 @@ export function useMouse<TApp extends ElementNode = ElementNode>(
   const pressedElementRef: { current: ElementNode | null } = { current: null };
   const customStates = options?.customStates;
   const hoverState = customStates?.hoverState;
-  const handleClick = createHandleClick(myApp, customStates, pressedElementRef);
+  const respectClipping = options?.respectClipping ?? false;
+  const handleClick = createHandleClick(
+    myApp,
+    respectClipping,
+    customStates,
+    pressedElementRef,
+  );
   const handleMouseDown = createHandleMouseDown(
     myApp,
+    respectClipping,
     customStates,
     pressedElementRef,
   );
@@ -382,7 +449,7 @@ export function useMouse<TApp extends ElementNode = ElementNode>(
   createEffect(() => {
     if (!scheduled()) return;
 
-    const path = getChildrenByPosition(myApp, pos.x, pos.y);
+    const path = getChildrenByPosition(myApp, pos.x, pos.y, respectClipping);
     let activeElm: ElementNode | undefined;
     for (let i = path.length - 1; i >= 0; i--) {
       const el = path[i]!;
