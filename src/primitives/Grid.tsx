@@ -1,5 +1,5 @@
 import { createSignal, createMemo, createEffect, createRenderEffect, JSX, untrack, Index } from "solid-js";
-import { type NodeProps, ElementNode, NewOmit, hasFocus } from "@solidtv/solid";
+import { type NodeProps, type INode, ElementNode, NewOmit, hasFocus } from "@solidtv/solid";
 import { chainRefs } from "./utils/chainFunctions.js";
 
 export interface GridItemProps<T> {
@@ -19,7 +19,13 @@ export interface GridProps<T> extends NewOmit<NodeProps, 'children'> {
   itemOffset?: number;
   columns?: number;
   looping?: boolean;
-  scroll?: "auto" | "none";
+  /** How the grid follows focus vertically:
+   * auto - the focused row moves to the top (default)
+   * edge - the grid moves only when focus goes past the last row that fits
+   *   (above the screen's bottom, or a clipping parent's) or above the first
+   *   row shown; it then moves just enough to show that row
+   * none - the grid does not move */
+  scroll?: "auto" | "edge" | "none";
   selected?: number;
   onSelectedChanged?: (index: number, grid: ElementNode, elm?: ElementNode) => void;
 }
@@ -114,9 +120,29 @@ export function Grid<T>(props: GridProps<T>): JSX.Element {
     });
   }
 
-  const scrollY = createMemo(() =>
-    props.scroll === "none" ? props.y ?? 0 : -Math.floor(focusedIndex() / columns()) * totalHeight() + (props.y || 0)
-  );
+  // edge: the rows that fit between the grid's unscrolled top and the bottom
+  // of its clipping parent, or of the screen. At least one.
+  function visibleRows() {
+    const parent = gridRef.parent;
+    const parentTop = parent?.absY ?? 0;
+    const top = parentTop + (props.y ?? 0);
+    const bottom = parent?.clipping
+      ? parentTop + (parent.height ?? 0)
+      : (gridRef.lng as INode).stage.root.h;
+    return Math.max(1, Math.floor((bottom - top + (props.itemOffset ?? 0)) / totalHeight()));
+  }
+
+  // edge: the first row shown.
+  let topRow = 0;
+  const scrollY = createMemo(() => {
+    const y = props.y ?? 0;
+    if (props.scroll === "none") return y;
+    const row = Math.floor(focusedIndex() / columns());
+    if (props.scroll !== "edge") return -row * totalHeight() + y;
+    if (row < topRow) topRow = row;
+    else if (row > topRow) topRow = Math.max(topRow, row - visibleRows() + 1);
+    return -topRow * totalHeight() + y;
+  });
 
   // Created once. The spread below re-runs on every vertical move (for `y`),
   // and handlers built inline in it were new functions each time. Each runs
