@@ -51,6 +51,27 @@ import { VirtualRow, VirtualColumn } from './primitives/Virtual';
 
 Use `cursor` property on the node to get the absolute index in the list of items.
 
+### Viewport bounds in edge and auto modes
+
+For a non-wrapping, uniform `VirtualRow` with an explicit positive numeric
+`width` (or `VirtualColumn` with `height`), `scroll="edge"` and `scroll="auto"`
+align the last item to the end of that viewport. The first item aligns to the
+start; a short list that fits in the viewport stays at the start. Partially
+visible leading items remain mounted so aligning the tail does not expose a gap.
+
+Set `scrollStopLast={true}` to retain the previous slot-based stopping position
+instead of aligning the last item. Configure `displaySize` for the viewport as
+usual and clip the visible area with a parent view.
+
+Viewport resize, initial `selected`, `scrollToIndex` and data changes use the
+same bounds. An in-flight scroll is stopped when a resize places the list at a
+new position. Focus stays on the current item, or the nearest remaining item
+when the list shrinks.
+
+`always`, `none` and `center` keep their existing behavior, as do wrapping lists,
+non-uniform items and lists without an explicit viewport dimension. These
+bounds do not add neighboring item previews or change the focus anchor mode.
+
 ### Performance Optimization
 
 - Renders only a subset of the full list (`slice`) for improved memory and render-time performance.
