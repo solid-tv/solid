@@ -72,6 +72,105 @@ const Item = (props: { item: number }) => (
 
 const twelve = Array.from({ length: 12 }, (_, i) => i);
 
+v.describe('Virtual: changing the scroll animation duration', () => {
+  for (const [Component, axis, key, target] of [
+    [VirtualRow, 'x', 'ArrowRight', -180],
+    [VirtualColumn, 'y', 'ArrowDown', -80],
+  ] as const) {
+    v.it(
+      `${axis}: duration 0 finishes an in-flight scroll and navigation still works`,
+      async () => {
+        let now = 1000;
+        let frame: FrameRequestCallback | undefined;
+        const clock = v.vi
+          .spyOn(performance, 'now')
+          .mockImplementation(() => now);
+        v.vi.stubGlobal(
+          'requestAnimationFrame',
+          (callback: FrameRequestCallback) => {
+            frame = callback;
+            return 1;
+          },
+        );
+        const advanceFrame = (time: number) => {
+          now = time;
+          const callback = frame;
+          frame = undefined;
+          callback?.(time);
+        };
+        lng.Config.animationsEnabled = true;
+        let animate: ReturnType<typeof v.vi.spyOn> | undefined;
+        try {
+          const [duration, setDuration] = s.createSignal(1000);
+          let row!: lng.ElementNode;
+          dispose = await mount(() => (
+            <view width={1920} height={1080}>
+              <Component
+                ref={row}
+                autofocus
+                x={50}
+                y={50}
+                each={twelve}
+                displaySize={4}
+                transitionLeft={false}
+                transitionRight={false}
+                transitionUp={false}
+                transitionDown={false}
+                animationSettings={{ duration: duration() }}
+              >
+                {(item) => <Item item={item()} />}
+              </Component>
+            </view>
+          ));
+          animate = v.vi.spyOn(row, 'animate');
+          await press(key);
+          advanceFrame(1250);
+          v.expect(row[axis]).toBeGreaterThan(target);
+          v.expect(row[axis]).toBeLessThan(50);
+
+          // A non-zero settings change must leave the current animation alone.
+          setDuration(500);
+          await flush();
+          v.expect(row[axis]).toBeGreaterThan(target);
+
+          setDuration(0);
+          await flush();
+          v.expect(row[axis]).toBe(target);
+          v.expect(focusedId()).toBe('v1');
+          advanceFrame(1500);
+          v.expect(row[axis]).toBe(target);
+
+          await press(key);
+          advanceFrame(1600);
+          v.expect(row[axis]).toBe(target);
+          v.expect(focusedId()).toBe('v2');
+          v.expect(row.cursor).toBe(2);
+
+          setDuration(1000);
+          await flush();
+          await press(key);
+          advanceFrame(1650);
+          // Re-enabling animation restores an intermediate position.
+          v.expect(row[axis]).toBeGreaterThan(target);
+          advanceFrame(3000);
+          v.expect(row[axis]).toBe(target);
+          v.expect(focusedId()).toBe('v3');
+        } finally {
+          // Stop real DOM-renderer animations even when a regression fails early.
+          for (const result of animate?.mock.results ?? []) {
+            if (result.type === 'return') result.value.stop();
+          }
+          advanceFrame(now + 10000);
+          animate?.mockRestore();
+          lng.Config.animationsEnabled = false;
+          clock.mockRestore();
+          v.vi.unstubAllGlobals();
+        }
+      },
+    );
+  }
+});
+
 let dispose: (() => void) | undefined;
 const animationsEnabled = lng.Config.animationsEnabled;
 
